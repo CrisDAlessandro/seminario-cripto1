@@ -420,12 +420,24 @@ if (!user) {
             <h1 style={{ margin: 0, fontSize: 38, fontWeight: 800 }}>Seminario Cripto</h1>
             <div style={{ color: "#64748b", marginTop: 6 }}>Panel de gestión comercial y operativa.</div>
           </div>
+         <div style={{ display: "flex", gap: 10 }}>
+  <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
+    {showForm ? "Cerrar" : "+ Nuevo cliente"}
+  </button>
 
-          <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cerrar" : "+ Nuevo cliente"}
-          </button>
-          <div>
-  <button onClick={logout}>Salir</button>
+  <button
+    onClick={logout}
+    style={{
+      padding: "10px 16px",
+      borderRadius: 10,
+      border: "1px solid #e5e7eb",
+      background: "#fff",
+      cursor: "pointer",
+      fontWeight: 600
+    }}
+  >
+    Salir
+  </button>
 </div>
         </div>
 
