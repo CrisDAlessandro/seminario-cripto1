@@ -16,9 +16,9 @@ function toISODate(date) {
   return `${y}-${m}-${d}`;
 }
 
-function addMonths(dateString, months) {
+function addDays(dateString, days) {
   const d = new Date(`${dateString}T12:00:00`);
-  d.setMonth(d.getMonth() + months);
+  d.setDate(d.getDate() + Number(days || 0));
   return d;
 }
 
@@ -56,14 +56,25 @@ function serviceDefaultAmount(value) {
   return 250;
 }
 
-function computeClient(client) {
-  let vencimiento = null;
+function serviceDefaultDuration(value) {
+  if (value === "mensual") return 30;
+  if (value === "anual") return 365;
+  return 0;
+}
 
-  if (client.servicio === "mensual") {
-    vencimiento = toISODate(addMonths(client.fecha_inicio, 1));
-  } else if (client.servicio === "anual") {
-    vencimiento = toISODate(addMonths(client.fecha_inicio, 12));
-  }
+function resolveDueDate(client) {
+  if (client.fecha_vencimiento) return client.fecha_vencimiento;
+
+  const duracion = Number(client.duracion_dias || 0);
+
+  if (client.servicio === "clases") return null;
+  if (!client.fecha_inicio || duracion <= 0) return null;
+
+  return toISODate(addDays(client.fecha_inicio, duracion));
+}
+
+function computeClient(client) {
+  const vencimiento = resolveDueDate(client);
 
   let estadoSistema = "activo";
   let dias = null;
@@ -84,6 +95,7 @@ function computeClient(client) {
     ...client,
     vencimiento,
     dias,
+  duracion_dias: Number(client.duracion_dias || 0),
     estadoSistema,
   };
 }
@@ -133,6 +145,22 @@ function inputStyle() {
   };
 }
 
+function labelStyle() {
+  return {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#334155",
+    marginBottom: 6,
+  };
+}
+
+function fieldWrapStyle(spanAll = false) {
+  return {
+    gridColumn: spanAll ? "1 / -1" : "auto",
+  };
+}
+
 function buttonStyle(dark = false) {
   return {
     padding: "12px 16px",
@@ -170,38 +198,47 @@ export default function App() {
     servicio: "mensual",
     fecha_inicio: toISODate(TODAY),
     monto: 30,
+    duracion_dias: 30,
     estado_manual: "activo",
     deuda_restante: 0,
     acceso_drive: false,
     notas: "",
   });
-useEffect(() => {
-  supabase.auth.getSession().then(({ data }) => {
-    setUser(data.session?.user || null);
-  });
 
-  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-    setUser(session?.user || null);
-  });
-  return () => {
-    listener.subscription.unsubscribe();
-  };
-}, []);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user || null);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
   async function login() {
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error) alert(error.message);
-}
+    if (error) alert(error.message);
+  }
 
-async function logout() {
-  await supabase.auth.signOut();
-}
+  async function logout() {
+    await supabase.auth.signOut();
+  }
+
   async function fetchClientes() {
     setLoading(true);
-    const { data, error } = await supabase.from("clientes").select("*").order("id", { ascending: false });
+
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("*")
+      .order("id", { ascending: false });
 
     if (error) {
       alert("No se pudieron cargar los clientes");
@@ -227,6 +264,7 @@ async function logout() {
         filtro === "todos" ||
         c.servicio === filtro ||
         c.estadoSistema === filtro;
+
       return okBusqueda && okFiltro;
     });
   }, [computed, busqueda, filtro]);
@@ -278,6 +316,7 @@ async function logout() {
 
     computed.forEach((c) => {
       const key = monthKey(c.fecha_inicio);
+
       if (!map.has(key)) {
         map.set(key, {
           key,
@@ -319,18 +358,24 @@ async function logout() {
       return;
     }
 
+    if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
+      alert("Falta la duración en días");
+      return;
+    }
+
     setGuardando(true);
+
+    const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
 
     const payload = {
       ...form,
       monto: Number(form.monto || 0),
+      duracion_dias: duracion,
       deuda_restante: Number(form.deuda_restante || 0),
       fecha_vencimiento:
-        form.servicio === "mensual"
-          ? toISODate(addMonths(form.fecha_inicio, 1))
-          : form.servicio === "anual"
-          ? toISODate(addMonths(form.fecha_inicio, 12))
-          : null,
+        form.servicio === "clases" || duracion <= 0
+          ? null
+          : toISODate(addDays(form.fecha_inicio, duracion)),
     };
 
     const { error } = await supabase.from("clientes").insert([payload]);
@@ -349,6 +394,7 @@ async function logout() {
       servicio: "mensual",
       fecha_inicio: toISODate(TODAY),
       monto: 30,
+      duracion_dias: 30,
       estado_manual: "activo",
       deuda_restante: 0,
       acceso_drive: false,
@@ -363,6 +409,7 @@ async function logout() {
     if (!ok) return;
 
     const { error } = await supabase.from("clientes").delete().eq("id", id);
+
     if (error) {
       alert("No se pudo eliminar");
       return;
@@ -372,7 +419,11 @@ async function logout() {
   }
 
   async function cambiarEstado(id, value) {
-    const { error } = await supabase.from("clientes").update({ estado_manual: value }).eq("id", id);
+    const { error } = await supabase
+      .from("clientes")
+      .update({ estado_manual: value })
+      .eq("id", id);
+
     if (error) {
       alert("No se pudo actualizar");
       return;
@@ -380,65 +431,120 @@ async function logout() {
 
     fetchClientes();
   }
-if (!user) {
-  return (
-    <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "#f5f3ee", padding: 24 }}>
-      <div style={{ width: 360, background: "#ffffff", padding: 28, borderRadius: 18, boxShadow: "0 4px 16px rgba(15,23,42,0.06)", border: "1px solid #e5e7eb" }}>
-        <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 34, fontWeight: 800, color: "#0f172a" }}>Seminario Cripto</h2>
-        <div style={{ color: "#64748b", marginBottom: 18 }}>Ingreso al sistema interno</div>
 
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", marginBottom: 10, padding: 12, borderRadius: 12, border: "1px solid #d1d5db", boxSizing: "border-box" }}
-        />
-
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", marginBottom: 14, padding: 12, borderRadius: 12, border: "1px solid #d1d5db", boxSizing: "border-box" }}
-        />
-
-        <button
-          onClick={login}
-          style={{ width: "100%", padding: 12, borderRadius: 12, border: "none", background: "#0f172a", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+  if (!user) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f5f3ee",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: 360,
+            background: "#ffffff",
+            padding: 28,
+            borderRadius: 18,
+            boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
+            border: "1px solid #e5e7eb",
+          }}
         >
-          Entrar
-        </button>
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 34, fontWeight: 800, color: "#0f172a" }}>
+            Seminario Cripto
+          </h2>
+          <div style={{ color: "#64748b", marginBottom: 18 }}>Ingreso al sistema interno</div>
+
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{
+              width: "100%",
+              marginBottom: 10,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              boxSizing: "border-box",
+            }}
+          />
+
+          <input
+            type="password"
+            placeholder="Contraseña"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{
+              width: "100%",
+              marginBottom: 14,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              boxSizing: "border-box",
+            }}
+          />
+
+          <button
+            onClick={login}
+            style={{
+              width: "100%",
+              padding: 12,
+              borderRadius: 12,
+              border: "none",
+              background: "#0f172a",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Entrar
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f5f3ee", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 28 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "center", marginBottom: 24, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 20,
+            alignItems: "center",
+            marginBottom: 24,
+            flexWrap: "wrap",
+          }}
+        >
           <div>
             <h1 style={{ margin: 0, fontSize: 38, fontWeight: 800 }}>Seminario Cripto</h1>
             <div style={{ color: "#64748b", marginTop: 6 }}>Panel de gestión comercial y operativa.</div>
           </div>
-         <div style={{ display: "flex", gap: 10 }}>
-  <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
-    {showForm ? "Cerrar" : "+ Nuevo cliente"}
-  </button>
 
-  <button
-    onClick={logout}
-    style={{
-      padding: "10px 16px",
-      borderRadius: 10,
-      border: "1px solid #e5e7eb",
-      background: "#fff",
-      cursor: "pointer",
-      fontWeight: 600
-    }}
-  >
-    Salir
-  </button>
-</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
+              {showForm ? "Cerrar" : "+ Nuevo cliente"}
+            </button>
+
+            <button
+              onClick={logout}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Salir
+            </button>
+          </div>
         </div>
 
         {showForm && (
@@ -446,63 +552,111 @@ if (!user) {
             <h3 style={{ marginTop: 0 }}>Alta de cliente</h3>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-              <input style={inputStyle()} placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
-              <input style={inputStyle()} placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Nombre</label>
+                <input
+                  style={inputStyle()}
+                  placeholder="Nombre"
+                  value={form.nombre}
+                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                />
+              </div>
 
-              <select
-                style={inputStyle()}
-                value={form.servicio}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    servicio: e.target.value,
-                    monto: serviceDefaultAmount(e.target.value),
-                  })
-                }
-              >
-                <option value="mensual">Plan Inversor Mensual</option>
-                <option value="anual">Plan Inversor Anual</option>
-                <option value="clases">Clases</option>
-              </select>
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Email</label>
+                <input
+                  style={inputStyle()}
+                  placeholder="Email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </div>
 
-              <input
-                style={inputStyle()}
-                type="date"
-                value={form.fecha_inicio}
-                onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
-              />
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Servicio</label>
+                <select
+                  style={inputStyle()}
+                  value={form.servicio}
+                  onChange={(e) => {
+                    const servicio = e.target.value;
+                    setForm({
+                      ...form,
+                      servicio,
+                      monto: serviceDefaultAmount(servicio),
+                      duracion_dias: serviceDefaultDuration(servicio),
+                    });
+                  }}
+                >
+                  <option value="mensual">Plan Inversor Mensual</option>
+                  <option value="anual">Plan Inversor Anual</option>
+                  <option value="clases">Clases</option>
+                </select>
+              </div>
 
-              <input
-                style={inputStyle()}
-                type="number"
-                placeholder="Monto"
-                value={form.monto}
-                onChange={(e) => setForm({ ...form, monto: e.target.value })}
-              />
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Fecha de inicio</label>
+                <input
+                  style={inputStyle()}
+                  type="date"
+                  value={form.fecha_inicio}
+                  onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                />
+              </div>
 
-              <select
-                style={inputStyle()}
-                value={form.estado_manual}
-                onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
-              >
-                <option value="activo">Activo</option>
-                <option value="sacar">Sacar</option>
-              </select>
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Monto</label>
+                <input
+                  style={inputStyle()}
+                  type="number"
+                  placeholder="Monto"
+                  value={form.monto}
+                  onChange={(e) => setForm({ ...form, monto: e.target.value })}
+                />
+              </div>
 
-              <input
-                style={inputStyle()}
-                type="number"
-                placeholder="Deuda restante"
-                value={form.deuda_restante}
-                onChange={(e) => setForm({ ...form, deuda_restante: e.target.value })}
-              />
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Duración (días)</label>
+                <input
+                  style={inputStyle()}
+                  type="number"
+                  placeholder="Duración en días"
+                  value={form.duracion_dias}
+                  onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })}
+                />
+              </div>
 
-              <input
-                style={{ ...inputStyle(), gridColumn: "1 / -1" }}
-                placeholder="Notas"
-                value={form.notas}
-                onChange={(e) => setForm({ ...form, notas: e.target.value })}
-              />
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Estado</label>
+                <select
+                  style={inputStyle()}
+                  value={form.estado_manual}
+                  onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
+                >
+                  <option value="activo">Activo</option>
+                  <option value="sacar">Sacar</option>
+                </select>
+              </div>
+
+              <div style={fieldWrapStyle()}>
+                <label style={labelStyle()}>Deuda restante</label>
+                <input
+                  style={inputStyle()}
+                  type="number"
+                  placeholder="Deuda restante"
+                  value={form.deuda_restante}
+                  onChange={(e) => setForm({ ...form, deuda_restante: e.target.value })}
+                />
+              </div>
+
+              <div style={fieldWrapStyle(true)}>
+                <label style={labelStyle()}>Notas</label>
+                <input
+                  style={inputStyle()}
+                  placeholder="Notas"
+                  value={form.notas}
+                  onChange={(e) => setForm({ ...form, notas: e.target.value })}
+                />
+              </div>
             </div>
 
             <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
@@ -530,7 +684,16 @@ if (!user) {
         </div>
 
         <div style={{ ...cardStyle(), marginBottom: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 16,
+              alignItems: "center",
+              flexWrap: "wrap",
+              marginBottom: 16,
+            }}
+          >
             <div>
               <h3 style={{ margin: 0 }}>Base operativa</h3>
               <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
@@ -562,7 +725,9 @@ if (!user) {
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
                   {["Cliente", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                    <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -583,17 +748,17 @@ if (!user) {
                       </select>
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-  <button
-    style={{ ...buttonStyle(false), padding: "8px 12px" }}
-    onClick={() => {
-      if (confirm("¿Eliminar cliente?")) {
-        eliminarCliente(c.id);
-      }
-    }}
-  >
-    🗑
-  </button>
-</td>
+                      <button
+                        style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                        onClick={() => {
+                          if (confirm("¿Eliminar cliente?")) {
+                            eliminarCliente(c.id);
+                          }
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -613,7 +778,9 @@ if (!user) {
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     {["Cliente", "Servicio", "Vence", "Días", "Estado"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -641,7 +808,9 @@ if (!user) {
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     {["Cliente", "Servicio", "Pagado", "Resta", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -667,7 +836,9 @@ if (!user) {
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     {["Alumno", "Inicio", "Mes", "Monto", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -676,7 +847,9 @@ if (!user) {
                     <tr key={c.id}>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", textTransform: "capitalize" }}>{monthLabel(monthKey(c.fecha_inicio))}</td>
+                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", textTransform: "capitalize" }}>
+                        {monthLabel(monthKey(c.fecha_inicio))}
+                      </td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.monto}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
                     </tr>
@@ -694,14 +867,25 @@ if (!user) {
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
                       {["Mes", "Mensual", "Anual", "Clases", "Total"].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                        <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {resumenMensual.map((r) => (
                       <tr key={r.key}>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700, textTransform: "capitalize" }}>{monthLabel(r.key)}</td>
+                        <td
+                          style={{
+                            padding: 12,
+                            borderBottom: "1px solid #e5e7eb",
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {monthLabel(r.key)}
+                        </td>
                         <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.mensual}</td>
                         <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.anual}</td>
                         <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.clases}</td>
@@ -725,9 +909,11 @@ if (!user) {
                         <span style={{ textTransform: "capitalize" }}>{monthLabel(r.key)}</span>
                         <strong>USD {r.total}</strong>
                       </div>
+
                       <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
                         <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
                       </div>
+
                       <div style={{ marginTop: 6, color: "#64748b", fontSize: 12 }}>
                         Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}
                       </div>
