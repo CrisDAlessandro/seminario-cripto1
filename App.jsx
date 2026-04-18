@@ -382,9 +382,37 @@ async function logout() {
   }
 if (!user) {
   return (
-    <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 300 }}>
-        <h2>Login</h2>
+    <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "#f5f3ee", padding: 24 }}>
+      <div style={{ width: 360, background: "#ffffff", padding: 28, borderRadius: 18, boxShadow: "0 4px 16px rgba(15,23,42,0.06)", border: "1px solid #e5e7eb" }}>
+        <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 34, fontWeight: 800, color: "#0f172a" }}>Seminario Cripto</h2>
+        <div style={{ color: "#64748b", marginBottom: 18 }}>Ingreso al sistema interno</div>
+
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={{ width: "100%", marginBottom: 10, padding: 12, borderRadius: 12, border: "1px solid #d1d5db", boxSizing: "border-box" }}
+        />
+
+        <input
+          type="password"
+          placeholder="Contraseña"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ width: "100%", marginBottom: 14, padding: 12, borderRadius: 12, border: "1px solid #d1d5db", boxSizing: "border-box" }}
+        />
+
+        <button
+          onClick={login}
+          style={{ width: "100%", padding: 12, borderRadius: 12, border: "none", background: "#0f172a", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+        >
+          Entrar
+        </button>
+      </div>
+    </div>
+  );
+}
+        <h2>Inicio de sesión</h2>
 
         <input
           placeholder="Email"
