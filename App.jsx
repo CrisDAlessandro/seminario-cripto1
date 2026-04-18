@@ -155,6 +155,9 @@ function tableStyle() {
 }
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -172,7 +175,30 @@ export default function App() {
     acceso_drive: false,
     notas: "",
   });
+useEffect(() => {
+  supabase.auth.getSession().then(({ data }) => {
+    setUser(data.session?.user || null);
+  });
 
+  const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user || null);
+  });
+  return () => {
+    listener.subscription.unsubscribe();
+  };
+}, []);
+  async function login() {
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) alert(error.message);
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+}
   async function fetchClientes() {
     setLoading(true);
     const { data, error } = await supabase.from("clientes").select("*").order("id", { ascending: false });
@@ -354,7 +380,34 @@ export default function App() {
 
     fetchClientes();
   }
+if (!user) {
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 300 }}>
+        <h2>Login</h2>
 
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
+        />
+
+        <input
+          type="password"
+          placeholder="Contraseña"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ width: "100%", marginBottom: 10 }}
+        />
+
+        <button onClick={login} style={{ width: "100%" }}>
+          Entrar
+        </button>
+      </div>
+    </div>
+  );
+}
   return (
     <div style={{ minHeight: "100vh", background: "#f5f3ee", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 28 }}>
@@ -367,6 +420,9 @@ export default function App() {
           <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
             {showForm ? "Cerrar" : "+ Nuevo cliente"}
           </button>
+          <div>
+  <button onClick={logout}>Salir</button>
+</div>
         </div>
 
         {showForm && (
