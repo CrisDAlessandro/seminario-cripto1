@@ -412,8 +412,6 @@ if (!user) {
     </div>
   );
 }
-        <h2>Inicio de sesión</h2>
-
         <input
           placeholder="Email"
           value={email}
