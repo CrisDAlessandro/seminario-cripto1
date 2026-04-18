@@ -511,7 +511,17 @@ export default function App() {
                       </select>
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <button style={{ ...buttonStyle(false), padding: "8px 12px" }} onClick={() => { if (confirm("¿Eliminar cliente?")) eliminarCliente(c.id); }}>🗑</button>
+  <button
+    style={{ ...buttonStyle(false), padding: "8px 12px" }}
+    onClick={() => {
+      if (confirm("¿Eliminar cliente?")) {
+        eliminarCliente(c.id);
+      }
+    }}
+  >
+    🗑
+  </button>
+</td>>
                   </tr>
                 ))}
               </tbody>
