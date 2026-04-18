@@ -521,7 +521,7 @@ export default function App() {
   >
     🗑
   </button>
-</td>>
+</td>
                   </tr>
                 ))}
               </tbody>
