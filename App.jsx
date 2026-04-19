@@ -628,10 +628,21 @@ const dashboardStats = useMemo(() => {
       alert("No se pudo actualizar");
       return;
     }
-
     fetchClientes();
   }
+async function actualizarEmail(id, nuevoEmail) {
+  const { error } = await supabase
+    .from("clientes")
+    .update({ email: nuevoEmail })
+    .eq("id", id);
 
+  if (error) {
+    alert("No se pudo actualizar el email");
+    return;
+  }
+
+  fetchClientes();
+}
   if (!user) {
     return (
       <div
@@ -978,7 +989,7 @@ const dashboardStats = useMemo(() => {
             <table style={tableStyle()}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Cliente", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
+                  {["Cliente", "Email", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
                       {h}
                     </th>
@@ -987,14 +998,52 @@ const dashboardStats = useMemo(() => {
               </thead>
               <tbody>
                 {filtered.map((c) => (
-                  <tr key={c.id}>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? c.dias : "-"}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span>
-                    </td>
+  <tr key={c.id}>
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
+      {c.nombre}
+    </td>
+
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+  <input
+    value={c.email || ""}
+    onChange={(e) => {
+      const nuevo = e.target.value;
+
+      setClientes((prev) =>
+        prev.map((cli) =>
+          cli.id === c.id ? { ...cli, email: nuevo } : cli
+        )
+      );
+    }}
+    onBlur={(e) => actualizarEmail(c.id, e.target.value)}
+    style={{
+      width: "100%",
+      padding: "6px 8px",
+      borderRadius: 8,
+      border: "1px solid #d1d5db",
+      fontSize: 13,
+      boxSizing: "border-box",
+    }}
+  />
+</td>
+
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+      {serviceLabel(c.servicio)}
+    </td>
+
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+      {c.vencimiento ? formatDate(c.vencimiento) : "-"}
+    </td>
+
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+      {c.vencimiento ? c.dias : "-"}
+    </td>
+
+    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+      <span style={badgeStyle(c.estadoSistema)}>
+        {c.estadoSistema.toUpperCase()}
+      </span>
+    </td>
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
                       <select style={inputStyle()} value={c.estado_manual} onChange={(e) => cambiarEstado(c.id, e.target.value)}>
                         <option value="activo">Activo</option>
