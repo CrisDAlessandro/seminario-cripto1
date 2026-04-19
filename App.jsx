@@ -1180,7 +1180,7 @@ async function actualizarEmail(id, nuevoEmail) {
       style={{ ...buttonStyle(true), padding: "8px 12px" }}
       onClick={() => alert("Renovar cliente (siguiente paso)")}
     >
-      Renovar
+      ✔
     </button>
 
     <button
