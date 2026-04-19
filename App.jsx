@@ -1216,21 +1216,23 @@ function abrirRenovar(cliente) {
   </div>
 </div>
 
-      <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-  <button
-    onClick={() => setShowRenovar(false)}
-    style={buttonStyle(false)}
-  >
-    Cancelar
-  </button>
+          <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <button
+          onClick={() => setShowRenovar(false)}
+          style={buttonStyle(false)}
+        >
+          Cancelar
+        </button>
 
-  <button
-    style={buttonStyle(true)}
-    onClick={guardarRenovacion}
-  >
-    {renovando ? "Guardando..." : "Confirmar renovación"}
-  </button>
-</div>
+        <button
+          style={buttonStyle(true)}
+          onClick={guardarRenovacion}
+        >
+          {renovando ? "Guardando..." : "Confirmar renovación"}
+        </button>
+      </div>
+    </div>
+  </div>
 )}       
 {view === "dashboard" && (
   <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
