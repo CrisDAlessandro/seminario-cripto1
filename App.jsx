@@ -385,6 +385,12 @@ export default function App() {
   const BASE_PAGE_SIZE = 10;
   const [deudoresPage, setDeudoresPage] = useState(1);
   const DEUDORES_PAGE_SIZE = 5;
+  const [clasesPage, setClasesPage] = useState(1);
+  const CLASES_PAGE_SIZE = 5;
+  const [ingresosPage, setIngresosPage] = useState(1);
+  const INGRESOS_PAGE_SIZE = 10;
+  const [criticosHoyPage, setCriticosHoyPage] = useState(1);
+  const CRITICOS_HOY_PAGE_SIZE = 3;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
     nombre: "",
@@ -551,7 +557,16 @@ const deudoresRows = useMemo(() => {
     () => computed.filter((c) => c.servicio === "clases"),
     [computed]
   );
-  
+
+  const clasesTotalPages = Math.max(
+  1,
+  Math.ceil(clases.length / CLASES_PAGE_SIZE)
+);
+
+const clasesRows = useMemo(() => {
+  const start = (clasesPage - 1) * CLASES_PAGE_SIZE;
+  return clases.slice(start, start + CLASES_PAGE_SIZE);
+}, [clases, clasesPage]);
   
   const vencimientos = useMemo(() => {
     return computed
@@ -581,6 +596,35 @@ useEffect(() => {
     setDeudoresPage(deudoresTotalPages);
   }
 }, [deudoresPage, deudoresTotalPages]);
+  useEffect(() => {
+  setClasesPage(1);
+}, [computed]);
+
+useEffect(() => {
+  if (clasesPage > clasesTotalPages) {
+    setClasesPage(clasesTotalPages);
+  }
+}, [clasesPage, clasesTotalPages]);
+
+useEffect(() => {
+  setIngresosPage(1);
+}, [ingresos]);
+
+useEffect(() => {
+  if (ingresosPage > ingresosTotalPages) {
+    setIngresosPage(ingresosTotalPages);
+  }
+}, [ingresosPage, ingresosTotalPages]);
+
+useEffect(() => {
+  setCriticosHoyPage(1);
+}, [computed]);
+
+useEffect(() => {
+  if (criticosHoyPage > criticosHoyTotalPages) {
+    setCriticosHoyPage(criticosHoyTotalPages);
+  }
+}, [criticosHoyPage, criticosHoyTotalPages]);
   
 
 const vencimientosRows = useMemo(() => {
@@ -650,6 +694,16 @@ const vencimientosRows = useMemo(() => {
     vencidos: vencidosList,
   };
 }, [computed]);
+const criticosHoyTotalPages = Math.max(
+  1,
+  Math.ceil(vencimientosCriticos.hoy.length / CRITICOS_HOY_PAGE_SIZE)
+);
+
+const criticosHoyRows = useMemo(() => {
+  const start = (criticosHoyPage - 1) * CRITICOS_HOY_PAGE_SIZE;
+  return vencimientosCriticos.hoy.slice(start, start + CRITICOS_HOY_PAGE_SIZE);
+}, [vencimientosCriticos.hoy, criticosHoyPage]);
+  
 const currentMonthIngresos = useMemo(() => {
   return ingresos.filter((i) => {
     const d = parseISODate(i.fecha_pago);
@@ -685,6 +739,16 @@ const dashboardStats = useMemo(() => {
     dailySeries,
   };
 }, [ingresos, currentMonthIngresos]);
+
+  const ingresosTotalPages = Math.max(
+  1,
+  Math.ceil(ingresos.length / INGRESOS_PAGE_SIZE)
+);
+
+const ingresosRows = useMemo(() => {
+  const start = (ingresosPage - 1) * INGRESOS_PAGE_SIZE;
+  return ingresos.slice(start, start + INGRESOS_PAGE_SIZE);
+}, [ingresos, ingresosPage]);
   
   const maxTotal = resumenMensual.length
   ? Math.max(...resumenMensual.map((r) => r.total))
@@ -1438,7 +1502,7 @@ if (vencimientoActual) {
             </tr>
           </thead>
           <tbody>
-            {ingresos.map((i) => (
+            {ingresosRows.map((i) => (
               <tr key={i.id}>
                 <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
                   {i.fecha_pago ? formatDate(i.fecha_pago) : "-"}
@@ -1471,6 +1535,51 @@ if (vencimientoActual) {
           </tbody>
         </table>
 
+        {ingresos.length > 0 && (
+  <div
+    style={{
+      marginTop: 16,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      flexWrap: "wrap",
+    }}
+  >
+    <div style={{ color: "#64748b", fontSize: 14 }}>
+      Página {ingresosPage} de {ingresosTotalPages}
+    </div>
+
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button
+        style={buttonStyle(false)}
+        onClick={() => setIngresosPage((p) => Math.max(1, p - 1))}
+        disabled={ingresosPage === 1}
+      >
+        Anterior
+      </button>
+
+      {Array.from({ length: ingresosTotalPages }, (_, i) => i + 1).map((page) => (
+        <button
+          key={page}
+          style={page === ingresosPage ? buttonStyle(true) : buttonStyle(false)}
+          onClick={() => setIngresosPage(page)}
+        >
+          {page}
+        </button>
+      ))}
+
+      <button
+        style={buttonStyle(false)}
+        onClick={() => setIngresosPage((p) => Math.min(ingresosTotalPages, p + 1))}
+        disabled={ingresosPage === ingresosTotalPages}
+      >
+        Siguiente
+      </button>
+    </div>
+  </div>
+)}
+        
         {!ingresos.length && (
           <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
             No hay ingresos cargados.
@@ -1538,7 +1647,7 @@ if (vencimientoActual) {
 
       {vencimientosCriticos.hoy.length ? (
         <div style={{ display: "grid", gap: 10 }}>
-          {vencimientosCriticos.hoy.map((c) => (
+          {criticosHoyRows.map((c) => (
             <div
               key={c.id}
               style={{
@@ -1588,6 +1697,48 @@ if (vencimientoActual) {
               </div>
             </div>
           ))}
+          <div
+  style={{
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  }}
+>
+  <div style={{ color: "#64748b", fontSize: 14 }}>
+    Página {clasesPage} de {clasesTotalPages}
+  </div>
+
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setClasesPage((p) => Math.max(1, p - 1))}
+      disabled={clasesPage === 1}
+    >
+      Anterior
+    </button>
+
+    {Array.from({ length: clasesTotalPages }, (_, i) => i + 1).map((page) => (
+      <button
+        key={page}
+        style={page === clasesPage ? buttonStyle(true) : buttonStyle(false)}
+        onClick={() => setClasesPage(page)}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setClasesPage((p) => Math.min(clasesTotalPages, p + 1))}
+      disabled={clasesPage === clasesTotalPages}
+    >
+      Siguiente
+    </button>
+  </div>
+</div>
         </div>
       ) : (
         <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
@@ -2119,7 +2270,7 @@ if (vencimientoActual) {
                   </tr>
                 </thead>
                 <tbody>
-                  {clases.map((c) => (
+                  {clasesRows.map((c) => (
                     <tr key={c.id}>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
@@ -2133,6 +2284,48 @@ if (vencimientoActual) {
                 </tbody>
               </table>
             </div>
+            <div
+  style={{
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  }}
+>
+  <div style={{ color: "#64748b", fontSize: 14 }}>
+    Página {clasesPage} de {clasesTotalPages}
+  </div>
+
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setClasesPage((p) => Math.max(1, p - 1))}
+      disabled={clasesPage === 1}
+    >
+      Anterior
+    </button>
+
+    {Array.from({ length: clasesTotalPages }, (_, i) => i + 1).map((page) => (
+      <button
+        key={page}
+        style={page === clasesPage ? buttonStyle(true) : buttonStyle(false)}
+        onClick={() => setClasesPage(page)}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setClasesPage((p) => Math.min(clasesTotalPages, p + 1))}
+      disabled={clasesPage === clasesTotalPages}
+    >
+      Siguiente
+    </button>
+  </div>
+</div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
