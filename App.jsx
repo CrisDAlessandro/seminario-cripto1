@@ -607,18 +607,15 @@ const dashboardStats = useMemo(() => {
   }
 
   async function eliminarCliente(id) {
-    const ok = window.confirm("¿Eliminar este cliente?");
-    if (!ok) return;
+  const { error } = await supabase.from("clientes").delete().eq("id", id);
 
-    const { error } = await supabase.from("clientes").delete().eq("id", id);
-
-    if (error) {
-      alert("No se pudo eliminar");
-      return;
-    }
-
-    fetchClientes();
+  if (error) {
+    alert("No se pudo eliminar");
+    return;
   }
+
+  fetchClientes();
+}
 
   async function cambiarEstado(id, value) {
     const { error } = await supabase
