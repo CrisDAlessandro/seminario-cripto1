@@ -381,6 +381,8 @@ export default function App() {
   const [vencimientosPage, setVencimientosPage] = useState(1);
   const VENCIMIENTOS_PAGE_SIZE = 10;
   const BASE_PAGE_SIZE = 10;
+  const [deudoresPage, setDeudoresPage] = useState(1);
+  const DEUDORES_PAGE_SIZE = 5;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
     nombre: "",
@@ -533,7 +535,16 @@ const resumen = useMemo(() => {
     () => computed.filter((c) => Number(c.deuda_restante || 0) > 0),
     [computed]
   );
+  const deudoresTotalPages = Math.max(
+  1,
+  Math.ceil(deudores.length / DEUDORES_PAGE_SIZE)
+);
 
+const deudoresRows = useMemo(() => {
+  const start = (deudoresPage - 1) * DEUDORES_PAGE_SIZE;
+  return deudores.slice(start, start + DEUDORES_PAGE_SIZE);
+}, [deudores, deudoresPage]);
+  
   const clases = useMemo(
     () => computed.filter((c) => c.servicio === "clases"),
     [computed]
@@ -557,6 +568,16 @@ const resumen = useMemo(() => {
     setVencimientosPage(vencimientosTotalPages);
   }
 }, [vencimientosPage, vencimientosTotalPages]);
+  
+  useEffect(() => {
+  setDeudoresPage(1);
+}, [computed]);
+
+useEffect(() => {
+  if (deudoresPage > deudoresTotalPages) {
+    setDeudoresPage(deudoresTotalPages);
+  }
+}, [deudoresPage, deudoresTotalPages]);
 
 const vencimientosRows = useMemo(() => {
   const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
@@ -2022,7 +2043,7 @@ if (vencimientoActual) {
                   </tr>
                 </thead>
                 <tbody>
-                  {deudores.map((c) => (
+                  {deudoresRows.map((c) => (
                     <tr key={c.id}>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
@@ -2034,6 +2055,48 @@ if (vencimientoActual) {
                 </tbody>
               </table>
             </div>
+            <div
+  style={{
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  }}
+>
+  <div style={{ color: "#64748b", fontSize: 14 }}>
+    Página {deudoresPage} de {deudoresTotalPages}
+  </div>
+
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setDeudoresPage((p) => Math.max(1, p - 1))}
+    >
+      Anterior
+    </button>
+
+    {Array.from({ length: deudoresTotalPages }, (_, i) => i + 1).map((page) => (
+      <button
+        key={page}
+        style={page === deudoresPage ? buttonStyle(true) : buttonStyle(false)}
+        onClick={() => setDeudoresPage(page)}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      style={buttonStyle(false)}
+      onClick={() =>
+        setDeudoresPage((p) => Math.min(deudoresTotalPages, p + 1))
+      }
+    >
+      Siguiente
+    </button>
+  </div>
+</div>
           </div>
 
           <div style={cardStyle()}>
