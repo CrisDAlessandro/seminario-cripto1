@@ -61,7 +61,180 @@ function serviceDefaultDuration(value) {
   if (value === "anual") return 365;
   return 0;
 }
+function parseISODate(dateString) {
+  if (!dateString) return null;
+  return new Date(`${dateString}T12:00:00`);
+}
 
+function safeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isSameMonth(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+function classRangeLabel(fechaInicio) {
+  if (!fechaInicio) return "-";
+  const start = parseISODate(fechaInicio);
+  const end = addDays(fechaInicio, 27);
+
+  const startMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(start);
+  const endMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(end);
+
+  if (isSameMonth(start, end)) return startMonth;
+  return `${startMonth} / ${endMonth}`;
+}
+
+function navButtonStyle(active) {
+  return {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: active ? "1px solid #0f172a" : "1px solid #e5e7eb",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 14,
+    background: active ? "#0f172a" : "#fff",
+    color: active ? "#fff" : "#0f172a",
+  };
+}
+
+function money(value) {
+  return `USD ${safeNumber(value)}`;
+}
+
+function endOfCurrentMonth() {
+  return new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
+}
+
+function buildDailySalesSeries(clientes) {
+  const end = endOfCurrentMonth();
+  const totalDays = end.getDate();
+  const rows = [];
+
+  for (let day = 1; day <= totalDays; day += 1) {
+    rows.push({
+      day,
+      label: String(day).padStart(2, "0"),
+      total: 0,
+      mensual: 0,
+      anual: 0,
+      clases: 0,
+      ventas: 0,
+    });
+  }
+
+  clientes.forEach((c) => {
+    if (!c.fecha_inicio) return;
+    const d = parseISODate(c.fecha_inicio);
+    if (!d) return;
+    if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
+
+    const row = rows[d.getDate() - 1];
+    const monto = safeNumber(c.monto);
+
+    row.total += monto;
+    row.ventas += 1;
+    if (row[c.servicio] !== undefined) row[c.servicio] += monto;
+  });
+
+  return rows;
+}
+
+function buildServiceBreakdown(clientes, onlyCurrentMonth = false) {
+  const base = { mensual: 0, anual: 0, clases: 0 };
+
+  clientes.forEach((c) => {
+    if (onlyCurrentMonth) {
+      const d = parseISODate(c.fecha_inicio);
+      if (!d) return;
+      if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
+    }
+
+    if (base[c.servicio] !== undefined) {
+      base[c.servicio] += safeNumber(c.monto);
+    }
+  });
+
+  return base;
+}
+
+function MetricCard({ title, value, sub }) {
+  return (
+    <div style={cardStyle()}>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
+      {sub ? <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function SimpleBarChart({ title, data, valueKey, labelKey = "label", emptyText = "Sin datos." }) {
+  const maxValue = Math.max(...data.map((r) => safeNumber(r[valueKey])), 0);
+
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      {!data.length || maxValue === 0 ? (
+        <div style={{ color: "#64748b" }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {data.map((row) => {
+            const value = safeNumber(row[valueKey]);
+            const pct = maxValue > 0 ? Math.max((value / maxValue) * 100, value > 0 ? 6 : 0) : 0;
+
+            return (
+              <div key={`${title}-${row[labelKey]}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+                  <span>{row[labelKey]}</span>
+                  <strong>{money(value)}</strong>
+                </div>
+                <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownCard({ title, breakdown }) {
+  const items = [
+    { key: "mensual", label: "Plan mensual" },
+    { key: "anual", label: "Plan anual" },
+    { key: "clases", label: "Clases" },
+  ];
+
+  const total = items.reduce((acc, item) => acc + safeNumber(breakdown[item.key]), 0);
+
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <div style={{ display: "grid", gap: 12 }}>
+        {items.map((item) => {
+          const value = safeNumber(breakdown[item.key]);
+          const pct = total > 0 ? Math.max((value / total) * 100, value > 0 ? 6 : 0) : 0;
+
+          return (
+            <div key={item.key}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+                <span>{item.label}</span>
+                <strong>{money(value)}</strong>
+              </div>
+              <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function resolveDueDate(client) {
   if (client.fecha_vencimiento) return client.fecha_vencimiento;
 
@@ -74,15 +247,18 @@ function resolveDueDate(client) {
 }
 
 function computeClient(client) {
+  const isClases = client.servicio === "clases";
   const vencimiento = resolveDueDate(client);
 
   let estadoSistema = "activo";
   let dias = null;
 
-  if (client.estado_manual === "sacar") {
+  if (isClases) {
+    estadoSistema = "clases";
+  } else if (client.estado_manual === "sacar") {
     estadoSistema = "sacar";
   } else if (vencimiento) {
-    const dueDate = new Date(`${vencimiento}T12:00:00`);
+    const dueDate = parseISODate(vencimiento);
     dias = diffDays(TODAY, dueDate);
 
     if (TODAY > dueDate) {
@@ -93,10 +269,13 @@ function computeClient(client) {
 
   return {
     ...client,
+    isClases,
     vencimiento,
     dias,
-  duracion_dias: Number(client.duracion_dias || 0),
+    duracion_dias: safeNumber(client.duracion_dias),
     estadoSistema,
+    class_range_label: isClases ? classRangeLabel(client.fecha_inicio) : null,
+    class_end_date: isClases && client.fecha_inicio ? toISODate(addDays(client.fecha_inicio, 27)) : null,
   };
 }
 
@@ -192,6 +371,7 @@ export default function App() {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("todos");
   const [guardando, setGuardando] = useState(false);
+  const [view, setView] = useState("operativa");
   const [form, setForm] = useState({
     nombre: "",
     email: "",
@@ -326,7 +506,7 @@ export default function App() {
           total: 0,
           ventasMensual: 0,
           ventasAnual: 0,
-          ventasClases: 0,
+          ventasClases: 0,         
         });
       }
 
@@ -349,7 +529,29 @@ export default function App() {
 
     return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [computed]);
+const currentMonthClientes = useMemo(() => {
+  return computed.filter((c) => {
+    const d = parseISODate(c.fecha_inicio);
+    return d && d.getFullYear() === TODAY.getFullYear() && d.getMonth() === TODAY.getMonth();
+  });
+}, [computed]);
 
+const dashboardStats = useMemo(() => {
+  const ingresosMes = currentMonthClientes.reduce((acc, c) => acc + safeNumber(c.monto), 0);
+  const ventasMes = currentMonthClientes.length;
+  const breakdownMes = buildServiceBreakdown(computed, true);
+  const breakdownTotal = buildServiceBreakdown(computed, false);
+  const dailySeries = buildDailySalesSeries(computed);
+
+  return {
+    ingresosMes,
+    ventasMes,
+    breakdownMes,
+    breakdownTotal,
+    dailySeries,
+  };
+}, [computed, currentMonthClientes]);
+  
   const maxTotal = Math.max(...resumenMensual.map((r) => r.total), 1);
 
   async function guardarCliente() {
@@ -507,7 +709,7 @@ export default function App() {
       </div>
     );
   }
-
+  const isClasesForm = form.servicio === "clases";
   return (
     <div style={{ minHeight: "100vh", background: "#f5f3ee", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 28 }}>
@@ -526,26 +728,33 @@ export default function App() {
             <div style={{ color: "#64748b", marginTop: 6 }}>Panel de gestión comercial y operativa.</div>
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
-              {showForm ? "Cerrar" : "+ Nuevo cliente"}
-            </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+  <button style={navButtonStyle(view === "operativa")} onClick={() => setView("operativa")}>
+    Operativa
+  </button>
 
-            <button
-              onClick={logout}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Salir
-            </button>
-          </div>
-        </div>
+  <button style={navButtonStyle(view === "dashboard")} onClick={() => setView("dashboard")}>
+    Dashboard
+  </button>
+
+  <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
+    {showForm ? "Cerrar" : "+ Nuevo cliente"}
+  </button>
+
+  <button
+    onClick={logout}
+    style={{
+      padding: "10px 16px",
+      borderRadius: 10,
+      border: "1px solid #e5e7eb",
+      background: "#fff",
+      cursor: "pointer",
+      fontWeight: 600,
+    }}
+  >
+    Salir
+  </button>
+</div>
 
         {showForm && (
           <div style={{ ...cardStyle(), marginBottom: 24 }}>
@@ -614,28 +823,32 @@ export default function App() {
                 />
               </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Duración (días)</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Duración en días"
-                  value={form.duracion_dias}
-                  onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })}
-                />
-              </div>
+              {!isClasesForm && (
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Duración (días)</label>
+    <input
+      style={inputStyle()}
+      type="number"
+      placeholder="Duración en días"
+      value={form.duracion_dias}
+      onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })}
+    />
+  </div>
+)}
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Estado</label>
-                <select
-                  style={inputStyle()}
-                  value={form.estado_manual}
-                  onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
-                >
-                  <option value="activo">Activo</option>
-                  <option value="sacar">Sacar</option>
-                </select>
-              </div>
+              {!isClasesForm && (
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Estado</label>
+    <select
+      style={inputStyle()}
+      value={form.estado_manual}
+      onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
+    >
+      <option value="activo">Activo</option>
+      <option value="sacar">Sacar</option>
+    </select>
+  </div>
+)}
 
               <div style={fieldWrapStyle()}>
                 <label style={labelStyle()}>Deuda restante</label>
@@ -666,7 +879,32 @@ export default function App() {
             </div>
           </div>
         )}
+{view === "dashboard" && (
+  <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+      <MetricCard title="Ingresos del mes" value={money(dashboardStats.ingresosMes)} />
+      <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} />
+    </div>
 
+    <SimpleBarChart
+      title="Ventas por día (mes actual)"
+      data={dashboardStats.dailySeries}
+      valueKey="total"
+    />
+
+    <BreakdownCard
+      title="Ingresos por tipo (mes)"
+      breakdown={dashboardStats.breakdownMes}
+    />
+
+    <BreakdownCard
+      title="Ingresos totales por tipo"
+      breakdown={dashboardStats.breakdownTotal}
+    />
+  </div>
+)}
+       {view === "operativa" && (
+  <>   
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 24 }}>
           {[
             ["Activos", resumen.activos],
@@ -924,6 +1162,8 @@ export default function App() {
             </div>
           </div>
         </div>
+    </>
+)}
       </div>
     </div>
   );
