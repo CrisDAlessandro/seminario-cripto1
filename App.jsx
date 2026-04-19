@@ -842,26 +842,35 @@ function abrirRenovar(cliente) {
   fetchIngresos();
 }
   async function renovarRapido(cliente) {
-  const fechaRenovacion = toISODate(TODAY);
   const duracion =
     cliente.servicio === "clases"
       ? 0
       : Number(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio));
 
+  const hoyISO = toISODate(TODAY);
+  const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
+
+  const fechaBase =
+    vencimientoActual && vencimientoActual > hoyISO
+      ? vencimientoActual
+      : hoyISO;
+
+  const nuevoVencimiento =
+    cliente.servicio === "clases" || duracion <= 0
+      ? null
+      : toISODate(addDays(fechaBase, duracion));
+
   const payload = {
     nombre: cliente.nombre || "",
     email: (cliente.email || "").trim().toLowerCase(),
     servicio: cliente.servicio,
-    fecha_inicio: fechaRenovacion,
+    fecha_inicio: fechaBase,
     monto: Number(cliente.monto || 0),
     duracion_dias: duracion,
     estado_manual: "activo",
     deuda_restante: Number(cliente.deuda_restante || 0),
     notas: cliente.notas || "",
-    fecha_vencimiento:
-      cliente.servicio === "clases" || duracion <= 0
-        ? null
-        : toISODate(addDays(fechaRenovacion, duracion)),
+    fecha_vencimiento: nuevoVencimiento,
   };
 
   const { error: errorCliente } = await supabase
@@ -881,7 +890,7 @@ function abrirRenovar(cliente) {
       email: (cliente.email || "").trim().toLowerCase(),
       servicio: cliente.servicio,
       monto: Number(cliente.monto || 0),
-      fecha_pago: fechaRenovacion,
+      fecha_pago: hoyISO,
       notas: cliente.notas || "",
     },
   ]);
