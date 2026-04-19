@@ -831,7 +831,7 @@ async function actualizarEmail(id, nuevoEmail) {
       email,
       servicio: renovarForm.servicio,
       monto: Number(renovarForm.monto || 0),
-      fecha_pago: renovarForm.fecha_inicio,
+      fecha_pago: toISODate(TODAY),
       notas: renovarForm.notas || "",
     },
   ]);
