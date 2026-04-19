@@ -365,6 +365,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -672,20 +673,37 @@ const dashboardStats = useMemo(() => {
             }}
           />
 
-          <input
-            type="password"
-            placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              marginBottom: 14,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #d1d5db",
-              boxSizing: "border-box",
-            }}
-          />
+          <div style={{ position: "relative", marginBottom: 14 }}>
+  <input
+    type={showPassword ? "text" : "password"}
+    placeholder="Contraseña"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    style={{
+      width: "100%",
+      padding: 12,
+      borderRadius: 12,
+      border: "1px solid #d1d5db",
+      boxSizing: "border-box",
+    }}
+  />
+
+  <span
+    onClick={() => setShowPassword(!showPassword)}
+    style={{
+      position: "absolute",
+      right: 12,
+      top: "50%",
+      transform: "translateY(-50%)",
+      cursor: "pointer",
+      fontSize: 14,
+      color: "#64748b",
+      userSelect: "none",
+    }}
+  >
+    {showPassword ? "🙈" : "👁"}
+  </span>
+</div>
 
           <button
             onClick={login}
