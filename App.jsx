@@ -571,15 +571,16 @@ const dashboardStats = useMemo(() => {
     const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
 
     const payload = {
-      ...form,
-      monto: Number(form.monto || 0),
-      duracion_dias: duracion,
-      deuda_restante: Number(form.deuda_restante || 0),
-      fecha_vencimiento:
-        form.servicio === "clases" || duracion <= 0
-          ? null
-          : toISODate(addDays(form.fecha_inicio, duracion)),
-    };
+  ...form,
+  estado_manual: "activo",
+  monto: Number(form.monto || 0),
+  duracion_dias: duracion,
+  deuda_restante: Number(form.deuda_restante || 0),
+  fecha_vencimiento:
+    form.servicio === "clases" || duracion <= 0
+      ? null
+      : toISODate(addDays(form.fecha_inicio, duracion)),
+};
 
     const { error } = await supabase.from("clientes").insert([payload]);
 
@@ -862,21 +863,6 @@ async function actualizarEmail(id, nuevoEmail) {
     />
   </div>
 )}
-
-              {!isClasesForm && (
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Estado</label>
-    <select
-      style={inputStyle()}
-      value={form.estado_manual}
-      onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
-    >
-      <option value="activo">Activo</option>
-      <option value="sacar">Sacar</option>
-    </select>
-  </div>
-)}
-
               <div style={fieldWrapStyle()}>
                 <label style={labelStyle()}>Deuda restante</label>
                 <input
