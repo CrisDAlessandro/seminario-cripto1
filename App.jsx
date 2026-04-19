@@ -684,7 +684,22 @@ const dashboardStats = useMemo(() => {
   fetchClientes();
   fetchIngresos();
 }
+async function eliminarIngreso(id) {
+  const ok = window.confirm("¿Eliminar este ingreso?");
+  if (!ok) return;
 
+  const { error } = await supabase
+    .from("ingresos")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    alert("No se pudo eliminar el ingreso");
+    return;
+  }
+
+  fetchIngresos();
+}
   async function cambiarEstado(id, value) {
     const { error } = await supabase
       .from("clientes")
@@ -980,6 +995,62 @@ async function actualizarEmail(id, nuevoEmail) {
       title="Ingresos totales por tipo"
       breakdown={dashboardStats.breakdownTotal}
     />
+
+    <div style={cardStyle()}>
+      <h3 style={{ marginTop: 0 }}>Detalle de ingresos</h3>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle()}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {["Fecha", "Nombre", "Email", "Servicio", "Monto", "Notas", "Eliminar"].map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ingresos.map((i) => (
+              <tr key={i.id}>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {i.fecha_pago ? formatDate(i.fecha_pago) : "-"}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
+                  {i.cliente_nombre || "-"}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {i.email || "-"}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {serviceLabel(i.servicio)}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {money(i.monto)}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  {i.notas || "-"}
+                </td>
+                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  <button
+                    style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                    onClick={() => eliminarIngreso(i.id)}
+                  >
+                    🗑
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {!ingresos.length && (
+          <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+            No hay ingresos cargados.
+          </div>
+        )}
+      </div>
+    </div>
   </div>
 )}
        {view === "operativa" && (
