@@ -1176,23 +1176,25 @@ async function actualizarEmail(id, nuevoEmail) {
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
   <div style={{ display: "flex", gap: 8 }}>
     
-    <button
-      style={{ ...buttonStyle(true), padding: "8px 12px" }}
-      onClick={() => alert("Renovar cliente (siguiente paso)")}
-    >
-      ✔
-    </button>
+   <button
+  title="Renovar cliente"
+  style={{ ...buttonStyle(true), padding: "8px 12px" }}
+  onClick={() => alert("Renovar cliente (siguiente paso)")}
+>
+  ✔
+</button>
 
-    <button
-      style={{ ...buttonStyle(false), padding: "8px 12px" }}
-      onClick={() => {
-        if (confirm("¿Eliminar cliente?")) {
-          eliminarCliente(c.id);
-        }
-      }}
-    >
-      🗑
-    </button>
+<button
+  title="Eliminar cliente"
+  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+  onClick={() => {
+    if (confirm("¿Eliminar cliente?")) {
+      eliminarCliente(c.id);
+    }
+  }}
+>
+  🗑
+</button>
 
   </div>
 </td>
