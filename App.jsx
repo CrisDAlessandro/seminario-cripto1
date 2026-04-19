@@ -556,10 +556,28 @@ const dashboardStats = useMemo(() => {
   const maxTotal = Math.max(...resumenMensual.map((r) => r.total), 1);
 
   async function guardarCliente() {
-    if (!form.nombre.trim()) {
-      alert("Falta el nombre");
-      return;
-    }
+  const nombre = form.nombre.trim();
+  const email = form.email.trim().toLowerCase();
+
+  if (!nombre) {
+    alert("Falta el nombre");
+    return;
+  }
+
+  if (!email) {
+    alert("Falta el email");
+    return;
+  }
+
+  if (!email.endsWith("@gmail.com")) {
+    alert("El email debe ser una cuenta @gmail.com");
+    return;
+  }
+
+  if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
+    alert("Falta la duración en días");
+    return;
+  }
 
     if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
       alert("Falta la duración en días");
@@ -572,6 +590,8 @@ const dashboardStats = useMemo(() => {
 
     const payload = {
   ...form,
+  nombre,
+  email,
   estado_manual: "activo",
   monto: Number(form.monto || 0),
   duracion_dias: duracion,
