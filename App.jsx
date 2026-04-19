@@ -602,28 +602,48 @@ const dashboardStats = useMemo(() => {
       : toISODate(addDays(form.fecha_inicio, duracion)),
 };
 
-    const { error } = await supabase.from("clientes").insert([payload]);
+    const { data: clienteInsertado, error } = await supabase
+  .from("clientes")
+  .insert([payload])
+  .select()
+  .single();
 
-    setGuardando(false);
+if (error) {
+  setGuardando(false);
+  alert("No se pudo guardar el cliente");
+  return;
+}
+const { error: errorIngreso } = await supabase.from("ingresos").insert([
+  {
+    cliente_id: clienteInsertado.id,
+    cliente_nombre: clienteInsertado.nombre,
+    email: clienteInsertado.email,
+    servicio: clienteInsertado.servicio,
+    monto: clienteInsertado.monto,
+    fecha_pago: clienteInsertado.fecha_inicio,
+    notas: clienteInsertado.notas || "",
+  },
+]);
 
-    if (error) {
-      alert("No se pudo guardar el cliente");
-      return;
-    }
+if (errorIngreso) {
+  alert("El cliente se guardó, pero no se pudo registrar el ingreso");
+}
 
-    setShowForm(false);
-    setForm({
-      nombre: "",
-      email: "",
-      servicio: "mensual",
-      fecha_inicio: toISODate(TODAY),
-      monto: 30,
-      duracion_dias: 30,
-      estado_manual: "activo",
-      deuda_restante: 0,
-      acceso_drive: false,
-      notas: "",
-    });
+setGuardando(false);
+
+setShowForm(false);
+setForm({
+  nombre: "",
+  email: "",
+  servicio: "mensual",
+  fecha_inicio: toISODate(TODAY),
+  monto: 30,
+  duracion_dias: 30,
+  estado_manual: "activo",
+  deuda_restante: 0,
+  acceso_drive: false,
+  notas: "",
+});
 
     fetchClientes();
   }
