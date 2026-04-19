@@ -8,12 +8,18 @@ const supabase = createClient(
 
 const TODAY = new Date();
 const GRACE_DAYS = 3;
+const CLASS_DAYS = 28;
 
 function toISODate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function parseISODate(dateString) {
+  if (!dateString) return null;
+  return new Date(`${dateString}T12:00:00`);
 }
 
 function addDays(dateString, days) {
@@ -24,11 +30,11 @@ function addDays(dateString, days) {
 
 function formatDate(dateString) {
   if (!dateString) return "-";
-  return new Intl.DateTimeFormat("es-AR").format(new Date(`${dateString}T12:00:00`));
+  return new Intl.DateTimeFormat("es-AR").format(parseISODate(dateString));
 }
 
 function monthKey(dateString) {
-  const d = new Date(`${dateString}T12:00:00`);
+  const d = parseISODate(dateString);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
@@ -62,27 +68,49 @@ function serviceDefaultDuration(value) {
   return 0;
 }
 
+function safeNumber(value) {
+  return Number(value || 0);
+}
+
+function isSameMonth(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+function classRangeLabel(fechaInicio) {
+  if (!fechaInicio) return "-";
+  const start = parseISODate(fechaInicio);
+  const end = addDays(fechaInicio, CLASS_DAYS - 1);
+
+  const startMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(start);
+  const endMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(end);
+
+  if (isSameMonth(start, end)) return startMonth;
+  return `${startMonth} / ${endMonth}`;
+}
+
 function resolveDueDate(client) {
+  if (client.servicio === "clases") return null;
   if (client.fecha_vencimiento) return client.fecha_vencimiento;
 
-  const duracion = Number(client.duracion_dias || 0);
-
-  if (client.servicio === "clases") return null;
+  const duracion = safeNumber(client.duracion_dias);
   if (!client.fecha_inicio || duracion <= 0) return null;
 
   return toISODate(addDays(client.fecha_inicio, duracion));
 }
 
 function computeClient(client) {
+  const isClases = client.servicio === "clases";
   const vencimiento = resolveDueDate(client);
 
   let estadoSistema = "activo";
   let dias = null;
 
-  if (client.estado_manual === "sacar") {
+  if (isClases) {
+    estadoSistema = "clases";
+  } else if (client.estado_manual === "sacar") {
     estadoSistema = "sacar";
   } else if (vencimiento) {
-    const dueDate = new Date(`${vencimiento}T12:00:00`);
+    const dueDate = parseISODate(vencimiento);
     dias = diffDays(TODAY, dueDate);
 
     if (TODAY > dueDate) {
@@ -93,10 +121,13 @@ function computeClient(client) {
 
   return {
     ...client,
+    isClases,
     vencimiento,
     dias,
-  duracion_dias: Number(client.duracion_dias || 0),
+    duracion_dias: safeNumber(client.duracion_dias),
     estadoSistema,
+    class_range_label: isClases ? classRangeLabel(client.fecha_inicio) : null,
+    class_end_date: isClases && client.fecha_inicio ? toISODate(addDays(client.fecha_inicio, CLASS_DAYS - 1)) : null,
   };
 }
 
@@ -119,6 +150,12 @@ function badgeStyle(status) {
   if (status === "vencido") {
     return { ...base, background: "#fee2e2", color: "#b91c1c", borderColor: "#fecaca" };
   }
+  if (status === "sacar") {
+    return { ...base, background: "#e2e8f0", color: "#0f172a", borderColor: "#cbd5e1" };
+  }
+  if (status === "clases") {
+    return { ...base, background: "#dbeafe", color: "#1d4ed8", borderColor: "#bfdbfe" };
+  }
   return { ...base, background: "#e2e8f0", color: "#0f172a", borderColor: "#cbd5e1" };
 }
 
@@ -132,7 +169,7 @@ function cardStyle() {
   };
 }
 
-function inputStyle() {
+function inputStyle(disabled = false) {
   return {
     width: "100%",
     padding: "12px 14px",
@@ -141,7 +178,9 @@ function inputStyle() {
     fontSize: 14,
     outline: "none",
     boxSizing: "border-box",
-    background: "#fff",
+    background: disabled ? "#f8fafc" : "#fff",
+    color: disabled ? "#64748b" : "#0f172a",
+    opacity: disabled ? 0.85 : 1,
   };
 }
 
@@ -174,12 +213,167 @@ function buttonStyle(dark = false) {
   };
 }
 
+function navButtonStyle(active) {
+  return {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: active ? "1px solid #0f172a" : "1px solid #e5e7eb",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: 14,
+    background: active ? "#0f172a" : "#fff",
+    color: active ? "#fff" : "#0f172a",
+  };
+}
+
 function tableStyle() {
   return {
     width: "100%",
     borderCollapse: "collapse",
     fontSize: 14,
   };
+}
+
+function money(value) {
+  return `USD ${safeNumber(value)}`;
+}
+
+function startOfCurrentMonth() {
+  return new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+}
+
+function endOfCurrentMonth() {
+  return new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
+}
+
+function buildDailySalesSeries(clientes) {
+  const end = endOfCurrentMonth();
+  const totalDays = end.getDate();
+  const rows = [];
+
+  for (let day = 1; day <= totalDays; day += 1) {
+    rows.push({
+      day,
+      label: String(day).padStart(2, "0"),
+      total: 0,
+      mensual: 0,
+      anual: 0,
+      clases: 0,
+      ventas: 0,
+    });
+  }
+
+  clientes.forEach((c) => {
+    if (!c.fecha_inicio) return;
+    const d = parseISODate(c.fecha_inicio);
+    if (!d) return;
+    if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
+
+    const row = rows[d.getDate() - 1];
+    const monto = safeNumber(c.monto);
+
+    row.total += monto;
+    row.ventas += 1;
+    row[c.servicio] += monto;
+  });
+
+  return rows;
+}
+
+function buildServiceBreakdown(clientes, onlyCurrentMonth = false) {
+  const base = {
+    mensual: 0,
+    anual: 0,
+    clases: 0,
+  };
+
+  clientes.forEach((c) => {
+    if (onlyCurrentMonth) {
+      const d = parseISODate(c.fecha_inicio);
+      if (!d) return;
+      if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
+    }
+
+    base[c.servicio] += safeNumber(c.monto);
+  });
+
+  return base;
+}
+
+function MetricCard({ title, value, sub }) {
+  return (
+    <div style={cardStyle()}>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
+      {sub ? <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function SimpleBarChart({ title, data, valueKey, labelKey = "label", emptyText = "Sin datos." }) {
+  const maxValue = Math.max(...data.map((r) => safeNumber(r[valueKey])), 0);
+
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      {!data.length || maxValue === 0 ? (
+        <div style={{ color: "#64748b" }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {data.map((row) => {
+            const value = safeNumber(row[valueKey]);
+            const pct = maxValue > 0 ? Math.max((value / maxValue) * 100, value > 0 ? 6 : 0) : 0;
+
+            return (
+              <div key={`${title}-${row[labelKey]}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+                  <span>{row[labelKey]}</span>
+                  <strong>{money(value)}</strong>
+                </div>
+                <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BreakdownCard({ title, breakdown }) {
+  const items = [
+    { key: "mensual", label: "Plan mensual" },
+    { key: "anual", label: "Plan anual" },
+    { key: "clases", label: "Clases" },
+  ];
+
+  const total = items.reduce((acc, item) => acc + safeNumber(breakdown[item.key]), 0);
+
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <div style={{ display: "grid", gap: 12 }}>
+        {items.map((item) => {
+          const value = safeNumber(breakdown[item.key]);
+          const pct = total > 0 ? Math.max((value / total) * 100, value > 0 ? 6 : 0) : 0;
+
+          return (
+            <div key={item.key}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+                <span>{item.label}</span>
+                <strong>{money(value)}</strong>
+              </div>
+              <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -192,6 +386,7 @@ export default function App() {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("todos");
   const [guardando, setGuardando] = useState(false);
+  const [view, setView] = useState("operativa");
   const [form, setForm] = useState({
     nombre: "",
     email: "",
@@ -283,16 +478,16 @@ export default function App() {
       if (c.estadoSistema === "activo") base.activos += 1;
       if (c.estadoSistema === "gracia") base.gracia += 1;
       if (c.estadoSistema === "sacar" || c.estadoSistema === "vencido") base.sacar += 1;
-      if (Number(c.deuda_restante || 0) > 0) base.deudores += 1;
+      if (safeNumber(c.deuda_restante) > 0) base.deudores += 1;
       if (c.servicio === "clases") base.clases += 1;
-      base.ingresos += Number(c.monto || 0);
+      base.ingresos += safeNumber(c.monto);
     });
 
     return base;
   }, [computed]);
 
   const deudores = useMemo(
-    () => computed.filter((c) => Number(c.deuda_restante || 0) > 0),
+    () => computed.filter((c) => safeNumber(c.deuda_restante) > 0),
     [computed]
   );
 
@@ -331,7 +526,7 @@ export default function App() {
       }
 
       const row = map.get(key);
-      const monto = Number(c.monto || 0);
+      const monto = safeNumber(c.monto);
 
       if (c.servicio === "mensual") {
         row.mensual += monto;
@@ -350,7 +545,28 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [computed]);
 
-  const maxTotal = Math.max(...resumenMensual.map((r) => r.total), 1);
+  const currentMonthClientes = useMemo(() => {
+    return computed.filter((c) => {
+      const d = parseISODate(c.fecha_inicio);
+      return d && d.getFullYear() === TODAY.getFullYear() && d.getMonth() === TODAY.getMonth();
+    });
+  }, [computed]);
+
+  const dashboardStats = useMemo(() => {
+    const ingresosMes = currentMonthClientes.reduce((acc, c) => acc + safeNumber(c.monto), 0);
+    const ventasMes = currentMonthClientes.length;
+    const breakdownMes = buildServiceBreakdown(computed, true);
+    const breakdownTotal = buildServiceBreakdown(computed, false);
+    const dailySeries = buildDailySalesSeries(computed);
+
+    return {
+      ingresosMes,
+      ventasMes,
+      breakdownMes,
+      breakdownTotal,
+      dailySeries,
+    };
+  }, [computed, currentMonthClientes]);
 
   async function guardarCliente() {
     if (!form.nombre.trim()) {
@@ -358,22 +574,24 @@ export default function App() {
       return;
     }
 
-    if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
+    const isClases = form.servicio === "clases";
+    const duracion = isClases ? 0 : safeNumber(form.duracion_dias);
+
+    if (!isClases && duracion <= 0) {
       alert("Falta la duración en días");
       return;
     }
 
     setGuardando(true);
 
-    const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
-
     const payload = {
       ...form,
-      monto: Number(form.monto || 0),
+      monto: safeNumber(form.monto),
       duracion_dias: duracion,
-      deuda_restante: Number(form.deuda_restante || 0),
+      deuda_restante: safeNumber(form.deuda_restante),
+      estado_manual: isClases ? "activo" : form.estado_manual,
       fecha_vencimiento:
-        form.servicio === "clases" || duracion <= 0
+        isClases || duracion <= 0
           ? null
           : toISODate(addDays(form.fecha_inicio, duracion)),
     };
@@ -508,6 +726,8 @@ export default function App() {
     );
   }
 
+  const isClasesForm = form.servicio === "clases";
+
   return (
     <div style={{ minHeight: "100vh", background: "#f5f3ee", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 28 }}>
@@ -526,7 +746,15 @@ export default function App() {
             <div style={{ color: "#64748b", marginTop: 6 }}>Panel de gestión comercial y operativa.</div>
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button style={navButtonStyle(view === "operativa")} onClick={() => setView("operativa")}>
+              Operativa
+            </button>
+
+            <button style={navButtonStyle(view === "dashboard")} onClick={() => setView("dashboard")}>
+              Dashboard
+            </button>
+
             <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
               {showForm ? "Cerrar" : "+ Nuevo cliente"}
             </button>
@@ -546,327 +774,61 @@ export default function App() {
             </button>
           </div>
         </div>
+    {view === "operativa" && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 24 }}>
+              {[
+                ["Activos", resumen.activos],
+                ["En gracia", resumen.gracia],
+                ["Para sacar", resumen.sacar],
+                ["Deudores", resumen.deudores],
+                ["Clases", resumen.clases],
+                ["Ingresos", money(resumen.ingresos)],
+              ].map(([label, value]) => (
+                <div key={label} style={cardStyle()}>
+                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
+                </div>
+              ))}
+            </div>
 
-        {showForm && (
-          <div style={{ ...cardStyle(), marginBottom: 24 }}>
-            <h3 style={{ marginTop: 0 }}>Alta de cliente</h3>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Nombre</label>
-                <input
-                  style={inputStyle()}
-                  placeholder="Nombre"
-                  value={form.nombre}
-                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                />
+            <div style={{ ...cardStyle(), marginBottom: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Base operativa</h3>
+                  <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
+                    {loading ? "Cargando datos..." : "Gestión central de clientes, renovaciones y clases."}
+                  </div>
+                </div>
               </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Email</label>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                 <input
-                  style={inputStyle()}
-                  placeholder="Email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  style={{ ...inputStyle(), maxWidth: 340 }}
+                  placeholder="Buscar cliente o email"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
                 />
-              </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Servicio</label>
                 <select
-                  style={inputStyle()}
-                  value={form.servicio}
-                  onChange={(e) => {
-                    const servicio = e.target.value;
-                    setForm({
-                      ...form,
-                      servicio,
-                      monto: serviceDefaultAmount(servicio),
-                      duracion_dias: serviceDefaultDuration(servicio),
-                    });
-                  }}
+                  style={{ ...inputStyle(), maxWidth: 220 }}
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
                 >
-                  <option value="mensual">Plan Inversor Mensual</option>
-                  <option value="anual">Plan Inversor Anual</option>
+                  <option value="todos">Todos</option>
+                  <option value="mensual">Mensual</option>
+                  <option value="anual">Anual</option>
                   <option value="clases">Clases</option>
-                </select>
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Fecha de inicio</label>
-                <input
-                  style={inputStyle()}
-                  type="date"
-                  value={form.fecha_inicio}
-                  onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Monto</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Monto"
-                  value={form.monto}
-                  onChange={(e) => setForm({ ...form, monto: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Duración (días)</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Duración en días"
-                  value={form.duracion_dias}
-                  onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Estado</label>
-                <select
-                  style={inputStyle()}
-                  value={form.estado_manual}
-                  onChange={(e) => setForm({ ...form, estado_manual: e.target.value })}
-                >
-                  <option value="activo">Activo</option>
+                  <option value="gracia">En gracia</option>
                   <option value="sacar">Sacar</option>
                 </select>
               </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Deuda restante</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Deuda restante"
-                  value={form.deuda_restante}
-                  onChange={(e) => setForm({ ...form, deuda_restante: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle(true)}>
-                <label style={labelStyle()}>Notas</label>
-                <input
-                  style={inputStyle()}
-                  placeholder="Notas"
-                  value={form.notas}
-                  onChange={(e) => setForm({ ...form, notas: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-              <button style={buttonStyle(true)} onClick={guardarCliente}>
-                {guardando ? "Guardando..." : "Guardar cliente"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 24 }}>
-          {[
-            ["Activos", resumen.activos],
-            ["En gracia", resumen.gracia],
-            ["Para sacar", resumen.sacar],
-            ["Deudores", resumen.deudores],
-            ["Clases", resumen.clases],
-            ["Ingresos", `USD ${resumen.ingresos}`],
-          ].map(([label, value]) => (
-            <div key={label} style={cardStyle()}>
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{label}</div>
-              <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ ...cardStyle(), marginBottom: 24 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 16,
-              alignItems: "center",
-              flexWrap: "wrap",
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0 }}>Base operativa</h3>
-              <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
-                {loading ? "Cargando datos..." : "Gestión central de clientes, renovaciones y clases."}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-            <input
-              style={{ ...inputStyle(), maxWidth: 340 }}
-              placeholder="Buscar cliente o email"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-
-            <select style={{ ...inputStyle(), maxWidth: 220 }} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="mensual">Mensual</option>
-              <option value="anual">Anual</option>
-              <option value="clases">Clases</option>
-              <option value="gracia">En gracia</option>
-              <option value="sacar">Sacar</option>
-            </select>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle()}>
-              <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  {["Cliente", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c) => (
-                  <tr key={c.id}>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? c.dias : "-"}</td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span>
-                    </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <select style={inputStyle()} value={c.estado_manual} onChange={(e) => cambiarEstado(c.id, e.target.value)}>
-                        <option value="activo">Activo</option>
-                        <option value="sacar">Sacar</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <button
-                        style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                        onClick={() => {
-                          if (confirm("¿Eliminar cliente?")) {
-                            eliminarCliente(c.id);
-                          }
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {!filtered.length && !loading && (
-              <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No hay resultados.</div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Vencimientos</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Cliente", "Servicio", "Vence", "Días", "Estado"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {vencimientos.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? c.dias : "-"}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        <span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Deudores</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Cliente", "Servicio", "Pagado", "Resta", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {deudores.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.monto}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.deuda_restante}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Clases</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Alumno", "Inicio", "Mes", "Monto", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clases.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", textTransform: "capitalize" }}>
-                        {monthLabel(monthKey(c.fecha_inicio))}
-                      </td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.monto}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
-            <div style={cardStyle()}>
-              <h3 style={{ marginTop: 0 }}>Resumen mensual</h3>
               <div style={{ overflowX: "auto" }}>
                 <table style={tableStyle()}>
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
-                      {["Mes", "Mensual", "Anual", "Clases", "Total"].map((h) => (
+                      {["Cliente", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
                         <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
                           {h}
                         </th>
@@ -874,57 +836,206 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {resumenMensual.map((r) => (
-                      <tr key={r.key}>
-                        <td
-                          style={{
-                            padding: 12,
-                            borderBottom: "1px solid #e5e7eb",
-                            fontWeight: 700,
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {monthLabel(r.key)}
+                    {filtered.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          {c.vencimiento ? formatDate(c.vencimiento) : "-"}
                         </td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.mensual}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.anual}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.clases}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 800 }}>USD {r.total}</td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          {c.vencimiento ? c.dias : "-"}
+                        </td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          <span style={badgeStyle(c.estadoSistema)}>{String(c.estadoSistema).toUpperCase()}</span>
+                        </td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          {c.servicio === "clases" ? (
+                            <span style={{ color: "#64748b", fontWeight: 600 }}>No aplica</span>
+                          ) : (
+                            <select
+                              style={inputStyle()}
+                              value={c.estado_manual}
+                              onChange={(e) => cambiarEstado(c.id, e.target.value)}
+                            >
+                              <option value="activo">Activo</option>
+                              <option value="sacar">Sacar</option>
+                            </select>
+                          )}
+                        </td>
+                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                          <button
+                            style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                            onClick={() => {
+                              if (confirm("¿Eliminar cliente?")) {
+                                eliminarCliente(c.id);
+                              }
+                            }}
+                          >
+                            🗑
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+
+                {!filtered.length && !loading && (
+                  <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+                    No hay resultados.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div style={cardStyle()}>
-              <h3 style={{ marginTop: 0 }}>Vista rápida</h3>
-              <div style={{ display: "grid", gap: 16 }}>
-                {resumenMensual.map((r) => {
-                  const pct = Math.max((r.total / maxTotal) * 100, 6);
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
+              <div style={cardStyle()}>
+                <h3 style={{ marginTop: 0 }}>Vencimientos</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle()}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Cliente", "Servicio", "Vence", "Días", "Estado"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vencimientos.map((c) => (
+                        <tr key={c.id}>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {c.vencimiento ? formatDate(c.vencimiento) : "-"}
+                          </td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {c.vencimiento ? c.dias : "-"}
+                          </td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            <span style={badgeStyle(c.estadoSistema)}>{String(c.estadoSistema).toUpperCase()}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-                  return (
-                    <div key={r.key}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
-                        <span style={{ textTransform: "capitalize" }}>{monthLabel(r.key)}</span>
-                        <strong>USD {r.total}</strong>
-                      </div>
+              <div style={cardStyle()}>
+                <h3 style={{ marginTop: 0 }}>Deudores</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle()}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Cliente", "Servicio", "Pagado", "Resta", "Notas"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deudores.map((c) => (
+                        <tr key={c.id}>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{money(c.monto)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{money(c.deuda_restante)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-                      <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
-                      </div>
+              <div style={cardStyle()}>
+                <h3 style={{ marginTop: 0 }}>Clases</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle()}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Alumno", "Inicio", "Tramo", "Fin estimado", "Monto", "Notas"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clases.map((c) => (
+                        <tr key={c.id}>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", textTransform: "capitalize" }}>
+                            {c.class_range_label || "-"}
+                          </td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {c.class_end_date ? formatDate(c.class_end_date) : "-"}
+                          </td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{money(c.monto)}</td>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
+              <div style={cardStyle()}>
+                <h3 style={{ marginTop: 0 }}>Resumen mensual</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={tableStyle()}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        {["Mes", "Mensual", "Anual", "Clases", "Total"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resumenMensual.map((r) => (
+                        <tr key={r.key}>
+                          <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
+                            {monthLabel(r.key)}
+                          </td>
+                          <td style={{ padding: 12 }}>{money(r.mensual)}</td>
+                          <td style={{ padding: 12 }}>{money(r.anual)}</td>
+                          <td style={{ padding: 12 }}>{money(r.clases)}</td>
+                          <td style={{ padding: 12, fontWeight: 800 }}>{money(r.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-                      <div style={{ marginTop: 6, color: "#64748b", fontSize: 12 }}>
-                        Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}
+              <div style={cardStyle()}>
+                <h3 style={{ marginTop: 0 }}>Vista rápida</h3>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {resumenMensual.map((r) => {
+                    const max = Math.max(...resumenMensual.map((x) => x.total), 1);
+                    const pct = Math.max((r.total / max) * 100, 6);
+
+                    return (
+                      <div key={r.key}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span>{monthLabel(r.key)}</span>
+                          <strong>{money(r.total)}</strong>
+                        </div>
+
+                        <div style={{ height: 10, background: "#e5e7eb", borderRadius: 999 }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+          </>
+        )}
