@@ -508,12 +508,6 @@ useEffect(() => {
   setVencimientosPage(1);
 }, [computed]);
   
-  useEffect(() => {
-  if (vencimientosPage > vencimientosTotalPages) {
-    setVencimientosPage(vencimientosTotalPages);
-  }
-}, [vencimientosPage, vencimientosTotalPages]);
-
 const resumen = useMemo(() => {
   const base = {
     activos: 0,
@@ -558,6 +552,11 @@ const resumen = useMemo(() => {
   1,
   Math.ceil(vencimientos.length / VENCIMIENTOS_PAGE_SIZE)
 );
+  useEffect(() => {
+  if (vencimientosPage > vencimientosTotalPages) {
+    setVencimientosPage(vencimientosTotalPages);
+  }
+}, [vencimientosPage, vencimientosTotalPages]);
 
 const vencimientosRows = useMemo(() => {
   const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
