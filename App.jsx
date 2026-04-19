@@ -561,6 +561,29 @@ const computed = useMemo(() => clientes.map(computeClient), [clientes]);
 
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }, [ingresos]);
+  const vencimientosCriticos = useMemo(() => {
+  const hoyList = [];
+  const graciaList = [];
+  const vencidosList = [];
+
+  computed.forEach((c) => {
+    if (!c.vencimiento) return;
+
+    if (c.estadoSistema === "activo" && c.dias <= 0) {
+      hoyList.push(c);
+    } else if (c.estadoSistema === "gracia") {
+      graciaList.push(c);
+    } else if (c.estadoSistema === "vencido") {
+      vencidosList.push(c);
+    }
+  });
+
+  return {
+    hoy: hoyList,
+    gracia: graciaList,
+    vencidos: vencidosList,
+  };
+}, [computed]);
 const currentMonthIngresos = useMemo(() => {
   return ingresos.filter((i) => {
     const d = parseISODate(i.fecha_pago);
@@ -1406,7 +1429,188 @@ if (vencimientoActual) {
             </div>
           ))}
         </div>
+        <div style={{ ...cardStyle(), marginBottom: 24 }}>
+  <h3 style={{ marginTop: 0 }}>Vencimientos críticos</h3>
 
+  <div style={{ display: "grid", gap: 16 }}>
+    <div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>
+        Hoy / por vencer ({vencimientosCriticos.hoy.length})
+      </div>
+
+      {vencimientosCriticos.hoy.length ? (
+        vencimientosCriticos.hoy.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              padding: "8px 0",
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            <div>
+              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+            </div>
+
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Renovar cliente con el mismo plan?")) {
+                    renovarRapido(c);
+                  }
+                }}
+              >
+                ✔
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => abrirRenovar(c)}
+              >
+                ✏️
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Eliminar cliente?")) {
+                    eliminarCliente(c.id);
+                  }
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+      )}
+    </div>
+
+    <div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>
+        En gracia ({vencimientosCriticos.gracia.length})
+      </div>
+
+      {vencimientosCriticos.gracia.length ? (
+        vencimientosCriticos.gracia.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              padding: "8px 0",
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            <div>
+              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+            </div>
+
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Renovar cliente con el mismo plan?")) {
+                    renovarRapido(c);
+                  }
+                }}
+              >
+                ✔
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => abrirRenovar(c)}
+              >
+                ✏️
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Eliminar cliente?")) {
+                    eliminarCliente(c.id);
+                  }
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+      )}
+    </div>
+
+    <div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>
+        Vencidos ({vencimientosCriticos.vencidos.length})
+      </div>
+
+      {vencimientosCriticos.vencidos.length ? (
+        vencimientosCriticos.vencidos.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              padding: "8px 0",
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            <div>
+              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+            </div>
+
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Renovar cliente con el mismo plan?")) {
+                    renovarRapido(c);
+                  }
+                }}
+              >
+                ✔
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => abrirRenovar(c)}
+              >
+                ✏️
+              </button>
+
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Eliminar cliente?")) {
+                    eliminarCliente(c.id);
+                  }
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+      )}
+    </div>
+  </div>
+</div>
         <div style={{ ...cardStyle(), marginBottom: 24 }}>
           <div
             style={{
