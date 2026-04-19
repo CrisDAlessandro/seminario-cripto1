@@ -376,6 +376,8 @@ export default function App() {
   const [view, setView] = useState("operativa");
   const [showRenovar, setShowRenovar] = useState(false);
   const [renovando, setRenovando] = useState(false);
+  const [basePage, setBasePage] = useState(1);
+  const BASE_PAGE_SIZE = 10;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
     nombre: "",
@@ -467,40 +469,55 @@ useEffect(() => {
 const computed = useMemo(() => clientes.map(computeClient), [clientes]);
 
   const filtered = useMemo(() => {
-    return computed.filter((c) => {
-      const text = `${c.nombre || ""} ${c.email || ""}`.toLowerCase();
-      const okBusqueda = text.includes(busqueda.toLowerCase());
-      const okFiltro =
-        filtro === "todos" ||
-        c.servicio === filtro ||
-        c.estadoSistema === filtro;
+  return computed.filter((c) => {
+    const text = `${c.nombre || ""} ${c.email || ""}`.toLowerCase();
+    const okBusqueda = text.includes(busqueda.toLowerCase());
+    const okFiltro =
+      filtro === "todos" ||
+      c.servicio === filtro ||
+      c.estadoSistema === filtro;
 
-      return okBusqueda && okFiltro;
-    });
-  }, [computed, busqueda, filtro]);
+    return okBusqueda && okFiltro;
+  });
+}, [computed, busqueda, filtro]);
+const baseTotalPages = Math.max(1, Math.ceil(filtered.length / BASE_PAGE_SIZE));
 
-  const resumen = useMemo(() => {
-    const base = {
-      activos: 0,
-      gracia: 0,
-      sacar: 0,
-      deudores: 0,
-      clases: 0,
-      ingresos: 0,
-    };
+const baseOperativaRows = useMemo(() => {
+  const start = (basePage - 1) * BASE_PAGE_SIZE;
+  return filtered.slice(start, start + BASE_PAGE_SIZE);
+}, [filtered, basePage]);
 
-    computed.forEach((c) => {
-      if (c.estadoSistema === "activo") base.activos += 1;
-      if (c.estadoSistema === "gracia") base.gracia += 1;
-      if (c.estadoSistema === "sacar" || c.estadoSistema === "vencido") base.sacar += 1;
-      if (Number(c.deuda_restante || 0) > 0) base.deudores += 1;
-      if (c.servicio === "clases") base.clases += 1;
-      base.ingresos += Number(c.monto || 0);
-    });
+useEffect(() => {
+  setBasePage(1);
+}, [busqueda, filtro]);
 
-    return base;
-  }, [computed]);
+useEffect(() => {
+  if (basePage > baseTotalPages) {
+    setBasePage(baseTotalPages);
+  }
+}, [basePage, baseTotalPages]);
 
+const resumen = useMemo(() => {
+  const base = {
+    activos: 0,
+    gracia: 0,
+    sacar: 0,
+    deudores: 0,
+    clases: 0,
+    ingresos: 0,
+  };
+
+  computed.forEach((c) => {
+    if (c.estadoSistema === "activo") base.activos += 1;
+    if (c.estadoSistema === "gracia") base.gracia += 1;
+    if (c.estadoSistema === "sacar" || c.estadoSistema === "vencido") base.sacar += 1;
+    if (Number(c.deuda_restante || 0) > 0) base.deudores += 1;
+    if (c.servicio === "clases") base.clases += 1;
+    base.ingresos += Number(c.monto || 0);
+  });
+
+  return base;
+}, [computed]);
   const deudores = useMemo(
     () => computed.filter((c) => Number(c.deuda_restante || 0) > 0),
     [computed]
@@ -1751,7 +1768,7 @@ if (vencimientoActual) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
+                {baseOperativaRows.map((c) => (
   <tr key={c.id}>
     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
       {c.nombre}
@@ -1847,6 +1864,50 @@ if (vencimientoActual) {
             {!filtered.length && !loading && (
               <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No hay resultados.</div>
             )}
+            {filtered.length > 0 && (
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      marginTop: 16,
+      flexWrap: "wrap",
+    }}
+  >
+    <div style={{ color: "#64748b", fontSize: 14 }}>
+      Página {basePage} de {baseTotalPages}
+    </div>
+
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button
+        style={buttonStyle(false)}
+        onClick={() => setBasePage((p) => Math.max(1, p - 1))}
+        disabled={basePage === 1}
+      >
+        Anterior
+      </button>
+
+      {Array.from({ length: baseTotalPages }, (_, i) => i + 1).map((page) => (
+        <button
+          key={page}
+          style={page === basePage ? buttonStyle(true) : buttonStyle(false)}
+          onClick={() => setBasePage(page)}
+        >
+          {page}
+        </button>
+      ))}
+
+      <button
+        style={buttonStyle(false)}
+        onClick={() => setBasePage((p) => Math.min(baseTotalPages, p + 1))}
+        disabled={basePage === baseTotalPages}
+      >
+        Siguiente
+      </button>
+    </div>
+  </div>
+)}
           </div>
         </div>
 
