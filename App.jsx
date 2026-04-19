@@ -522,43 +522,45 @@ const computed = useMemo(() => clientes.map(computeClient), [clientes]);
   }, [computed]);
 
   const resumenMensual = useMemo(() => {
-    const map = new Map();
+  const map = new Map();
 
-    computed.forEach((c) => {
-      const key = monthKey(c.fecha_inicio);
+  ingresos.forEach((i) => {
+    if (!i.fecha_pago) return;
 
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          mensual: 0,
-          anual: 0,
-          clases: 0,
-          total: 0,
-          ventasMensual: 0,
-          ventasAnual: 0,
-          ventasClases: 0,         
-        });
-      }
+    const key = monthKey(i.fecha_pago);
 
-      const row = map.get(key);
-      const monto = Number(c.monto || 0);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        mensual: 0,
+        anual: 0,
+        clases: 0,
+        total: 0,
+        ventasMensual: 0,
+        ventasAnual: 0,
+        ventasClases: 0,
+      });
+    }
 
-      if (c.servicio === "mensual") {
-        row.mensual += monto;
-        row.ventasMensual += 1;
-      } else if (c.servicio === "anual") {
-        row.anual += monto;
-        row.ventasAnual += 1;
-      } else {
-        row.clases += monto;
-        row.ventasClases += 1;
-      }
+    const row = map.get(key);
+    const monto = Number(i.monto || 0);
 
-      row.total += monto;
-    });
+    if (i.servicio === "mensual") {
+      row.mensual += monto;
+      row.ventasMensual += 1;
+    } else if (i.servicio === "anual") {
+      row.anual += monto;
+      row.ventasAnual += 1;
+    } else {
+      row.clases += monto;
+      row.ventasClases += 1;
+    }
 
-    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
-  }, [computed]);
+    row.total += monto;
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+}, [ingresos]);
 const currentMonthIngresos = useMemo(() => {
   return ingresos.filter((i) => {
     const d = parseISODate(i.fecha_pago);
