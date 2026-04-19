@@ -2099,14 +2099,14 @@ if (vencimientoActual) {
     </button>
 
     {Array.from({ length: deudoresTotalPages }, (_, i) => i + 1).map((page) => (
-      <button
-        key={page}
-        style={page === deudoresPage ? buttonStyle(true) : buttonStyle(false)}
-        onClick={() => setDeudoresPage(page)}
-      >
-        {page}
-      </button>
-    ))}
+  <button
+    key={page}
+    style={page === deudoresPage ? buttonStyle(true) : buttonStyle(false)}
+    onClick={() => setDeudoresPage(page)}
+  >
+    {page}
+  </button>
+))}
 
     <button
       style={buttonStyle(false)}
