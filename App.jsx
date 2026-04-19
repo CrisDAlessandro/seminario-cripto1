@@ -374,6 +374,19 @@ export default function App() {
   const [filtro, setFiltro] = useState("todos");
   const [guardando, setGuardando] = useState(false);
   const [view, setView] = useState("operativa");
+  const [showRenovar, setShowRenovar] = useState(false);
+  const [renovando, setRenovando] = useState(false);
+  const [renovarForm, setRenovarForm] = useState({
+    id: null,
+    nombre: "",
+    email: "",
+    servicio: "mensual",
+    fecha_inicio: toISODate(TODAY),
+    monto: 30,
+    duracion_dias: 30,
+    deuda_restante: 0,
+    notas: "",
+  });
   const [form, setForm] = useState({
     nombre: "",
     email: "",
@@ -386,7 +399,7 @@ export default function App() {
     acceso_drive: false,
     notas: "",
   });
-
+  
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user || null);
@@ -725,6 +738,26 @@ async function actualizarEmail(id, nuevoEmail) {
 
   fetchClientes();
 }
+
+function abrirRenovar(cliente) {
+  setRenovarForm({
+    id: cliente.id,
+    nombre: cliente.nombre || "",
+    email: cliente.email || "",
+    servicio: cliente.servicio || "mensual",
+    fecha_inicio: toISODate(TODAY),
+    monto: safeNumber(cliente.monto),
+    duracion_dias:
+      cliente.servicio === "clases"
+        ? 0
+        : safeNumber(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio)),
+    deuda_restante: safeNumber(cliente.deuda_restante),
+    notas: cliente.notas || "",
+  });
+
+  setShowRenovar(true);
+}
+ 
   if (!user) {
     return (
       <div
@@ -973,6 +1006,92 @@ async function actualizarEmail(id, nuevoEmail) {
             </div>
           </div>
         )}
+ {showRenovar && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(15,23,42,0.45)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      zIndex: 1000,
+    }}
+  >
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 820,
+        background: "#fff",
+        borderRadius: 18,
+        padding: 24,
+        boxShadow: "0 20px 60px rgba(15,23,42,0.25)",
+        border: "1px solid #e5e7eb",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Renovar cliente</h3>
+          <div style={{ color: "#64748b", fontSize: 14 }}>
+            Actualizar plan y registrar nuevo ingreso
+          </div>
+        </div>
+
+        <button onClick={() => setShowRenovar(false)} style={buttonStyle(false)}>
+          Cerrar
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <input style={inputStyle()} value={renovarForm.nombre} onChange={(e) => setRenovarForm({ ...renovarForm, nombre: e.target.value })} />
+        <input style={inputStyle()} value={renovarForm.email} onChange={(e) => setRenovarForm({ ...renovarForm, email: e.target.value })} />
+
+        <select
+          style={inputStyle()}
+          value={renovarForm.servicio}
+          onChange={(e) => {
+            const servicio = e.target.value;
+            setRenovarForm({
+              ...renovarForm,
+              servicio,
+              monto: serviceDefaultAmount(servicio),
+              duracion_dias: serviceDefaultDuration(servicio),
+            });
+          }}
+        >
+          <option value="mensual">Mensual</option>
+          <option value="anual">Anual</option>
+          <option value="clases">Clases</option>
+        </select>
+
+        <input type="date" style={inputStyle()} value={renovarForm.fecha_inicio} onChange={(e) => setRenovarForm({ ...renovarForm, fecha_inicio: e.target.value })} />
+        <input type="number" style={inputStyle()} value={renovarForm.monto} onChange={(e) => setRenovarForm({ ...renovarForm, monto: e.target.value })} />
+
+        {renovarForm.servicio !== "clases" && (
+          <input type="number" style={inputStyle()} value={renovarForm.duracion_dias} onChange={(e) => setRenovarForm({ ...renovarForm, duracion_dias: e.target.value })} />
+        )}
+
+        <input type="number" style={inputStyle()} value={renovarForm.deuda_restante} onChange={(e) => setRenovarForm({ ...renovarForm, deuda_restante: e.target.value })} />
+
+        <input style={inputStyle()} value={renovarForm.notas} onChange={(e) => setRenovarForm({ ...renovarForm, notas: e.target.value })} />
+      </div>
+
+      <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <button onClick={() => setShowRenovar(false)} style={buttonStyle(false)}>
+          Cancelar
+        </button>
+
+        <button
+          style={buttonStyle(true)}
+          onClick={() => alert("Guardar renovación siguiente paso")}
+        >
+          Confirmar renovación
+        </button>
+      </div>
+    </div>
+  </div>
+)}       
 {view === "dashboard" && (
   <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
@@ -1179,7 +1298,7 @@ async function actualizarEmail(id, nuevoEmail) {
    <button
   title="Renovar cliente"
   style={{ ...buttonStyle(true), padding: "8px 12px" }}
-  onClick={() => alert("Renovar cliente (siguiente paso)")}
+  onClick={() => abrirRenovar(c)}
 >
   ✔
 </button>
