@@ -171,7 +171,9 @@ function MetricCard({ title, value, sub }) {
 }
 
 function SimpleBarChart({ title, data, valueKey, labelKey = "label", emptyText = "Sin datos." }) {
-  const maxValue = Math.max(...data.map((r) => safeNumber(r[valueKey])), 0);
+  const maxValue = data.length
+  ? Math.max(...data.map((r) => safeNumber(r[valueKey])))
+  : 0;
 
   return (
     <div style={cardStyle()}>
@@ -703,7 +705,9 @@ const dashboardStats = useMemo(() => {
   };
 }, [ingresos, currentMonthIngresos]);
   
-  const maxTotal = Math.max(...resumenMensual.map((r) => r.total), 1);
+  const maxTotal = resumenMensual.length
+  ? Math.max(...resumenMensual.map((r) => r.total))
+  : 1;
 
   async function guardarCliente() {
   const nombre = form.nombre.trim();
