@@ -367,6 +367,7 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [clientes, setClientes] = useState([]);
+  const [ingresos, setIngresos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -414,28 +415,43 @@ export default function App() {
   }
 
   async function fetchClientes() {
-    setLoading(true);
+  setLoading(true);
 
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .order("id", { ascending: false });
+  const { data, error } = await supabase
+    .from("clientes")
+    .select("*")
+    .order("id", { ascending: false });
 
-    if (error) {
-      alert("No se pudieron cargar los clientes");
-      setLoading(false);
-      return;
-    }
-
-    setClientes(data || []);
+  if (error) {
+    alert("No se pudieron cargar los clientes");
     setLoading(false);
+    return;
   }
 
-  useEffect(() => {
-    fetchClientes();
-  }, []);
+  setClientes(data || []);
+  setLoading(false);
+}
 
-  const computed = useMemo(() => clientes.map(computeClient), [clientes]);
+async function fetchIngresos() {
+  const { data, error } = await supabase
+    .from("ingresos")
+    .select("*")
+    .order("fecha_pago", { ascending: false });
+
+  if (error) {
+    alert("No se pudieron cargar los ingresos");
+    return;
+  }
+
+  setIngresos(data || []);
+}
+
+useEffect(() => {
+  fetchClientes();
+  fetchIngresos();
+}, []);
+
+const computed = useMemo(() => clientes.map(computeClient), [clientes]);
 
   const filtered = useMemo(() => {
     return computed.filter((c) => {
@@ -530,19 +546,32 @@ export default function App() {
 
     return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [computed]);
-const currentMonthClientes = useMemo(() => {
-  return computed.filter((c) => {
-    const d = parseISODate(c.fecha_inicio);
+const currentMonthIngresos = useMemo(() => {
+  return ingresos.filter((i) => {
+    const d = parseISODate(i.fecha_pago);
     return d && d.getFullYear() === TODAY.getFullYear() && d.getMonth() === TODAY.getMonth();
   });
-}, [computed]);
+}, [ingresos]);
 
 const dashboardStats = useMemo(() => {
-  const ingresosMes = currentMonthClientes.reduce((acc, c) => acc + safeNumber(c.monto), 0);
-  const ventasMes = currentMonthClientes.length;
-  const breakdownMes = buildServiceBreakdown(computed, true);
-  const breakdownTotal = buildServiceBreakdown(computed, false);
-  const dailySeries = buildDailySalesSeries(computed);
+  const ingresosMes = currentMonthIngresos.reduce((acc, i) => acc + safeNumber(i.monto), 0);
+  const ventasMes = currentMonthIngresos.length;
+
+  const ingresosMesNormalizados = currentMonthIngresos.map((i) => ({
+    servicio: i.servicio,
+    monto: i.monto,
+    fecha_inicio: i.fecha_pago,
+  }));
+
+  const ingresosTotalesNormalizados = ingresos.map((i) => ({
+    servicio: i.servicio,
+    monto: i.monto,
+    fecha_inicio: i.fecha_pago,
+  }));
+
+  const breakdownMes = buildServiceBreakdown(ingresosMesNormalizados, false);
+  const breakdownTotal = buildServiceBreakdown(ingresosTotalesNormalizados, false);
+  const dailySeries = buildDailySalesSeries(ingresosTotalesNormalizados);
 
   return {
     ingresosMes,
@@ -551,7 +580,7 @@ const dashboardStats = useMemo(() => {
     breakdownTotal,
     dailySeries,
   };
-}, [computed, currentMonthClientes]);
+}, [ingresos, currentMonthIngresos]);
   
   const maxTotal = Math.max(...resumenMensual.map((r) => r.total), 1);
 
@@ -579,75 +608,71 @@ const dashboardStats = useMemo(() => {
     return;
   }
 
-    if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
-      alert("Falta la duración en días");
-      return;
-    }
+  setGuardando(true);
 
-    setGuardando(true);
+  const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
 
-    const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
+  const payload = {
+    ...form,
+    nombre,
+    email,
+    estado_manual: "activo",
+    monto: Number(form.monto || 0),
+    duracion_dias: duracion,
+    deuda_restante: Number(form.deuda_restante || 0),
+    fecha_vencimiento:
+      form.servicio === "clases" || duracion <= 0
+        ? null
+        : toISODate(addDays(form.fecha_inicio, duracion)),
+  };
 
-    const payload = {
-  ...form,
-  nombre,
-  email,
-  estado_manual: "activo",
-  monto: Number(form.monto || 0),
-  duracion_dias: duracion,
-  deuda_restante: Number(form.deuda_restante || 0),
-  fecha_vencimiento:
-    form.servicio === "clases" || duracion <= 0
-      ? null
-      : toISODate(addDays(form.fecha_inicio, duracion)),
-};
+  const { data: clienteInsertado, error } = await supabase
+    .from("clientes")
+    .insert([payload])
+    .select()
+    .single();
 
-    const { data: clienteInsertado, error } = await supabase
-  .from("clientes")
-  .insert([payload])
-  .select()
-  .single();
-
-if (error) {
-  setGuardando(false);
-  alert("No se pudo guardar el cliente");
-  return;
-}
-const { error: errorIngreso } = await supabase.from("ingresos").insert([
-  {
-    cliente_id: clienteInsertado.id,
-    cliente_nombre: clienteInsertado.nombre,
-    email: clienteInsertado.email,
-    servicio: clienteInsertado.servicio,
-    monto: clienteInsertado.monto,
-    fecha_pago: clienteInsertado.fecha_inicio,
-    notas: clienteInsertado.notas || "",
-  },
-]);
-
-if (errorIngreso) {
-  alert("Error ingreso: " + errorIngreso.message);
-}
-
-setGuardando(false);
-
-setShowForm(false);
-setForm({
-  nombre: "",
-  email: "",
-  servicio: "mensual",
-  fecha_inicio: toISODate(TODAY),
-  monto: 30,
-  duracion_dias: 30,
-  estado_manual: "activo",
-  deuda_restante: 0,
-  acceso_drive: false,
-  notas: "",
-});
-
-    fetchClientes();
+  if (error) {
+    setGuardando(false);
+    alert("No se pudo guardar el cliente");
+    return;
   }
 
+  const { error: errorIngreso } = await supabase.from("ingresos").insert([
+    {
+      cliente_id: clienteInsertado.id,
+      cliente_nombre: clienteInsertado.nombre,
+      email: clienteInsertado.email,
+      servicio: clienteInsertado.servicio,
+      monto: clienteInsertado.monto,
+      fecha_pago: clienteInsertado.fecha_inicio,
+      notas: clienteInsertado.notas || "",
+    },
+  ]);
+
+  if (errorIngreso) {
+    alert("Error ingreso: " + errorIngreso.message);
+  }
+
+  setGuardando(false);
+
+  setShowForm(false);
+  setForm({
+    nombre: "",
+    email: "",
+    servicio: "mensual",
+    fecha_inicio: toISODate(TODAY),
+    monto: 30,
+    duracion_dias: 30,
+    estado_manual: "activo",
+    deuda_restante: 0,
+    acceso_drive: false,
+    notas: "",
+  });
+
+  fetchClientes();
+  fetchIngresos();
+}
   async function eliminarCliente(id) {
   const { error } = await supabase.from("clientes").delete().eq("id", id);
 
@@ -657,6 +682,7 @@ setForm({
   }
 
   fetchClientes();
+  fetchIngresos();
 }
 
   async function cambiarEstado(id, value) {
