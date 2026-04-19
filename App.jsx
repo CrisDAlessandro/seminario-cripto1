@@ -841,6 +841,58 @@ function abrirRenovar(cliente) {
   fetchClientes();
   fetchIngresos();
 }
+  async function renovarRapido(cliente) {
+  const fechaRenovacion = toISODate(TODAY);
+  const duracion =
+    cliente.servicio === "clases"
+      ? 0
+      : Number(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio));
+
+  const payload = {
+    nombre: cliente.nombre || "",
+    email: (cliente.email || "").trim().toLowerCase(),
+    servicio: cliente.servicio,
+    fecha_inicio: fechaRenovacion,
+    monto: Number(cliente.monto || 0),
+    duracion_dias: duracion,
+    estado_manual: "activo",
+    deuda_restante: Number(cliente.deuda_restante || 0),
+    notas: cliente.notas || "",
+    fecha_vencimiento:
+      cliente.servicio === "clases" || duracion <= 0
+        ? null
+        : toISODate(addDays(fechaRenovacion, duracion)),
+  };
+
+  const { error: errorCliente } = await supabase
+    .from("clientes")
+    .update(payload)
+    .eq("id", cliente.id);
+
+  if (errorCliente) {
+    alert("No se pudo renovar el cliente");
+    return;
+  }
+
+  const { error: errorIngreso } = await supabase.from("ingresos").insert([
+    {
+      cliente_id: cliente.id,
+      cliente_nombre: cliente.nombre || "",
+      email: (cliente.email || "").trim().toLowerCase(),
+      servicio: cliente.servicio,
+      monto: Number(cliente.monto || 0),
+      fecha_pago: fechaRenovacion,
+      notas: cliente.notas || "",
+    },
+  ]);
+
+  if (errorIngreso) {
+    alert("El cliente se renovó, pero no se pudo registrar el ingreso");
+  }
+
+  fetchClientes();
+  fetchIngresos();
+}
   if (!user) {
     return (
       <div
@@ -1438,27 +1490,37 @@ function abrirRenovar(cliente) {
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
   <div style={{ display: "flex", gap: 8 }}>
-    
-   <button
-  title="Renovar cliente"
-  style={{ ...buttonStyle(true), padding: "8px 12px" }}
-  onClick={() => abrirRenovar(c)}
->
-  ✔
-</button>
+    <button
+      title="Renovación rápida"
+      style={{ ...buttonStyle(true), padding: "8px 12px" }}
+      onClick={() => {
+        if (confirm("¿Renovar cliente con el mismo plan?")) {
+          renovarRapido(c);
+        }
+      }}
+    >
+      ✔
+    </button>
 
-<button
-  title="Eliminar cliente"
-  style={{ ...buttonStyle(false), padding: "8px 12px" }}
-  onClick={() => {
-    if (confirm("¿Eliminar cliente?")) {
-      eliminarCliente(c.id);
-    }
-  }}
->
-  🗑
-</button>
+    <button
+      title="Renovar con cambios"
+      style={{ ...buttonStyle(false), padding: "8px 12px" }}
+      onClick={() => abrirRenovar(c)}
+    >
+      ✏️
+    </button>
 
+    <button
+      title="Eliminar cliente"
+      style={{ ...buttonStyle(false), padding: "8px 12px" }}
+      onClick={() => {
+        if (confirm("¿Eliminar cliente?")) {
+          eliminarCliente(c.id);
+        }
+      }}
+    >
+      🗑
+    </button>
   </div>
 </td>
                   </tr>
