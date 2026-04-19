@@ -1043,39 +1043,97 @@ function abrirRenovar(cliente) {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-        <input style={inputStyle()} value={renovarForm.nombre} onChange={(e) => setRenovarForm({ ...renovarForm, nombre: e.target.value })} />
-        <input style={inputStyle()} value={renovarForm.email} onChange={(e) => setRenovarForm({ ...renovarForm, email: e.target.value })} />
+     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Nombre</label>
+    <input
+      style={inputStyle()}
+      value={renovarForm.nombre}
+      onChange={(e) => setRenovarForm({ ...renovarForm, nombre: e.target.value })}
+    />
+  </div>
 
-        <select
-          style={inputStyle()}
-          value={renovarForm.servicio}
-          onChange={(e) => {
-            const servicio = e.target.value;
-            setRenovarForm({
-              ...renovarForm,
-              servicio,
-              monto: serviceDefaultAmount(servicio),
-              duracion_dias: serviceDefaultDuration(servicio),
-            });
-          }}
-        >
-          <option value="mensual">Mensual</option>
-          <option value="anual">Anual</option>
-          <option value="clases">Clases</option>
-        </select>
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Email</label>
+    <input
+      style={inputStyle()}
+      value={renovarForm.email}
+      onChange={(e) => setRenovarForm({ ...renovarForm, email: e.target.value })}
+    />
+  </div>
 
-        <input type="date" style={inputStyle()} value={renovarForm.fecha_inicio} onChange={(e) => setRenovarForm({ ...renovarForm, fecha_inicio: e.target.value })} />
-        <input type="number" style={inputStyle()} value={renovarForm.monto} onChange={(e) => setRenovarForm({ ...renovarForm, monto: e.target.value })} />
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Servicio</label>
+    <select
+      style={inputStyle()}
+      value={renovarForm.servicio}
+      onChange={(e) => {
+        const servicio = e.target.value;
+        setRenovarForm({
+          ...renovarForm,
+          servicio,
+          monto: serviceDefaultAmount(servicio),
+          duracion_dias: serviceDefaultDuration(servicio),
+        });
+      }}
+    >
+      <option value="mensual">Mensual</option>
+      <option value="anual">Anual</option>
+      <option value="clases">Clases</option>
+    </select>
+  </div>
 
-        {renovarForm.servicio !== "clases" && (
-          <input type="number" style={inputStyle()} value={renovarForm.duracion_dias} onChange={(e) => setRenovarForm({ ...renovarForm, duracion_dias: e.target.value })} />
-        )}
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Fecha de renovación</label>
+    <input
+      type="date"
+      style={inputStyle()}
+      value={renovarForm.fecha_inicio}
+      onChange={(e) => setRenovarForm({ ...renovarForm, fecha_inicio: e.target.value })}
+    />
+  </div>
 
-        <input type="number" style={inputStyle()} value={renovarForm.deuda_restante} onChange={(e) => setRenovarForm({ ...renovarForm, deuda_restante: e.target.value })} />
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Monto</label>
+    <input
+      type="number"
+      style={inputStyle()}
+      value={renovarForm.monto}
+      onChange={(e) => setRenovarForm({ ...renovarForm, monto: e.target.value })}
+    />
+  </div>
 
-        <input style={inputStyle()} value={renovarForm.notas} onChange={(e) => setRenovarForm({ ...renovarForm, notas: e.target.value })} />
-      </div>
+  {renovarForm.servicio !== "clases" && (
+    <div style={fieldWrapStyle()}>
+      <label style={labelStyle()}>Duración (días)</label>
+      <input
+        type="number"
+        style={inputStyle()}
+        value={renovarForm.duracion_dias}
+        onChange={(e) => setRenovarForm({ ...renovarForm, duracion_dias: e.target.value })}
+      />
+    </div>
+  )}
+
+  <div style={fieldWrapStyle()}>
+    <label style={labelStyle()}>Deuda restante</label>
+    <input
+      type="number"
+      style={inputStyle()}
+      value={renovarForm.deuda_restante}
+      onChange={(e) => setRenovarForm({ ...renovarForm, deuda_restante: e.target.value })}
+    />
+  </div>
+
+  <div style={fieldWrapStyle(true)}>
+    <label style={labelStyle()}>Notas</label>
+    <input
+      style={inputStyle()}
+      value={renovarForm.notas}
+      onChange={(e) => setRenovarForm({ ...renovarForm, notas: e.target.value })}
+    />
+  </div>
+</div>
 
       <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button onClick={() => setShowRenovar(false)} style={buttonStyle(false)}>
