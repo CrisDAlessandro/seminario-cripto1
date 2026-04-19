@@ -626,7 +626,7 @@ const { error: errorIngreso } = await supabase.from("ingresos").insert([
 ]);
 
 if (errorIngreso) {
-  alert("El cliente se guardó, pero no se pudo registrar el ingreso");
+  alert("Error ingreso: " + errorIngreso.message);
 }
 
 setGuardando(false);
