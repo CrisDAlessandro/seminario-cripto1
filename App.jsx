@@ -1112,7 +1112,7 @@ async function actualizarEmail(id, nuevoEmail) {
             <table style={tableStyle()}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Cliente", "Email", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Eliminar"].map((h) => (
+                  {["Cliente", "Email", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Acciones"].map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
                       {h}
                     </th>
@@ -1174,17 +1174,28 @@ async function actualizarEmail(id, nuevoEmail) {
                       </select>
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <button
-                        style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                        onClick={() => {
-                          if (confirm("¿Eliminar cliente?")) {
-                            eliminarCliente(c.id);
-                          }
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </td>
+  <div style={{ display: "flex", gap: 8 }}>
+    
+    <button
+      style={{ ...buttonStyle(true), padding: "8px 12px" }}
+      onClick={() => alert("Renovar cliente (siguiente paso)")}
+    >
+      Renovar
+    </button>
+
+    <button
+      style={{ ...buttonStyle(false), padding: "8px 12px" }}
+      onClick={() => {
+        if (confirm("¿Eliminar cliente?")) {
+          eliminarCliente(c.id);
+        }
+      }}
+    >
+      🗑
+    </button>
+
+  </div>
+</td>
                   </tr>
                 ))}
               </tbody>
