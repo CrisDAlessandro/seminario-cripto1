@@ -742,12 +742,20 @@ async function actualizarEmail(id, nuevoEmail) {
 }
 
 function abrirRenovar(cliente) {
+  const hoyISO = toISODate(TODAY);
+  const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
+
+  const fechaBase =
+    vencimientoActual && vencimientoActual > hoyISO
+      ? vencimientoActual
+      : hoyISO;
+
   setRenovarForm({
     id: cliente.id,
     nombre: cliente.nombre || "",
     email: cliente.email || "",
     servicio: cliente.servicio || "mensual",
-    fecha_inicio: toISODate(TODAY),
+    fecha_inicio: fechaBase,
     monto: safeNumber(cliente.monto),
     duracion_dias:
       cliente.servicio === "clases"
