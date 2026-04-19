@@ -755,6 +755,7 @@ const dashboardStats = useMemo(() => {
     Salir
   </button>
 </div>
+</div>
 
         {showForm && (
           <div style={{ ...cardStyle(), marginBottom: 24 }}>
