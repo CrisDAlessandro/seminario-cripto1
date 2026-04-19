@@ -377,6 +377,7 @@ export default function App() {
   const [showRenovar, setShowRenovar] = useState(false);
   const [renovando, setRenovando] = useState(false);
   const [basePage, setBasePage] = useState(1);
+  const baseRef = useRef(null);
   const BASE_PAGE_SIZE = 10;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
@@ -415,7 +416,11 @@ export default function App() {
       listener.subscription.unsubscribe();
     };
   }, []);
-
+  useEffect(() => {
+  if (baseRef.current) {
+    baseRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}, [basePage]);
   async function login() {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -1719,7 +1724,7 @@ if (vencimientoActual) {
 
   </div>
 </div>
-        <div style={{ ...cardStyle(), marginBottom: 24 }}>
+        <div ref={baseRef} style={{ ...cardStyle(), marginBottom: 24 }}>
           <div
             style={{
               display: "flex",
