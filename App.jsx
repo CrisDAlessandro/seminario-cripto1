@@ -1964,12 +1964,21 @@ if (vencimientoActual) {
                 </tbody>
               </table>
             </div>
-            <div style={{ marginTop: 16 }}>
-  <div style={{ marginBottom: 8 }}>
+            <div
+  style={{
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  }}
+>
+  <div style={{ color: "#64748b", fontSize: 14 }}>
     Página {vencimientosPage} de {vencimientosTotalPages}
   </div>
 
-  <div style={{ display: "flex", gap: 6 }}>
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
     <button
       style={buttonStyle(false)}
       onClick={() => setVencimientosPage((p) => Math.max(1, p - 1))}
