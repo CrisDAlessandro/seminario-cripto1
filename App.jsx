@@ -383,6 +383,8 @@ export default function App() {
   const BASE_PAGE_SIZE = 10;
   const [deudoresPage, setDeudoresPage] = useState(1);
   const DEUDORES_PAGE_SIZE = 5;
+  const [clasesPage, setClasesPage] = useState(1);
+  const CLASES_PAGE_SIZE = 5;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
     nombre: "",
@@ -549,7 +551,17 @@ const deudoresRows = useMemo(() => {
     () => computed.filter((c) => c.servicio === "clases"),
     [computed]
   );
+  
+const clasesTotalPages = Math.max(
+  1,
+  Math.ceil(clases.length / CLASES_PAGE_SIZE)
+);
 
+const clasesRows = useMemo(() => {
+  const start = (clasesPage - 1) * CLASES_PAGE_SIZE;
+  return clases.slice(start, start + CLASES_PAGE_SIZE);
+}, [clases, clasesPage]);
+  
   const vencimientos = useMemo(() => {
     return computed
       .filter((c) => c.servicio !== "clases")
@@ -578,7 +590,16 @@ useEffect(() => {
     setDeudoresPage(deudoresTotalPages);
   }
 }, [deudoresPage, deudoresTotalPages]);
+  
+useEffect(() => {
+  setClasesPage(1);
+}, [computed]);
 
+useEffect(() => {
+  if (clasesPage > clasesTotalPages) {
+    setClasesPage(clasesTotalPages);
+  }
+}, [clasesPage, clasesTotalPages]);
 const vencimientosRows = useMemo(() => {
   const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
   return vencimientos.slice(start, start + VENCIMIENTOS_PAGE_SIZE);
@@ -2113,7 +2134,7 @@ if (vencimientoActual) {
                   </tr>
                 </thead>
                 <tbody>
-                  {clases.map((c) => (
+                  {clasesRows.map((c)(
                     <tr key={c.id}>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
@@ -2127,6 +2148,48 @@ if (vencimientoActual) {
                 </tbody>
               </table>
             </div>
+            <div
+  style={{
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  }}
+>
+  <div style={{ color: "#64748b", fontSize: 14 }}>
+    Página {clasesPage} de {clasesTotalPages}
+  </div>
+
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setClasesPage((p) => Math.max(1, p - 1))}
+    >
+      Anterior
+    </button>
+
+    {Array.from({ length: clasesTotalPages }, (_, i) => i + 1).map((page) => (
+      <button
+        key={page}
+        style={page === clasesPage ? buttonStyle(true) : buttonStyle(false)}
+        onClick={() => setClasesPage(page)}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      style={buttonStyle(false)}
+      onClick={() =>
+        setClasesPage((p) => Math.min(clasesTotalPages, p + 1))
+      }
+    >
+      Siguiente
+    </button>
+  </div>
+</div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
