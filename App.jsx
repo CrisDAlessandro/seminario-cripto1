@@ -712,7 +712,7 @@ async function actualizarEmail(id, nuevoEmail) {
       userSelect: "none",
     }}
   >
-    {showPassword ? "🙈" : "👁"}
+    {showPassword ? "Ocultar" : "👁"}
   </span>
 </div>
 
