@@ -493,7 +493,7 @@ const baseOperativaRows = useMemo(() => {
   const start = (basePage - 1) * BASE_PAGE_SIZE;
   return filtered.slice(start, start + BASE_PAGE_SIZE);
 }, [filtered, basePage]);
-
+  
 useEffect(() => {
   setBasePage(1);
 }, [busqueda, filtro]);
@@ -563,7 +563,6 @@ const vencimientosRows = useMemo(() => {
   const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
   return vencimientos.slice(start, start + VENCIMIENTOS_PAGE_SIZE);
 }, [vencimientos, vencimientosPage]);
-  
   const resumenMensual = useMemo(() => {
   const map = new Map();
 
