@@ -1429,186 +1429,277 @@ if (vencimientoActual) {
             </div>
           ))}
         </div>
-        <div style={{ ...cardStyle(), marginBottom: 24 }}>
-  <h3 style={{ marginTop: 0 }}>Vencimientos críticos</h3>
-
-  <div style={{ display: "grid", gap: 16 }}>
+        <div style={{ ...cardStyle(), marginBottom: 24, padding: 24 }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
     <div>
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>
-        Hoy / por vencer ({vencimientosCriticos.hoy.length})
+      <h3 style={{ margin: 0, fontSize: 24 }}>Vencimientos críticos</h3>
+      <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
+        Seguimiento rápido de clientes sensibles para accionar sin entrar a la base completa.
+      </div>
+    </div>
+  </div>
+
+  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+    
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        padding: 18,
+        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>Por vencer</div>
+        <div
+          style={{
+            minWidth: 34,
+            height: 34,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#e2e8f0",
+            fontWeight: 800,
+          }}
+        >
+          {vencimientosCriticos.hoy.length}
+        </div>
       </div>
 
       {vencimientosCriticos.hoy.length ? (
-        vencimientosCriticos.hoy.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              padding: "8px 0",
-              borderBottom: "1px solid #e5e7eb",
-            }}
-          >
-            <div>
-              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+        <div style={{ display: "grid", gap: 10 }}>
+          {vencimientosCriticos.hoy.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: 14,
+                padding: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+                <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>
+                  {serviceLabel(c.servicio)} · vence {formatDate(c.vencimiento)}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Renovar cliente con el mismo plan?")) {
+                      renovarRapido(c);
+                    }
+                  }}
+                >
+                  ✔
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => abrirRenovar(c)}
+                >
+                  ✏️
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Eliminar cliente?")) {
+                      eliminarCliente(c.id);
+                    }
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
             </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Renovar cliente con el mismo plan?")) {
-                    renovarRapido(c);
-                  }
-                }}
-              >
-                ✔
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => abrirRenovar(c)}
-              >
-                ✏️
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Eliminar cliente?")) {
-                    eliminarCliente(c.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       ) : (
-        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
       )}
     </div>
 
-    <div>
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>
-        En gracia ({vencimientosCriticos.gracia.length})
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        padding: 18,
+        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>En gracia</div>
+        <div
+          style={{
+            minWidth: 34,
+            height: 34,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#fef3c7",
+            color: "#92400e",
+            fontWeight: 800,
+          }}
+        >
+          {vencimientosCriticos.gracia.length}
+        </div>
       </div>
 
       {vencimientosCriticos.gracia.length ? (
-        vencimientosCriticos.gracia.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              padding: "8px 0",
-              borderBottom: "1px solid #e5e7eb",
-            }}
-          >
-            <div>
-              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+        <div style={{ display: "grid", gap: 10 }}>
+          {vencimientosCriticos.gracia.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                border: "1px solid #fde68a",
+                background: "#fffbeb",
+                borderRadius: 14,
+                padding: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+                <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
+                  {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Renovar cliente con el mismo plan?")) {
+                      renovarRapido(c);
+                    }
+                  }}
+                >
+                  ✔
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => abrirRenovar(c)}
+                >
+                  ✏️
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Eliminar cliente?")) {
+                      eliminarCliente(c.id);
+                    }
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
             </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Renovar cliente con el mismo plan?")) {
-                    renovarRapido(c);
-                  }
-                }}
-              >
-                ✔
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => abrirRenovar(c)}
-              >
-                ✏️
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Eliminar cliente?")) {
-                    eliminarCliente(c.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       ) : (
-        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
       )}
     </div>
 
-    <div>
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>
-        Vencidos ({vencimientosCriticos.vencidos.length})
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 18,
+        padding: 18,
+        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>Vencidos</div>
+        <div
+          style={{
+            minWidth: 34,
+            height: 34,
+            borderRadius: 999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#fee2e2",
+            color: "#b91c1c",
+            fontWeight: 800,
+          }}
+        >
+          {vencimientosCriticos.vencidos.length}
+        </div>
       </div>
 
       {vencimientosCriticos.vencidos.length ? (
-        vencimientosCriticos.vencidos.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              padding: "8px 0",
-              borderBottom: "1px solid #e5e7eb",
-            }}
-          >
-            <div>
-              <strong>{c.nombre}</strong> — {serviceLabel(c.servicio)}
+        <div style={{ display: "grid", gap: 10 }}>
+          {vencimientosCriticos.vencidos.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                border: "1px solid #fecaca",
+                background: "#fef2f2",
+                borderRadius: 14,
+                padding: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+                <div style={{ fontSize: 13, color: "#b91c1c", marginTop: 2 }}>
+                  {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Renovar cliente con el mismo plan?")) {
+                      renovarRapido(c);
+                    }
+                  }}
+                >
+                  ✔
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => abrirRenovar(c)}
+                >
+                  ✏️
+                </button>
+                <button
+                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                  onClick={() => {
+                    if (confirm("¿Eliminar cliente?")) {
+                      eliminarCliente(c.id);
+                    }
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
             </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Renovar cliente con el mismo plan?")) {
-                    renovarRapido(c);
-                  }
-                }}
-              >
-                ✔
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => abrirRenovar(c)}
-              >
-                ✏️
-              </button>
-
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Eliminar cliente?")) {
-                    eliminarCliente(c.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       ) : (
-        <div style={{ color: "#64748b" }}>Sin clientes en esta categoría.</div>
+        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
       )}
     </div>
+
   </div>
 </div>
         <div style={{ ...cardStyle(), marginBottom: 24 }}>
