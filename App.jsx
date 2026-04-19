@@ -757,7 +757,88 @@ function abrirRenovar(cliente) {
 
   setShowRenovar(true);
 }
- 
+ async function guardarRenovacion() {
+  const nombre = renovarForm.nombre.trim();
+  const email = renovarForm.email.trim().toLowerCase();
+
+  if (!nombre) {
+    alert("Falta el nombre");
+    return;
+  }
+
+  if (!email) {
+    alert("Falta el email");
+    return;
+  }
+
+  if (!email.endsWith("@gmail.com")) {
+    alert("El email debe ser una cuenta @gmail.com");
+    return;
+  }
+
+  if (renovarForm.servicio !== "clases" && Number(renovarForm.duracion_dias || 0) <= 0) {
+    alert("Falta la duración en días");
+    return;
+  }
+
+  setRenovando(true);
+
+  const duracion = renovarForm.servicio === "clases" ? 0 : Number(renovarForm.duracion_dias || 0);
+
+  const payload = {
+    nombre,
+    email,
+    servicio: renovarForm.servicio,
+    fecha_inicio: renovarForm.fecha_inicio,
+    monto: Number(renovarForm.monto || 0),
+    duracion_dias: duracion,
+    estado_manual: "activo",
+    deuda_restante: Number(renovarForm.deuda_restante || 0),
+    notas: renovarForm.notas || "",
+    fecha_vencimiento:
+      renovarForm.servicio === "clases" || duracion <= 0
+        ? null
+        : toISODate(addDays(renovarForm.fecha_inicio, duracion)),
+  };
+
+  const { error: errorCliente } = await supabase
+    .from("clientes")
+    .update(payload)
+    .eq("id", renovarForm.id);
+
+  if (errorCliente) {
+    setRenovando(false);
+    alert("No se pudo renovar el cliente");
+    return;
+  }
+
+  const { error: errorIngreso } = await supabase.from("ingresos").insert([
+    {
+      cliente_id: renovarForm.id,
+      cliente_nombre: nombre,
+      email,
+      servicio: renovarForm.servicio,
+      monto: Number(renovarForm.monto || 0),
+      fecha_pago: renovarForm.fecha_inicio,
+      notas: renovarForm.notas || "",
+    },
+  ]);
+
+  if (errorIngreso) {
+    setRenovando(false);
+    alert("El cliente se renovó, pero no se pudo registrar el ingreso");
+    fetchClientes();
+    fetchIngresos();
+    setShowRenovar(false);
+    return;
+  }
+
+  setRenovando(false);
+  setShowRenovar(false);
+
+  fetchClientes();
+  fetchIngresos();
+}
   if (!user) {
     return (
       <div
@@ -1136,19 +1217,20 @@ function abrirRenovar(cliente) {
 </div>
 
       <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-        <button onClick={() => setShowRenovar(false)} style={buttonStyle(false)}>
-          Cancelar
-        </button>
+  <button
+    onClick={() => setShowRenovar(false)}
+    style={buttonStyle(false)}
+  >
+    Cancelar
+  </button>
 
-        <button
-          style={buttonStyle(true)}
-          onClick={() => alert("Guardar renovación siguiente paso")}
-        >
-          Confirmar renovación
-        </button>
-      </div>
-    </div>
-  </div>
+  <button
+    style={buttonStyle(true)}
+    onClick={guardarRenovacion}
+  >
+    {renovando ? "Guardando..." : "Confirmar renovación"}
+  </button>
+</div>
 )}       
 {view === "dashboard" && (
   <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
