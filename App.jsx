@@ -741,31 +741,72 @@ async function actualizarEmail(id, nuevoEmail) {
   fetchClientes();
 }
 
-function abrirRenovar(cliente) {
+async function renovarRapido(cliente) {
+  const duracion =
+    cliente.servicio === "clases"
+      ? 0
+      : Number(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio));
+
   const hoyISO = toISODate(TODAY);
   const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
 
-  const fechaBase =
-    vencimientoActual && vencimientoActual > hoyISO
-      ? vencimientoActual
-      : hoyISO;
+  let fechaBase = hoyISO;
 
-  setRenovarForm({
-    id: cliente.id,
+  if (vencimientoActual) {
+    const dueDate = parseISODate(vencimientoActual);
+    const daysLate = diffDays(dueDate, TODAY);
+
+    if (daysLate <= GRACE_DAYS) {
+      fechaBase = vencimientoActual;
+    }
+  }
+
+  const nuevoVencimiento =
+    cliente.servicio === "clases" || duracion <= 0
+      ? null
+      : toISODate(addDays(fechaBase, duracion));
+
+  const payload = {
     nombre: cliente.nombre || "",
-    email: cliente.email || "",
-    servicio: cliente.servicio || "mensual",
+    email: (cliente.email || "").trim().toLowerCase(),
+    servicio: cliente.servicio,
     fecha_inicio: fechaBase,
-    monto: safeNumber(cliente.monto),
-    duracion_dias:
-      cliente.servicio === "clases"
-        ? 0
-        : safeNumber(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio)),
-    deuda_restante: safeNumber(cliente.deuda_restante),
+    monto: Number(cliente.monto || 0),
+    duracion_dias: duracion,
+    estado_manual: "activo",
+    deuda_restante: Number(cliente.deuda_restante || 0),
     notas: cliente.notas || "",
-  });
+    fecha_vencimiento: nuevoVencimiento,
+  };
 
-  setShowRenovar(true);
+  const { error: errorCliente } = await supabase
+    .from("clientes")
+    .update(payload)
+    .eq("id", cliente.id);
+
+  if (errorCliente) {
+    alert("No se pudo renovar el cliente");
+    return;
+  }
+
+  const { error: errorIngreso } = await supabase.from("ingresos").insert([
+    {
+      cliente_id: cliente.id,
+      cliente_nombre: cliente.nombre || "",
+      email: (cliente.email || "").trim().toLowerCase(),
+      servicio: cliente.servicio,
+      monto: Number(cliente.monto || 0),
+      fecha_pago: hoyISO,
+      notas: cliente.notas || "",
+    },
+  ]);
+
+  if (errorIngreso) {
+    alert("El cliente se renovó, pero no se pudo registrar el ingreso");
+  }
+
+  fetchClientes();
+  fetchIngresos();
 }
  async function guardarRenovacion() {
   const nombre = renovarForm.nombre.trim();
