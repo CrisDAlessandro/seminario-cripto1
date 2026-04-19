@@ -378,6 +378,8 @@ export default function App() {
   const [renovando, setRenovando] = useState(false);
   const [basePage, setBasePage] = useState(1);
   const baseRef = useRef(null);
+  const [vencimientosPage, setVencimientosPage] = useState(1);
+  const VENCIMIENTOS_PAGE_SIZE = 10;
   const BASE_PAGE_SIZE = 10;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
@@ -501,6 +503,16 @@ useEffect(() => {
     setBasePage(baseTotalPages);
   }
 }, [basePage, baseTotalPages]);
+  
+  useEffect(() => {
+  setVencimientosPage(1);
+}, [computed]);
+  
+  useEffect(() => {
+  if (vencimientosPage > vencimientosTotalPages) {
+    setVencimientosPage(vencimientosTotalPages);
+  }
+}, [vencimientosPage, vencimientosTotalPages]);
 
 const resumen = useMemo(() => {
   const base = {
@@ -542,7 +554,16 @@ const resumen = useMemo(() => {
         return a.vencimiento.localeCompare(b.vencimiento);
       });
   }, [computed]);
+  const vencimientosTotalPages = Math.max(
+  1,
+  Math.ceil(vencimientos.length / VENCIMIENTOS_PAGE_SIZE)
+);
 
+const vencimientosRows = useMemo(() => {
+  const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
+  return vencimientos.slice(start, start + VENCIMIENTOS_PAGE_SIZE);
+}, [vencimientos, vencimientosPage]);
+  
   const resumenMensual = useMemo(() => {
   const map = new Map();
 
@@ -1931,7 +1952,7 @@ if (vencimientoActual) {
                   </tr>
                 </thead>
                 <tbody>
-                  {vencimientos.map((c) => (
+                  {vencimientosRows.map((c) => (
                     <tr key={c.id}>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
                       <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
@@ -1945,6 +1966,39 @@ if (vencimientoActual) {
                 </tbody>
               </table>
             </div>
+            <div style={{ marginTop: 16 }}>
+  <div style={{ marginBottom: 8 }}>
+    Página {vencimientosPage} de {vencimientosTotalPages}
+  </div>
+
+  <div style={{ display: "flex", gap: 6 }}>
+    <button
+      style={buttonStyle(false)}
+      onClick={() => setVencimientosPage((p) => Math.max(1, p - 1))}
+    >
+      Anterior
+    </button>
+
+    {Array.from({ length: vencimientosTotalPages }, (_, i) => i + 1).map((page) => (
+      <button
+        key={page}
+        style={page === vencimientosPage ? buttonStyle(true) : buttonStyle(false)}
+        onClick={() => setVencimientosPage(page)}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      style={buttonStyle(false)}
+      onClick={() =>
+        setVencimientosPage((p) => Math.min(vencimientosTotalPages, p + 1))
+      }
+    >
+      Siguiente
+    </button>
+  </div>
+</div>
           </div>
 
           <div style={cardStyle()}>
