@@ -1,14 +1,24 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
+// ─── Supabase ────────────────────────────────────────────────────────────────
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
+// ─── Constantes ──────────────────────────────────────────────────────────────
 const TODAY = new Date();
 const GRACE_DAYS = 3;
+const PAGE_SIZES = { base: 10, vencimientos: 10, deudores: 5, clases: 5, ingresos: 10, criticos: 3 };
 
+const FORM_DEFAULTS = {
+  nombre: "", email: "", servicio: "mensual",
+  fecha_inicio: toISODate(TODAY), monto: 30, duracion_dias: 30,
+  estado_manual: "activo", deuda_restante: 0, acceso_drive: false, notas: "",
+};
+
+// ─── Utilidades de fecha ──────────────────────────────────────────────────────
 function toISODate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -22,9 +32,20 @@ function addDays(dateString, days) {
   return d;
 }
 
+function parseISODate(dateString) {
+  if (!dateString) return null;
+  return new Date(`${dateString}T12:00:00`);
+}
+
 function formatDate(dateString) {
   if (!dateString) return "-";
   return new Intl.DateTimeFormat("es-AR").format(new Date(`${dateString}T12:00:00`));
+}
+
+function diffDays(fromDate, toDate) {
+  const a = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const b = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+  return Math.floor((b - a) / (1000 * 60 * 60 * 24));
 }
 
 function monthKey(dateString) {
@@ -34,14 +55,22 @@ function monthKey(dateString) {
 
 function monthLabel(key) {
   const [year, month] = key.split("-");
-  const d = new Date(Number(year), Number(month) - 1, 1);
-  return new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" })
+    .format(new Date(Number(year), Number(month) - 1, 1));
 }
 
-function diffDays(fromDate, toDate) {
-  const a = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-  const b = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
-  return Math.floor((b - a) / (1000 * 60 * 60 * 24));
+function isSameMonth(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+// ─── Utilidades de negocio ────────────────────────────────────────────────────
+function safeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function money(value) {
+  return `USD ${safeNumber(value)}`;
 }
 
 function serviceLabel(value) {
@@ -61,197 +90,25 @@ function serviceDefaultDuration(value) {
   if (value === "anual") return 365;
   return 0;
 }
-function parseISODate(dateString) {
-  if (!dateString) return null;
-  return new Date(`${dateString}T12:00:00`);
-}
-
-function safeNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function isSameMonth(a, b) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
-}
 
 function classRangeLabel(fechaInicio) {
   if (!fechaInicio) return "-";
   const start = parseISODate(fechaInicio);
   const end = addDays(fechaInicio, 27);
-
-  const startMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(start);
-  const endMonth = new Intl.DateTimeFormat("es-AR", { month: "long" }).format(end);
-
-  if (isSameMonth(start, end)) return startMonth;
-  return `${startMonth} / ${endMonth}`;
+  const fmt = (d) => new Intl.DateTimeFormat("es-AR", { month: "long" }).format(d);
+  return isSameMonth(start, end) ? fmt(start) : `${fmt(start)} / ${fmt(end)}`;
 }
 
-function navButtonStyle(active) {
-  return {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: active ? "1px solid #0f172a" : "1px solid #e5e7eb",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 14,
-    background: active ? "#0f172a" : "#fff",
-    color: active ? "#fff" : "#0f172a",
-  };
-}
-
-function money(value) {
-  return `USD ${safeNumber(value)}`;
-}
-
-function endOfCurrentMonth() {
-  return new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
-}
-
-function buildDailySalesSeries(clientes) {
-  const end = endOfCurrentMonth();
-  const totalDays = end.getDate();
-  const rows = [];
-
-  for (let day = 1; day <= totalDays; day += 1) {
-    rows.push({
-      day,
-      label: String(day).padStart(2, "0"),
-      total: 0,
-      mensual: 0,
-      anual: 0,
-      clases: 0,
-      ventas: 0,
-    });
-  }
-
-  clientes.forEach((c) => {
-    if (!c.fecha_inicio) return;
-    const d = parseISODate(c.fecha_inicio);
-    if (!d) return;
-    if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
-
-    const row = rows[d.getDate() - 1];
-    const monto = safeNumber(c.monto);
-
-    row.total += monto;
-    row.ventas += 1;
-    if (row[c.servicio] !== undefined) row[c.servicio] += monto;
-  });
-
-  return rows;
-}
-
-function buildServiceBreakdown(clientes, onlyCurrentMonth = false) {
-  const base = { mensual: 0, anual: 0, clases: 0 };
-
-  clientes.forEach((c) => {
-    if (onlyCurrentMonth) {
-      const d = parseISODate(c.fecha_inicio);
-      if (!d) return;
-      if (d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
-    }
-
-    if (base[c.servicio] !== undefined) {
-      base[c.servicio] += safeNumber(c.monto);
-    }
-  });
-
-  return base;
-}
-
-function MetricCard({ title, value, sub }) {
-  return (
-    <div style={cardStyle()}>
-      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
-      {sub ? <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>{sub}</div> : null}
-    </div>
-  );
-}
-
-function SimpleBarChart({ title, data, valueKey, labelKey = "label", emptyText = "Sin datos." }) {
-  const maxValue = data.length
-  ? Math.max(...data.map((r) => safeNumber(r[valueKey])))
-  : 0;
-
-  return (
-    <div style={cardStyle()}>
-      <h3 style={{ marginTop: 0 }}>{title}</h3>
-      {!data.length || maxValue === 0 ? (
-        <div style={{ color: "#64748b" }}>{emptyText}</div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {data.map((row) => {
-            const value = safeNumber(row[valueKey]);
-            const pct = maxValue > 0 ? Math.max((value / maxValue) * 100, value > 0 ? 6 : 0) : 0;
-
-            return (
-              <div key={`${title}-${row[labelKey]}`}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
-                  <span>{row[labelKey]}</span>
-                  <strong>{money(value)}</strong>
-                </div>
-                <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BreakdownCard({ title, breakdown }) {
-  const items = [
-    { key: "mensual", label: "Plan mensual" },
-    { key: "anual", label: "Plan anual" },
-    { key: "clases", label: "Clases" },
-  ];
-
-  const total = items.reduce((acc, item) => acc + safeNumber(breakdown[item.key]), 0);
-
-  return (
-    <div style={cardStyle()}>
-      <h3 style={{ marginTop: 0 }}>{title}</h3>
-      <div style={{ display: "grid", gap: 12 }}>
-        {items.map((item) => {
-          const value = safeNumber(breakdown[item.key]);
-          const pct = total > 0 ? Math.max((value / total) * 100, value > 0 ? 6 : 0) : 0;
-
-          return (
-            <div key={item.key}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
-                <span>{item.label}</span>
-                <strong>{money(value)}</strong>
-              </div>
-              <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
-                <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 function resolveDueDate(client) {
   if (client.fecha_vencimiento) return client.fecha_vencimiento;
-
   const duracion = Number(client.duracion_dias || 0);
-
-  if (client.servicio === "clases") return null;
-  if (!client.fecha_inicio || duracion <= 0) return null;
-
+  if (client.servicio === "clases" || !client.fecha_inicio || duracion <= 0) return null;
   return toISODate(addDays(client.fecha_inicio, duracion));
 }
 
 function computeClient(client) {
   const isClases = client.servicio === "clases";
   const vencimiento = resolveDueDate(client);
-
   let estadoSistema = "activo";
   let dias = null;
 
@@ -262,7 +119,6 @@ function computeClient(client) {
   } else if (vencimiento) {
     const dueDate = parseISODate(vencimiento);
     dias = diffDays(TODAY, dueDate);
-
     if (TODAY > dueDate) {
       const overdue = diffDays(dueDate, TODAY);
       estadoSistema = overdue <= GRACE_DAYS ? "gracia" : "vencido";
@@ -281,88 +137,314 @@ function computeClient(client) {
   };
 }
 
-function badgeStyle(status) {
-  const base = {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-    border: "1px solid transparent",
-  };
+// ─── Paginación: hook reutilizable ────────────────────────────────────────────
+function usePagination(items, pageSize) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
 
-  if (status === "activo") {
-    return { ...base, background: "#dcfce7", color: "#166534", borderColor: "#bbf7d0" };
-  }
-  if (status === "gracia") {
-    return { ...base, background: "#fef3c7", color: "#92400e", borderColor: "#fde68a" };
-  }
-  if (status === "vencido") {
-    return { ...base, background: "#fee2e2", color: "#b91c1c", borderColor: "#fecaca" };
-  }
-  return { ...base, background: "#e2e8f0", color: "#0f172a", borderColor: "#cbd5e1" };
+  // Si los items cambian y la página actual queda fuera de rango, la corregimos
+  useEffect(() => {
+    setPage((p) => Math.min(p, Math.max(1, Math.ceil(items.length / pageSize))));
+  }, [items, pageSize]);
+
+  const rows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
+
+  return { page, setPage, totalPages, rows };
 }
 
-function cardStyle() {
-  return {
-    background: "#ffffff",
-    borderRadius: 18,
-    padding: 20,
-    boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
-    border: "1px solid #e5e7eb",
-  };
+// ─── Analytics helpers ────────────────────────────────────────────────────────
+function buildDailySalesSeries(clientes) {
+  const end = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
+  const rows = Array.from({ length: end.getDate() }, (_, i) => ({
+    day: i + 1,
+    label: String(i + 1).padStart(2, "0"),
+    total: 0, mensual: 0, anual: 0, clases: 0, ventas: 0,
+  }));
+
+  clientes.forEach((c) => {
+    if (!c.fecha_inicio) return;
+    const d = parseISODate(c.fecha_inicio);
+    if (!d || d.getFullYear() !== TODAY.getFullYear() || d.getMonth() !== TODAY.getMonth()) return;
+    const row = rows[d.getDate() - 1];
+    const monto = safeNumber(c.monto);
+    row.total += monto;
+    row.ventas += 1;
+    if (row[c.servicio] !== undefined) row[c.servicio] += monto;
+  });
+
+  return rows;
 }
 
-function inputStyle() {
-  return {
-    width: "100%",
-    padding: "12px 14px",
-    borderRadius: 12,
-    border: "1px solid #d1d5db",
-    fontSize: 14,
-    outline: "none",
-    boxSizing: "border-box",
-    background: "#fff",
-  };
+function buildServiceBreakdown(clientes) {
+  const base = { mensual: 0, anual: 0, clases: 0 };
+  clientes.forEach((c) => {
+    if (base[c.servicio] !== undefined) base[c.servicio] += safeNumber(c.monto);
+  });
+  return base;
 }
 
-function labelStyle() {
-  return {
-    display: "block",
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#334155",
-    marginBottom: 6,
-  };
-}
+// ─── Estilos ─────────────────────────────────────────────────────────────────
+const S = {
+  card: {
+    background: "#ffffff", borderRadius: 18, padding: 20,
+    boxShadow: "0 4px 16px rgba(15,23,42,0.06)", border: "1px solid #e5e7eb",
+  },
+  input: {
+    width: "100%", padding: "12px 14px", borderRadius: 12,
+    border: "1px solid #d1d5db", fontSize: 14, outline: "none",
+    boxSizing: "border-box", background: "#fff",
+  },
+  label: { display: "block", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 6 },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 14 },
+  td: { padding: 12, borderBottom: "1px solid #e5e7eb" },
+  thRow: { background: "#f8fafc" },
+};
 
-function fieldWrapStyle(spanAll = false) {
+function btn(dark = false) {
   return {
-    gridColumn: spanAll ? "1 / -1" : "auto",
-  };
-}
-
-function buttonStyle(dark = false) {
-  return {
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "none",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 14,
+    padding: "12px 16px", borderRadius: 12, border: "none", cursor: "pointer",
+    fontWeight: 700, fontSize: 14,
     background: dark ? "#0f172a" : "#e5e7eb",
     color: dark ? "#fff" : "#111827",
   };
 }
 
-function tableStyle() {
+function navBtn(active) {
   return {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: 14,
+    padding: "10px 14px", borderRadius: 12, cursor: "pointer", fontWeight: 700, fontSize: 14,
+    border: active ? "1px solid #0f172a" : "1px solid #e5e7eb",
+    background: active ? "#0f172a" : "#fff",
+    color: active ? "#fff" : "#0f172a",
   };
 }
 
+function badgeStyle(status) {
+  const base = { display: "inline-block", padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, border: "1px solid transparent" };
+  if (status === "activo") return { ...base, background: "#dcfce7", color: "#166534", borderColor: "#bbf7d0" };
+  if (status === "gracia") return { ...base, background: "#fef3c7", color: "#92400e", borderColor: "#fde68a" };
+  if (status === "vencido") return { ...base, background: "#fee2e2", color: "#b91c1c", borderColor: "#fecaca" };
+  return { ...base, background: "#e2e8f0", color: "#0f172a", borderColor: "#cbd5e1" };
+}
+
+// ─── Componentes reutilizables ────────────────────────────────────────────────
+function MetricCard({ title, value, sub }) {
+  return (
+    <div style={S.card}>
+      <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
+      {sub && <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function BarList({ items }) {
+  // items: [{ label, value }]
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {items.map(({ label, value }) => {
+        const pct = Math.max((value / max) * 100, value > 0 ? 6 : 0);
+        return (
+          <div key={label}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+              <span>{label}</span>
+              <strong>{money(value)}</strong>
+            </div>
+            <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SimpleBarChart({ title, data, valueKey, labelKey = "label", emptyText = "Sin datos." }) {
+  const hasData = data.some((r) => safeNumber(r[valueKey]) > 0);
+  return (
+    <div style={S.card}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      {!hasData
+        ? <div style={{ color: "#64748b" }}>{emptyText}</div>
+        : <BarList items={data.map((r) => ({ label: r[labelKey], value: safeNumber(r[valueKey]) }))} />
+      }
+    </div>
+  );
+}
+
+function BreakdownCard({ title, breakdown }) {
+  const items = [
+    { key: "mensual", label: "Plan mensual" },
+    { key: "anual", label: "Plan anual" },
+    { key: "clases", label: "Clases" },
+  ];
+  return (
+    <div style={S.card}>
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <BarList items={items.map(({ key, label }) => ({ label, value: safeNumber(breakdown[key]) }))} />
+    </div>
+  );
+}
+
+function Pagination({ page, totalPages, setPage }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ color: "#64748b", fontSize: 14 }}>Página {page} de {totalPages}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button style={btn(false)} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Anterior</button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+          <button key={n} style={btn(n === page)} onClick={() => setPage(n)}>{n}</button>
+        ))}
+        <button style={btn(false)} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Siguiente</button>
+      </div>
+    </div>
+  );
+}
+
+function TableHeader({ cols }) {
+  return (
+    <tr style={S.thRow}>
+      {cols.map((h) => (
+        <th key={h} style={{ textAlign: "left", ...S.td }}>{h}</th>
+      ))}
+    </tr>
+  );
+}
+
+// Tarjeta de cliente crítico (Por vencer / En gracia / Vencido)
+function ClienteCard({ cliente, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar }) {
+  return (
+    <div style={{ border: `1px solid ${accentBorder}`, background: accentBg, borderRadius: 14, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+      <div>
+        <div style={{ fontWeight: 800 }}>{cliente.nombre}</div>
+        <div style={{ fontSize: 13, color: accentText, marginTop: 2 }}>
+          {serviceLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button style={{ ...btn(true), padding: "8px 12px" }} title="Renovación rápida"
+          onClick={() => confirm("¿Renovar cliente con el mismo plan?") && onRenovarRapido(cliente)}>✔</button>
+        <button style={{ ...btn(false), padding: "8px 12px" }} title="Renovar con cambios"
+          onClick={() => onAbrirRenovar(cliente)}>✏️</button>
+        <button style={{ ...btn(false), padding: "8px 12px" }} title="Eliminar cliente"
+          onClick={() => confirm("¿Eliminar cliente?") && onEliminar(cliente.id)}>🗑</button>
+      </div>
+    </div>
+  );
+}
+
+// Panel de una categoría de críticos
+function CriticosPanel({ titulo, badgeBg, badgeColor, clientes, rows, page, totalPages, setPage, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar }) {
+  return (
+    <div style={{ ...S.card, display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 260 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{titulo}</div>
+        <div style={{ minWidth: 34, height: 34, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", background: badgeBg, color: badgeColor, fontWeight: 800 }}>
+          {clientes.length}
+        </div>
+      </div>
+      {clientes.length ? (
+        <>
+          <div style={{ display: "grid", gap: 10 }}>
+            {rows.map((c) => (
+              <ClienteCard key={c.id} cliente={c}
+                accentBorder={accentBorder} accentBg={accentBg} accentText={accentText}
+                dateLabel={dateLabel}
+                onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar}
+              />
+            ))}
+          </div>
+          <Pagination page={page} totalPages={totalPages} setPage={setPage} />
+        </>
+      ) : (
+        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
+      )}
+    </div>
+  );
+}
+
+// Formulario de cliente (alta o renovación)
+function ClienteForm({ title, subtitle, form, setForm, onGuardar, onCancelar, guardando, isModal = false }) {
+  const isClases = form.servicio === "clases";
+
+  const inner = (
+    <div style={{ width: "100%", maxWidth: isModal ? 820 : undefined, background: "#fff", borderRadius: 18, padding: 24, boxShadow: isModal ? "0 20px 60px rgba(15,23,42,0.25)" : undefined, border: "1px solid #e5e7eb" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>{title}</h3>
+          {subtitle && <div style={{ color: "#64748b", fontSize: 14 }}>{subtitle}</div>}
+        </div>
+        {isModal && <button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <Field label="Nombre">
+          <input style={S.input} placeholder="Nombre" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+        </Field>
+        <Field label="Email">
+          <input style={S.input} placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        </Field>
+        <Field label="Servicio">
+          <select style={S.input} value={form.servicio} onChange={(e) => {
+            const servicio = e.target.value;
+            setForm({ ...form, servicio, monto: serviceDefaultAmount(servicio), duracion_dias: serviceDefaultDuration(servicio) });
+          }}>
+            <option value="mensual">Plan Inversor Mensual</option>
+            <option value="anual">Plan Inversor Anual</option>
+            <option value="clases">Clases</option>
+          </select>
+        </Field>
+        <Field label={isModal ? "Fecha de renovación" : "Fecha de inicio"}>
+          <input type="date" style={S.input} value={form.fecha_inicio} onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })} />
+        </Field>
+        <Field label="Monto">
+          <input type="number" style={S.input} placeholder="Monto" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} />
+        </Field>
+        {!isClases && (
+          <Field label="Duración (días)">
+            <input type="number" style={S.input} placeholder="Duración en días" value={form.duracion_dias} onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })} />
+          </Field>
+        )}
+        <Field label="Deuda restante">
+          <input type="number" style={S.input} placeholder="Deuda restante" value={form.deuda_restante} onChange={(e) => setForm({ ...form, deuda_restante: e.target.value })} />
+        </Field>
+        <Field label="Notas" spanAll>
+          <input style={S.input} placeholder="Notas" value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
+        </Field>
+      </div>
+
+      <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        {isModal && <button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
+        <button style={btn(true)} onClick={onGuardar}>
+          {guardando ? "Guardando..." : isModal ? "Confirmar renovación" : "Guardar cliente"}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (!isModal) return inner;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, zIndex: 1000 }}>
+      {inner}
+    </div>
+  );
+}
+
+function Field({ label, children, spanAll = false }) {
+  return (
+    <div style={{ gridColumn: spanAll ? "1 / -1" : "auto" }}>
+      <label style={S.label}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
@@ -371,76 +453,26 @@ export default function App() {
   const [clientes, setClientes] = useState([]);
   const [ingresos, setIngresos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState("operativa");
   const [showForm, setShowForm] = useState(false);
+  const [showRenovar, setShowRenovar] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [renovando, setRenovando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("todos");
-  const [guardando, setGuardando] = useState(false);
-  const [view, setView] = useState("operativa");
-  const [showRenovar, setShowRenovar] = useState(false);
-  const [renovando, setRenovando] = useState(false);
-  const [basePage, setBasePage] = useState(1);
+  const [form, setForm] = useState(FORM_DEFAULTS);
+  const [renovarForm, setRenovarForm] = useState({ ...FORM_DEFAULTS, id: null });
   const baseRef = useRef(null);
-  const [vencimientosPage, setVencimientosPage] = useState(1);
-  const VENCIMIENTOS_PAGE_SIZE = 10;
-  const BASE_PAGE_SIZE = 10;
-  const [deudoresPage, setDeudoresPage] = useState(1);
-  const DEUDORES_PAGE_SIZE = 5;
-  const [clasesPage, setClasesPage] = useState(1);
-  const CLASES_PAGE_SIZE = 5;
-  const [ingresosPage, setIngresosPage] = useState(1);
-  const INGRESOS_PAGE_SIZE = 10;
-  const [criticosHoyPage, setCriticosHoyPage] = useState(1);
-  const [criticosGraciaPage, setCriticosGraciaPage] = useState(1);
-  const [criticosVencidosPage, setCriticosVencidosPage] = useState(1);
-  const CRITICOS_PAGE_SIZE = 3;
-  const [renovarForm, setRenovarForm] = useState({
-    id: null,
-    nombre: "",
-    email: "",
-    servicio: "mensual",
-    fecha_inicio: toISODate(TODAY),
-    monto: 30,
-    duracion_dias: 30,
-    deuda_restante: 0,
-    notas: "",
-  });
-  const [form, setForm] = useState({
-    nombre: "",
-    email: "",
-    servicio: "mensual",
-    fecha_inicio: toISODate(TODAY),
-    monto: 30,
-    duracion_dias: 30,
-    estado_manual: "activo",
-    deuda_restante: 0,
-    acceso_drive: false,
-    notas: "",
-  });
-  
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user || null);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user || null));
+    return () => listener.subscription.unsubscribe();
   }, []);
-  useEffect(() => {
-  if (baseRef.current) {
-    baseRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-}, [basePage]);
-  async function login() {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
 
+  async function login() {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) alert(error.message);
   }
 
@@ -448,2103 +480,577 @@ export default function App() {
     await supabase.auth.signOut();
   }
 
+  // ── Data fetching ─────────────────────────────────────────────────────────
   async function fetchClientes() {
-  setLoading(true);
-
-  const { data, error } = await supabase
-    .from("clientes")
-    .select("*")
-    .order("id", { ascending: false });
-
-  if (error) {
-    alert("No se pudieron cargar los clientes");
+    setLoading(true);
+    const { data, error } = await supabase.from("clientes").select("*").order("id", { ascending: false });
+    if (error) { alert("No se pudieron cargar los clientes"); setLoading(false); return; }
+    setClientes(data || []);
     setLoading(false);
-    return;
   }
 
-  setClientes(data || []);
-  setLoading(false);
-}
-
-async function fetchIngresos() {
-  const { data, error } = await supabase
-    .from("ingresos")
-    .select("*")
-    .order("fecha_pago", { ascending: false });
-
-  if (error) {
-    alert("No se pudieron cargar los ingresos");
-    return;
+  async function fetchIngresos() {
+    const { data, error } = await supabase.from("ingresos").select("*").order("fecha_pago", { ascending: false });
+    if (error) { alert("No se pudieron cargar los ingresos"); return; }
+    setIngresos(data || []);
   }
 
-  setIngresos(data || []);
-}
-
-useEffect(() => {
-  fetchClientes();
-  fetchIngresos();
-}, []);
-
-const computed = useMemo(() => clientes.map(computeClient), [clientes]);
-
-  const filtered = useMemo(() => {
-  return computed.filter((c) => {
-    const text = `${c.nombre || ""} ${c.email || ""}`.toLowerCase();
-    const okBusqueda = text.includes(busqueda.toLowerCase());
-    const okFiltro =
-      filtro === "todos" ||
-      c.servicio === filtro ||
-      c.estadoSistema === filtro;
-
-    return okBusqueda && okFiltro;
-  });
-}, [computed, busqueda, filtro]);
-const baseTotalPages = Math.max(1, Math.ceil(filtered.length / BASE_PAGE_SIZE));
-
-const baseOperativaRows = useMemo(() => {
-  const start = (basePage - 1) * BASE_PAGE_SIZE;
-  return filtered.slice(start, start + BASE_PAGE_SIZE);
-}, [filtered, basePage]);
-  
-useEffect(() => {
-  setBasePage(1);
-}, [busqueda, filtro]);
-
-useEffect(() => {
-  if (basePage > baseTotalPages) {
-    setBasePage(baseTotalPages);
+  async function refetch() {
+    await Promise.all([fetchClientes(), fetchIngresos()]);
   }
-}, [basePage, baseTotalPages]);
-  
-  useEffect(() => {
-  setVencimientosPage(1);
-}, [computed]);
-  
-const resumen = useMemo(() => {
-  const base = {
-    activos: 0,
-    gracia: 0,
-    sacar: 0,
-    deudores: 0,
-    clases: 0,
-    ingresos: 0,
-  };
 
-  computed.forEach((c) => {
-    if (c.estadoSistema === "activo") base.activos += 1;
-    if (c.estadoSistema === "gracia") base.gracia += 1;
-    if (c.estadoSistema === "sacar" || c.estadoSistema === "vencido") base.sacar += 1;
-    if (Number(c.deuda_restante || 0) > 0) base.deudores += 1;
-    if (c.servicio === "clases") base.clases += 1;
-    base.ingresos += Number(c.monto || 0);
-  });
+  useEffect(() => { fetchClientes(); fetchIngresos(); }, []);
 
-  return base;
-}, [computed]);
-  const deudores = useMemo(
-    () => computed.filter((c) => Number(c.deuda_restante || 0) > 0),
-    [computed]
-  );
-  const deudoresTotalPages = Math.max(
-  1,
-  Math.ceil(deudores.length / DEUDORES_PAGE_SIZE)
-);
-
-const deudoresRows = useMemo(() => {
-  const start = (deudoresPage - 1) * DEUDORES_PAGE_SIZE;
-  return deudores.slice(start, start + DEUDORES_PAGE_SIZE);
-}, [deudores, deudoresPage]);
-  
-  const clases = useMemo(
-    () => computed.filter((c) => c.servicio === "clases"),
-    [computed]
-  );
-
-  const clasesTotalPages = Math.max(
-  1,
-  Math.ceil(clases.length / CLASES_PAGE_SIZE)
-);
-
-const clasesRows = useMemo(() => {
-  const start = (clasesPage - 1) * CLASES_PAGE_SIZE;
-  return clases.slice(start, start + CLASES_PAGE_SIZE);
-}, [clases, clasesPage]);
-  
-  const vencimientos = useMemo(() => {
-    return computed
-      .filter((c) => c.servicio !== "clases")
-      .sort((a, b) => {
-        if (!a.vencimiento) return 1;
-        if (!b.vencimiento) return -1;
-        return a.vencimiento.localeCompare(b.vencimiento);
-      });
-  }, [computed]);
-  const vencimientosTotalPages = Math.max(
-  1,
-  Math.ceil(vencimientos.length / VENCIMIENTOS_PAGE_SIZE)
-);
-  useEffect(() => {
-  if (vencimientosPage > vencimientosTotalPages) {
-    setVencimientosPage(vencimientosTotalPages);
+  // ── CRUD ──────────────────────────────────────────────────────────────────
+  function validateClienteForm(f) {
+    const nombre = f.nombre.trim();
+    const email = f.email.trim().toLowerCase();
+    if (!nombre) { alert("Falta el nombre"); return null; }
+    if (!email) { alert("Falta el email"); return null; }
+    if (!email.endsWith("@gmail.com")) { alert("El email debe ser una cuenta @gmail.com"); return null; }
+    if (f.servicio !== "clases" && Number(f.duracion_dias || 0) <= 0) { alert("Falta la duración en días"); return null; }
+    return { nombre, email };
   }
-}, [vencimientosPage, vencimientosTotalPages]);
-  
-  useEffect(() => {
-  setDeudoresPage(1);
-}, [computed]);
 
-useEffect(() => {
-  if (deudoresPage > deudoresTotalPages) {
-    setDeudoresPage(deudoresTotalPages);
+  function buildClientePayload(f, nombre, email) {
+    const duracion = f.servicio === "clases" ? 0 : Number(f.duracion_dias || 0);
+    return {
+      ...f,
+      nombre, email,
+      estado_manual: "activo",
+      monto: Number(f.monto || 0),
+      duracion_dias: duracion,
+      deuda_restante: Number(f.deuda_restante || 0),
+      fecha_vencimiento: f.servicio === "clases" || duracion <= 0 ? null : toISODate(addDays(f.fecha_inicio, duracion)),
+    };
   }
-}, [deudoresPage, deudoresTotalPages]);
-  useEffect(() => {
-  setClasesPage(1);
-}, [computed]);
-
-useEffect(() => {
-  if (clasesPage > clasesTotalPages) {
-    setClasesPage(clasesTotalPages);
-  }
-}, [clasesPage, clasesTotalPages]);
-  
-
-const vencimientosRows = useMemo(() => {
-  const start = (vencimientosPage - 1) * VENCIMIENTOS_PAGE_SIZE;
-  return vencimientos.slice(start, start + VENCIMIENTOS_PAGE_SIZE);
-}, [vencimientos, vencimientosPage]);
-  const resumenMensual = useMemo(() => {
-  const map = new Map();
-
-  ingresos.forEach((i) => {
-    if (!i.fecha_pago) return;
-
-    const key = monthKey(i.fecha_pago);
-
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        mensual: 0,
-        anual: 0,
-        clases: 0,
-        total: 0,
-        ventasMensual: 0,
-        ventasAnual: 0,
-        ventasClases: 0,
-      });
-    }
-
-    const row = map.get(key);
-    const monto = Number(i.monto || 0);
-
-    if (i.servicio === "mensual") {
-      row.mensual += monto;
-      row.ventasMensual += 1;
-    } else if (i.servicio === "anual") {
-      row.anual += monto;
-      row.ventasAnual += 1;
-    } else {
-      row.clases += monto;
-      row.ventasClases += 1;
-    }
-
-    row.total += monto;
-  });
-
-  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
-}, [ingresos]);
-  const vencimientosCriticos = useMemo(() => {
-  const hoyList = [];
-  const graciaList = [];
-  const vencidosList = [];
-
-  computed.forEach((c) => {
-    if (!c.vencimiento) return;
-
-    if (c.estadoSistema === "activo" && c.dias <= 0) {
-      hoyList.push(c);
-    } else if (c.estadoSistema === "gracia") {
-      graciaList.push(c);
-    } else if (c.estadoSistema === "vencido") {
-      vencidosList.push(c);
-    }
-  });
-
-  return {
-    hoy: hoyList,
-    gracia: graciaList,
-    vencidos: vencidosList,
-  };
-}, [computed]);
-const criticosHoyTotalPages = Math.max(
-  1,
-  Math.ceil(vencimientosCriticos.hoy.length / CRITICOS_PAGE_SIZE)
-);
-
-const criticosHoyRows = useMemo(() => {
-  const start = (criticosHoyPage - 1) * CRITICOS_PAGE_SIZE;
-  return vencimientosCriticos.hoy.slice(start, start + CRITICOS_PAGE_SIZE);
-}, [vencimientosCriticos.hoy, criticosHoyPage]);
-
-const criticosGraciaTotalPages = Math.max(
-  1,
-  Math.ceil(vencimientosCriticos.gracia.length / CRITICOS_PAGE_SIZE)
-);
-
-const criticosGraciaRows = useMemo(() => {
-  const start = (criticosGraciaPage - 1) * CRITICOS_PAGE_SIZE;
-  return vencimientosCriticos.gracia.slice(start, start + CRITICOS_PAGE_SIZE);
-}, [vencimientosCriticos.gracia, criticosGraciaPage]);
-
-const criticosVencidosTotalPages = Math.max(
-  1,
-  Math.ceil(vencimientosCriticos.vencidos.length / CRITICOS_PAGE_SIZE)
-);
-
-const criticosVencidosRows = useMemo(() => {
-  const start = (criticosVencidosPage - 1) * CRITICOS_PAGE_SIZE;
-  return vencimientosCriticos.vencidos.slice(start, start + CRITICOS_PAGE_SIZE);
-}, [vencimientosCriticos.vencidos, criticosVencidosPage]);
-  useEffect(() => {
-  setCriticosHoyPage(1);
-  setCriticosGraciaPage(1);
-  setCriticosVencidosPage(1);
-}, [computed]);
-
-useEffect(() => {
-  if (criticosHoyPage > criticosHoyTotalPages) {
-    setCriticosHoyPage(criticosHoyTotalPages);
-  }
-}, [criticosHoyPage, criticosHoyTotalPages]);
-
-useEffect(() => {
-  if (criticosGraciaPage > criticosGraciaTotalPages) {
-    setCriticosGraciaPage(criticosGraciaTotalPages);
-  }
-}, [criticosGraciaPage, criticosGraciaTotalPages]);
-
-useEffect(() => {
-  if (criticosVencidosPage > criticosVencidosTotalPages) {
-    setCriticosVencidosPage(criticosVencidosTotalPages);
-  }
-}, [criticosVencidosPage, criticosVencidosTotalPages]);
-  
-const currentMonthIngresos = useMemo(() => {
-  return ingresos.filter((i) => {
-    const d = parseISODate(i.fecha_pago);
-    return d && d.getFullYear() === TODAY.getFullYear() && d.getMonth() === TODAY.getMonth();
-  });
-}, [ingresos]);
-
-const dashboardStats = useMemo(() => {
-  const ingresosMes = currentMonthIngresos.reduce((acc, i) => acc + safeNumber(i.monto), 0);
-  const ventasMes = currentMonthIngresos.length;
-
-  const ingresosMesNormalizados = currentMonthIngresos.map((i) => ({
-    servicio: i.servicio,
-    monto: i.monto,
-    fecha_inicio: i.fecha_pago,
-  }));
-
-  const ingresosTotalesNormalizados = ingresos.map((i) => ({
-    servicio: i.servicio,
-    monto: i.monto,
-    fecha_inicio: i.fecha_pago,
-  }));
-
-  const breakdownMes = buildServiceBreakdown(ingresosMesNormalizados, false);
-  const breakdownTotal = buildServiceBreakdown(ingresosTotalesNormalizados, false);
-  const dailySeries = buildDailySalesSeries(ingresosTotalesNormalizados);
-
-  return {
-    ingresosMes,
-    ventasMes,
-    breakdownMes,
-    breakdownTotal,
-    dailySeries,
-  };
-}, [ingresos, currentMonthIngresos]);
-
-  const ingresosTotalPages = Math.max(
-  1,
-  Math.ceil(ingresos.length / INGRESOS_PAGE_SIZE)
-);
-
-const ingresosRows = useMemo(() => {
-  const start = (ingresosPage - 1) * INGRESOS_PAGE_SIZE;
-  return ingresos.slice(start, start + INGRESOS_PAGE_SIZE);
-}, [ingresos, ingresosPage]);
-  
-  useEffect(() => {
-  setIngresosPage(1);
-}, [ingresos]);
-
-useEffect(() => {
-  if (ingresosPage > ingresosTotalPages) {
-    setIngresosPage(ingresosTotalPages);
-  }
-}, [ingresosPage, ingresosTotalPages]);
-
-useEffect(() => {
-  setCriticosHoyPage(1);
-}, [computed]);
-
-useEffect(() => {
-  if (criticosHoyPage > criticosHoyTotalPages) {
-    setCriticosHoyPage(criticosHoyTotalPages);
-  }
-}, [criticosHoyPage, criticosHoyTotalPages]);
-  
-  const maxTotal = resumenMensual.length
-  ? Math.max(...resumenMensual.map((r) => r.total))
-  : 1;
 
   async function guardarCliente() {
-  const nombre = form.nombre.trim();
-  const email = form.email.trim().toLowerCase();
+    const validated = validateClienteForm(form);
+    if (!validated) return;
+    setGuardando(true);
 
-  if (!nombre) {
-    alert("Falta el nombre");
-    return;
-  }
+    const payload = buildClientePayload(form, validated.nombre, validated.email);
+    const { data: inserted, error } = await supabase.from("clientes").insert([payload]).select().single();
+    if (error) { setGuardando(false); alert("No se pudo guardar el cliente"); return; }
 
-  if (!email) {
-    alert("Falta el email");
-    return;
-  }
+    const { error: errIngreso } = await supabase.from("ingresos").insert([{
+      cliente_id: inserted.id, cliente_nombre: inserted.nombre, email: inserted.email,
+      servicio: inserted.servicio, monto: inserted.monto, fecha_pago: inserted.fecha_inicio, notas: inserted.notas || "",
+    }]);
+    if (errIngreso) alert("Error registrando ingreso: " + errIngreso.message);
 
-  if (!email.endsWith("@gmail.com")) {
-    alert("El email debe ser una cuenta @gmail.com");
-    return;
-  }
-
-  if (form.servicio !== "clases" && Number(form.duracion_dias || 0) <= 0) {
-    alert("Falta la duración en días");
-    return;
-  }
-
-  setGuardando(true);
-
-  const duracion = form.servicio === "clases" ? 0 : Number(form.duracion_dias || 0);
-
-  const payload = {
-    ...form,
-    nombre,
-    email,
-    estado_manual: "activo",
-    monto: Number(form.monto || 0),
-    duracion_dias: duracion,
-    deuda_restante: Number(form.deuda_restante || 0),
-    fecha_vencimiento:
-      form.servicio === "clases" || duracion <= 0
-        ? null
-        : toISODate(addDays(form.fecha_inicio, duracion)),
-  };
-
-  const { data: clienteInsertado, error } = await supabase
-    .from("clientes")
-    .insert([payload])
-    .select()
-    .single();
-
-  if (error) {
     setGuardando(false);
-    alert("No se pudo guardar el cliente");
-    return;
+    setShowForm(false);
+    setForm(FORM_DEFAULTS);
+    refetch();
   }
 
-  const { error: errorIngreso } = await supabase.from("ingresos").insert([
-    {
-      cliente_id: clienteInsertado.id,
-      cliente_nombre: clienteInsertado.nombre,
-      email: clienteInsertado.email,
-      servicio: clienteInsertado.servicio,
-      monto: clienteInsertado.monto,
-      fecha_pago: clienteInsertado.fecha_inicio,
-      notas: clienteInsertado.notas || "",
-    },
-  ]);
+  async function guardarRenovacion() {
+    const validated = validateClienteForm(renovarForm);
+    if (!validated) return;
+    setRenovando(true);
 
-  if (errorIngreso) {
-    alert("Error ingreso: " + errorIngreso.message);
+    const payload = buildClientePayload(renovarForm, validated.nombre, validated.email);
+    const { error: errCliente } = await supabase.from("clientes").update(payload).eq("id", renovarForm.id);
+    if (errCliente) { setRenovando(false); alert("No se pudo renovar el cliente"); return; }
+
+    const { error: errIngreso } = await supabase.from("ingresos").insert([{
+      cliente_id: renovarForm.id, cliente_nombre: validated.nombre, email: validated.email,
+      servicio: renovarForm.servicio, monto: Number(renovarForm.monto || 0),
+      fecha_pago: toISODate(TODAY), notas: renovarForm.notas || "",
+    }]);
+    if (errIngreso) alert("El cliente se renovó, pero no se pudo registrar el ingreso: " + errIngreso.message);
+
+    setRenovando(false);
+    setShowRenovar(false);
+    refetch();
   }
 
-  setGuardando(false);
-
-  setShowForm(false);
-  setForm({
-    nombre: "",
-    email: "",
-    servicio: "mensual",
-    fecha_inicio: toISODate(TODAY),
-    monto: 30,
-    duracion_dias: 30,
-    estado_manual: "activo",
-    deuda_restante: 0,
-    acceso_drive: false,
-    notas: "",
-  });
-
-  fetchClientes();
-  fetchIngresos();
-}
-  async function eliminarCliente(id) {
-  const { error } = await supabase.from("clientes").delete().eq("id", id);
-
-  if (error) {
-    alert("No se pudo eliminar");
-    return;
-  }
-
-  fetchClientes();
-  fetchIngresos();
-}
-async function eliminarIngreso(id) {
-  const ok = window.confirm("¿Eliminar este ingreso?");
-  if (!ok) return;
-
-  const { error } = await supabase
-    .from("ingresos")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    alert("No se pudo eliminar el ingreso");
-    return;
-  }
-
-  fetchIngresos();
-}
-  async function cambiarEstado(id, value) {
-    const { error } = await supabase
-      .from("clientes")
-      .update({ estado_manual: value })
-      .eq("id", id);
-
-    if (error) {
-      alert("No se pudo actualizar");
-      return;
-    }
-    fetchClientes();
-  }
-async function actualizarEmail(id, nuevoEmail) {
-  const { error } = await supabase
-    .from("clientes")
-    .update({ email: nuevoEmail })
-    .eq("id", id);
-
-  if (error) {
-    alert("No se pudo actualizar el email");
-    return;
-  }
-
-  fetchClientes();
-}
-  function abrirRenovar(cliente) {
-  const hoyISO = toISODate(TODAY);
-  const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
-
-  let fechaBase = hoyISO;
-
-  if (vencimientoActual) {
-    if (cliente.estadoSistema === "activo" || cliente.estadoSistema === "gracia") {
+  async function renovarRapido(cliente) {
+    const duracion = cliente.servicio === "clases" ? 0 : Number(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio));
+    const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
+    let fechaBase = toISODate(TODAY);
+    if (vencimientoActual && (cliente.estadoSistema === "activo" || cliente.estadoSistema === "gracia")) {
       fechaBase = vencimientoActual;
     }
-  }
+    const nuevoVencimiento = cliente.servicio === "clases" || duracion <= 0 ? null : toISODate(addDays(fechaBase, duracion));
 
-  setRenovarForm({
-    id: cliente.id,
-    nombre: cliente.nombre || "",
-    email: cliente.email || "",
-    servicio: cliente.servicio || "mensual",
-    fecha_inicio: fechaBase,
-    monto: safeNumber(cliente.monto),
-    duracion_dias:
-      cliente.servicio === "clases"
-        ? 0
-        : safeNumber(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio)),
-    deuda_restante: safeNumber(cliente.deuda_restante),
-    notas: cliente.notas || "",
-  });
+    const payload = {
+      nombre: cliente.nombre || "", email: (cliente.email || "").trim().toLowerCase(),
+      servicio: cliente.servicio, fecha_inicio: fechaBase, monto: Number(cliente.monto || 0),
+      duracion_dias: duracion, estado_manual: "activo",
+      deuda_restante: Number(cliente.deuda_restante || 0), notas: cliente.notas || "",
+      fecha_vencimiento: nuevoVencimiento,
+    };
 
-  setShowRenovar(true);
-}
- async function guardarRenovacion() {
-  const nombre = renovarForm.nombre.trim();
-  const email = renovarForm.email.trim().toLowerCase();
+    const { error: errCliente } = await supabase.from("clientes").update(payload).eq("id", cliente.id);
+    if (errCliente) { alert("No se pudo renovar el cliente"); return; }
 
-  if (!nombre) {
-    alert("Falta el nombre");
-    return;
-  }
-
-  if (!email) {
-    alert("Falta el email");
-    return;
-  }
-
-  if (!email.endsWith("@gmail.com")) {
-    alert("El email debe ser una cuenta @gmail.com");
-    return;
-  }
-
-  if (renovarForm.servicio !== "clases" && Number(renovarForm.duracion_dias || 0) <= 0) {
-    alert("Falta la duración en días");
-    return;
-  }
-
-  setRenovando(true);
-
-  const duracion = renovarForm.servicio === "clases" ? 0 : Number(renovarForm.duracion_dias || 0);
-
-  const payload = {
-    nombre,
-    email,
-    servicio: renovarForm.servicio,
-    fecha_inicio: renovarForm.fecha_inicio,
-    monto: Number(renovarForm.monto || 0),
-    duracion_dias: duracion,
-    estado_manual: "activo",
-    deuda_restante: Number(renovarForm.deuda_restante || 0),
-    notas: renovarForm.notas || "",
-    fecha_vencimiento:
-      renovarForm.servicio === "clases" || duracion <= 0
-        ? null
-        : toISODate(addDays(renovarForm.fecha_inicio, duracion)),
-  };
-
-  const { error: errorCliente } = await supabase
-    .from("clientes")
-    .update(payload)
-    .eq("id", renovarForm.id);
-
-  if (errorCliente) {
-    setRenovando(false);
-    alert("No se pudo renovar el cliente");
-    return;
-  }
-
-  const { error: errorIngreso } = await supabase.from("ingresos").insert([
-    {
-      cliente_id: renovarForm.id,
-      cliente_nombre: nombre,
-      email,
-      servicio: renovarForm.servicio,
-      monto: Number(renovarForm.monto || 0),
-      fecha_pago: toISODate(TODAY),
-      notas: renovarForm.notas || "",
-    },
-  ]);
-
-  if (errorIngreso) {
-    setRenovando(false);
-    alert("El cliente se renovó, pero no se pudo registrar el ingreso");
-    fetchClientes();
-    fetchIngresos();
-    setShowRenovar(false);
-    return;
-  }
-
-  setRenovando(false);
-  setShowRenovar(false);
-
-  fetchClientes();
-  fetchIngresos();
-}
-  async function renovarRapido(cliente) {
-  const duracion =
-    cliente.servicio === "clases"
-      ? 0
-      : Number(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio));
-
-  const hoyISO = toISODate(TODAY);
-  const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
-
-  let fechaBase = hoyISO;
-
-if (vencimientoActual) {
-  if (cliente.estadoSistema === "activo" || cliente.estadoSistema === "gracia") {
-    fechaBase = vencimientoActual;
-  }
-}
-  const nuevoVencimiento =
-    cliente.servicio === "clases" || duracion <= 0
-      ? null
-      : toISODate(addDays(fechaBase, duracion));
-
-  const payload = {
-    nombre: cliente.nombre || "",
-    email: (cliente.email || "").trim().toLowerCase(),
-    servicio: cliente.servicio,
-    fecha_inicio: fechaBase,
-    monto: Number(cliente.monto || 0),
-    duracion_dias: duracion,
-    estado_manual: "activo",
-    deuda_restante: Number(cliente.deuda_restante || 0),
-    notas: cliente.notas || "",
-    fecha_vencimiento: nuevoVencimiento,
-  };
-
-  const { error: errorCliente } = await supabase
-    .from("clientes")
-    .update(payload)
-    .eq("id", cliente.id);
-
-  if (errorCliente) {
-    alert("No se pudo renovar el cliente");
-    return;
-  }
-
-  const { error: errorIngreso } = await supabase.from("ingresos").insert([
-    {
-      cliente_id: cliente.id,
-      cliente_nombre: cliente.nombre || "",
+    const { error: errIngreso } = await supabase.from("ingresos").insert([{
+      cliente_id: cliente.id, cliente_nombre: cliente.nombre || "",
       email: (cliente.email || "").trim().toLowerCase(),
-      servicio: cliente.servicio,
-      monto: Number(cliente.monto || 0),
-      fecha_pago: hoyISO,
-      notas: cliente.notas || "",
-    },
-  ]);
+      servicio: cliente.servicio, monto: Number(cliente.monto || 0),
+      fecha_pago: toISODate(TODAY), notas: cliente.notas || "",
+    }]);
+    if (errIngreso) alert("El cliente se renovó, pero no se pudo registrar el ingreso");
 
-  if (errorIngreso) {
-    alert("El cliente se renovó, pero no se pudo registrar el ingreso");
+    refetch();
   }
 
-  fetchClientes();
-  fetchIngresos();
-}
+  async function eliminarCliente(id) {
+    const { error } = await supabase.from("clientes").delete().eq("id", id);
+    if (error) { alert("No se pudo eliminar"); return; }
+    refetch();
+  }
+
+  async function eliminarIngreso(id) {
+    if (!confirm("¿Eliminar este ingreso?")) return;
+    const { error } = await supabase.from("ingresos").delete().eq("id", id);
+    if (error) { alert("No se pudo eliminar el ingreso"); return; }
+    fetchIngresos();
+  }
+
+  async function cambiarEstado(id, value) {
+    const { error } = await supabase.from("clientes").update({ estado_manual: value }).eq("id", id);
+    if (error) { alert("No se pudo actualizar"); return; }
+    fetchClientes();
+  }
+
+  async function actualizarEmail(id, nuevoEmail) {
+    const { error } = await supabase.from("clientes").update({ email: nuevoEmail }).eq("id", id);
+    if (error) { alert("No se pudo actualizar el email"); return; }
+    fetchClientes();
+  }
+
+  function abrirRenovar(cliente) {
+    const vencimientoActual = cliente.vencimiento || cliente.fecha_vencimiento || null;
+    let fechaBase = toISODate(TODAY);
+    if (vencimientoActual && (cliente.estadoSistema === "activo" || cliente.estadoSistema === "gracia")) {
+      fechaBase = vencimientoActual;
+    }
+    setRenovarForm({
+      id: cliente.id, nombre: cliente.nombre || "", email: cliente.email || "",
+      servicio: cliente.servicio || "mensual", fecha_inicio: fechaBase,
+      monto: safeNumber(cliente.monto),
+      duracion_dias: cliente.servicio === "clases" ? 0 : safeNumber(cliente.duracion_dias || serviceDefaultDuration(cliente.servicio)),
+      deuda_restante: safeNumber(cliente.deuda_restante),
+      notas: cliente.notas || "",
+    });
+    setShowRenovar(true);
+  }
+
+  // ── Datos derivados ───────────────────────────────────────────────────────
+  const computed = useMemo(() => clientes.map(computeClient), [clientes]);
+
+  const filtered = useMemo(() => computed.filter((c) => {
+    const text = `${c.nombre || ""} ${c.email || ""}`.toLowerCase();
+    const okBusqueda = text.includes(busqueda.toLowerCase());
+    const okFiltro = filtro === "todos" || c.servicio === filtro || c.estadoSistema === filtro;
+    return okBusqueda && okFiltro;
+  }), [computed, busqueda, filtro]);
+
+  const deudores = useMemo(() => computed.filter((c) => Number(c.deuda_restante || 0) > 0), [computed]);
+  const clasesList = useMemo(() => computed.filter((c) => c.servicio === "clases"), [computed]);
+  const vencimientos = useMemo(() => computed
+    .filter((c) => c.servicio !== "clases")
+    .sort((a, b) => (!a.vencimiento ? 1 : !b.vencimiento ? -1 : a.vencimiento.localeCompare(b.vencimiento))),
+    [computed]);
+
+  const vencimientosCriticos = useMemo(() => {
+    const hoy = [], gracia = [], vencidos = [];
+    computed.forEach((c) => {
+      if (!c.vencimiento) return;
+      if (c.estadoSistema === "activo" && c.dias <= 0) hoy.push(c);
+      else if (c.estadoSistema === "gracia") gracia.push(c);
+      else if (c.estadoSistema === "vencido") vencidos.push(c);
+    });
+    return { hoy, gracia, vencidos };
+  }, [computed]);
+
+  const resumen = useMemo(() => {
+    const base = { activos: 0, gracia: 0, sacar: 0, deudores: 0, clases: 0, ingresos: 0 };
+    computed.forEach((c) => {
+      if (c.estadoSistema === "activo") base.activos++;
+      if (c.estadoSistema === "gracia") base.gracia++;
+      if (c.estadoSistema === "sacar" || c.estadoSistema === "vencido") base.sacar++;
+      if (Number(c.deuda_restante || 0) > 0) base.deudores++;
+      if (c.servicio === "clases") base.clases++;
+      base.ingresos += Number(c.monto || 0);
+    });
+    return base;
+  }, [computed]);
+
+  const currentMonthIngresos = useMemo(() => ingresos.filter((i) => {
+    const d = parseISODate(i.fecha_pago);
+    return d && d.getFullYear() === TODAY.getFullYear() && d.getMonth() === TODAY.getMonth();
+  }), [ingresos]);
+
+  const dashboardStats = useMemo(() => {
+    const normalize = (arr) => arr.map((i) => ({ servicio: i.servicio, monto: i.monto, fecha_inicio: i.fecha_pago }));
+    return {
+      ingresosMes: currentMonthIngresos.reduce((acc, i) => acc + safeNumber(i.monto), 0),
+      ventasMes: currentMonthIngresos.length,
+      breakdownMes: buildServiceBreakdown(normalize(currentMonthIngresos)),
+      breakdownTotal: buildServiceBreakdown(normalize(ingresos)),
+      dailySeries: buildDailySalesSeries(normalize(ingresos)),
+    };
+  }, [ingresos, currentMonthIngresos]);
+
+  const resumenMensual = useMemo(() => {
+    const map = new Map();
+    ingresos.forEach((i) => {
+      if (!i.fecha_pago) return;
+      const key = monthKey(i.fecha_pago);
+      if (!map.has(key)) map.set(key, { key, mensual: 0, anual: 0, clases: 0, total: 0, ventasMensual: 0, ventasAnual: 0, ventasClases: 0 });
+      const row = map.get(key);
+      const monto = Number(i.monto || 0);
+      if (i.servicio === "mensual") { row.mensual += monto; row.ventasMensual++; }
+      else if (i.servicio === "anual") { row.anual += monto; row.ventasAnual++; }
+      else { row.clases += monto; row.ventasClases++; }
+      row.total += monto;
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [ingresos]);
+
+  const maxTotal = resumenMensual.length ? Math.max(...resumenMensual.map((r) => r.total)) : 1;
+
+  // ── Paginaciones ──────────────────────────────────────────────────────────
+  // Reset busqueda/filtro -> vuelve a pág 1
+  const basePag = usePagination(filtered, PAGE_SIZES.base);
+  const vencimientosPag = usePagination(vencimientos, PAGE_SIZES.vencimientos);
+  const deudoresPag = usePagination(deudores, PAGE_SIZES.deudores);
+  const clasesPag = usePagination(clasesList, PAGE_SIZES.clases);
+  const ingresosPag = usePagination(ingresos, PAGE_SIZES.ingresos);
+  const criticosHoyPag = usePagination(vencimientosCriticos.hoy, PAGE_SIZES.criticos);
+  const criticosGraciaPag = usePagination(vencimientosCriticos.gracia, PAGE_SIZES.criticos);
+  const criticosVencidosPag = usePagination(vencimientosCriticos.vencidos, PAGE_SIZES.criticos);
+
+  // Reset base page cuando cambia búsqueda/filtro
+  useEffect(() => { basePag.setPage(1); }, [busqueda, filtro]);
+
+  // Scroll al cambiar página de base operativa
+  useEffect(() => { baseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [basePag.page]);
+
+  // ── Login ─────────────────────────────────────────────────────────────────
   if (!user) {
     return (
-      <div
-        style={{
-          display: "flex",
-          minHeight: "100vh",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f5f3ee",
-          padding: 24,
-        }}
-      >
-        <div
-          style={{
-            width: 360,
-            background: "#ffffff",
-            padding: 28,
-            borderRadius: 18,
-            boxShadow: "0 4px 16px rgba(15,23,42,0.06)",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 34, fontWeight: 800, color: "#0f172a" }}>
-            Seminario Cripto
-          </h2>
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "#f5f3ee", padding: 24 }}>
+        <div style={{ width: 360, ...S.card, padding: 28 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: 34, fontWeight: 800, color: "#0f172a" }}>Seminario Cripto</h2>
           <div style={{ color: "#64748b", marginBottom: 18 }}>Ingreso al sistema interno</div>
 
-          <input
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{
-              width: "100%",
-              marginBottom: 10,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #d1d5db",
-              boxSizing: "border-box",
-            }}
-          />
+          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)}
+            style={{ ...S.input, marginBottom: 10 }} />
 
           <div style={{ position: "relative", marginBottom: 14 }}>
-  <input
-    type={showPassword ? "text" : "password"}
-    placeholder="Contraseña"
-    value={password}
-    onChange={(e) => setPassword(e.target.value)}
-    style={{
-      width: "100%",
-      padding: 12,
-      borderRadius: 12,
-      border: "1px solid #d1d5db",
-      boxSizing: "border-box",
-    }}
-  />
+            <input type={showPassword ? "text" : "password"} placeholder="Contraseña" value={password}
+              onChange={(e) => setPassword(e.target.value)} style={S.input} />
+            <span onClick={() => setShowPassword(!showPassword)}
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", cursor: "pointer", fontSize: 14, color: "#64748b", userSelect: "none" }}>
+              {showPassword ? "Ocultar" : "👁"}
+            </span>
+          </div>
 
-  <span
-    onClick={() => setShowPassword(!showPassword)}
-    style={{
-      position: "absolute",
-      right: 12,
-      top: "50%",
-      transform: "translateY(-50%)",
-      cursor: "pointer",
-      fontSize: 14,
-      color: "#64748b",
-      userSelect: "none",
-    }}
-  >
-    {showPassword ? "Ocultar" : "👁"}
-  </span>
-</div>
-
-          <button
-            onClick={login}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 12,
-              border: "none",
-              background: "#0f172a",
-              color: "#fff",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Entrar
-          </button>
+          <button onClick={login} style={{ ...btn(true), width: "100%" }}>Entrar</button>
         </div>
       </div>
     );
   }
-  const isClasesForm = form.servicio === "clases";
+
+  // ── App principal ─────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: "100vh", background: "#f5f3ee", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 28 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 20,
-            alignItems: "center",
-            marginBottom: 24,
-            flexWrap: "wrap",
-          }}
-        >
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "center", marginBottom: 24, flexWrap: "wrap" }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 38, fontWeight: 800 }}>Seminario Cripto</h1>
             <div style={{ color: "#64748b", marginTop: 6 }}>Panel de gestión comercial y operativa.</div>
           </div>
-
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-  <button style={navButtonStyle(view === "operativa")} onClick={() => setView("operativa")}>
-    Operativa
-  </button>
+            <button style={navBtn(activeView === "operativa")} onClick={() => setActiveView("operativa")}>Operativa</button>
+            <button style={navBtn(activeView === "dashboard")} onClick={() => setActiveView("dashboard")}>Dashboard</button>
+            <button style={btn(true)} onClick={() => setShowForm(!showForm)}>{showForm ? "Cerrar" : "+ Nuevo cliente"}</button>
+            <button onClick={logout} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 600 }}>Salir</button>
+          </div>
+        </div>
 
-  <button style={navButtonStyle(view === "dashboard")} onClick={() => setView("dashboard")}>
-    Dashboard
-  </button>
-
-  <button style={buttonStyle(true)} onClick={() => setShowForm(!showForm)}>
-    {showForm ? "Cerrar" : "+ Nuevo cliente"}
-  </button>
-
-  <button
-    onClick={logout}
-    style={{
-      padding: "10px 16px",
-      borderRadius: 10,
-      border: "1px solid #e5e7eb",
-      background: "#fff",
-      cursor: "pointer",
-      fontWeight: 600,
-    }}
-  >
-    Salir
-  </button>
-</div>
-</div>
-
+        {/* Formulario alta */}
         {showForm && (
-          <div style={{ ...cardStyle(), marginBottom: 24 }}>
-            <h3 style={{ marginTop: 0 }}>Alta de cliente</h3>
+          <div style={{ marginBottom: 24 }}>
+            <ClienteForm title="Alta de cliente" form={form} setForm={setForm}
+              onGuardar={guardarCliente} onCancelar={() => setShowForm(false)} guardando={guardando} />
+          </div>
+        )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Nombre</label>
-                <input
-                  style={inputStyle()}
-                  placeholder="Nombre"
-                  value={form.nombre}
-                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                />
+        {/* Modal renovar */}
+        {showRenovar && (
+          <ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso"
+            form={renovarForm} setForm={setRenovarForm}
+            onGuardar={guardarRenovacion} onCancelar={() => setShowRenovar(false)}
+            guardando={renovando} isModal />
+        )}
+
+        {/* ── DASHBOARD ────────────────────────────────────────────────────── */}
+        {activeView === "dashboard" && (
+          <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+              <MetricCard title="Ingresos del mes" value={money(dashboardStats.ingresosMes)} />
+              <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} />
+            </div>
+
+            <SimpleBarChart title="Ventas por día (mes actual)" data={dashboardStats.dailySeries} valueKey="total" />
+            <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashboardStats.breakdownMes} />
+            <BreakdownCard title="Ingresos totales por tipo" breakdown={dashboardStats.breakdownTotal} />
+
+            {/* Detalle de ingresos */}
+            <div style={S.card}>
+              <h3 style={{ marginTop: 0 }}>Detalle de ingresos</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.table}>
+                  <thead><TableHeader cols={["Fecha", "Nombre", "Email", "Servicio", "Monto", "Notas", "Eliminar"]} /></thead>
+                  <tbody>
+                    {ingresosPag.rows.map((i) => (
+                      <tr key={i.id}>
+                        <td style={S.td}>{i.fecha_pago ? formatDate(i.fecha_pago) : "-"}</td>
+                        <td style={{ ...S.td, fontWeight: 700 }}>{i.cliente_nombre || "-"}</td>
+                        <td style={S.td}>{i.email || "-"}</td>
+                        <td style={S.td}>{serviceLabel(i.servicio)}</td>
+                        <td style={S.td}>{money(i.monto)}</td>
+                        <td style={S.td}>{i.notas || "-"}</td>
+                        <td style={S.td}>
+                          <button style={{ ...btn(false), padding: "8px 12px" }} onClick={() => eliminarIngreso(i.id)}>🗑</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!ingresos.length && <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No hay ingresos cargados.</div>}
+              </div>
+              <Pagination page={ingresosPag.page} totalPages={ingresosPag.totalPages} setPage={ingresosPag.setPage} />
+            </div>
+          </div>
+        )}
+
+        {/* ── OPERATIVA ────────────────────────────────────────────────────── */}
+        {activeView === "operativa" && (
+          <>
+            {/* Métricas */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 24 }}>
+              {[["Activos", resumen.activos], ["En gracia", resumen.gracia], ["Para sacar", resumen.sacar],
+                ["Deudores", resumen.deudores], ["Clases", resumen.clases], ["Ingresos", `USD ${resumen.ingresos}`]].map(([label, value]) => (
+                <div key={label} style={S.card}>
+                  <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{label}</div>
+                  <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Vencimientos críticos */}
+            <div style={{ ...S.card, marginBottom: 24, padding: 24 }}>
+              <div style={{ marginBottom: 18 }}>
+                <h3 style={{ margin: 0, fontSize: 24 }}>Vencimientos críticos</h3>
+                <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
+                  Seguimiento rápido de clientes sensibles para accionar sin entrar a la base completa.
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+                <CriticosPanel titulo="Por vencer" badgeBg="#e2e8f0" badgeColor="#0f172a"
+                  clientes={vencimientosCriticos.hoy} {...criticosHoyPag}
+                  accentBorder="#e5e7eb" accentBg="#fff" accentText="#64748b" dateLabel="vence"
+                  onRenovarRapido={renovarRapido} onAbrirRenovar={abrirRenovar} onEliminar={eliminarCliente} />
+                <CriticosPanel titulo="En gracia" badgeBg="#fef3c7" badgeColor="#92400e"
+                  clientes={vencimientosCriticos.gracia} {...criticosGraciaPag}
+                  accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e" dateLabel="venció"
+                  onRenovarRapido={renovarRapido} onAbrirRenovar={abrirRenovar} onEliminar={eliminarCliente} />
+                <CriticosPanel titulo="Vencidos" badgeBg="#fee2e2" badgeColor="#b91c1c"
+                  clientes={vencimientosCriticos.vencidos} {...criticosVencidosPag}
+                  accentBorder="#fecaca" accentBg="#fef2f2" accentText="#b91c1c" dateLabel="venció"
+                  onRenovarRapido={renovarRapido} onAbrirRenovar={abrirRenovar} onEliminar={eliminarCliente} />
+              </div>
+            </div>
+
+            {/* Base operativa */}
+            <div ref={baseRef} style={{ ...S.card, marginBottom: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Base operativa</h3>
+                  <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
+                    {loading ? "Cargando datos..." : "Gestión central de clientes, renovaciones y clases."}
+                  </div>
+                </div>
               </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Email</label>
-                <input
-                  style={inputStyle()}
-                  placeholder="Email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Servicio</label>
-                <select
-                  style={inputStyle()}
-                  value={form.servicio}
-                  onChange={(e) => {
-                    const servicio = e.target.value;
-                    setForm({
-                      ...form,
-                      servicio,
-                      monto: serviceDefaultAmount(servicio),
-                      duracion_dias: serviceDefaultDuration(servicio),
-                    });
-                  }}
-                >
-                  <option value="mensual">Plan Inversor Mensual</option>
-                  <option value="anual">Plan Inversor Anual</option>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                <input style={{ ...S.input, maxWidth: 340 }} placeholder="Buscar cliente o email"
+                  value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                <select style={{ ...S.input, maxWidth: 220 }} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
+                  <option value="todos">Todos</option>
+                  <option value="mensual">Mensual</option>
+                  <option value="anual">Anual</option>
                   <option value="clases">Clases</option>
+                  <option value="gracia">En gracia</option>
+                  <option value="sacar">Sacar</option>
                 </select>
               </div>
 
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Fecha de inicio</label>
-                <input
-                  style={inputStyle()}
-                  type="date"
-                  value={form.fecha_inicio}
-                  onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Monto</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Monto"
-                  value={form.monto}
-                  onChange={(e) => setForm({ ...form, monto: e.target.value })}
-                />
-              </div>
-
-              {!isClasesForm && (
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Duración (días)</label>
-    <input
-      style={inputStyle()}
-      type="number"
-      placeholder="Duración en días"
-      value={form.duracion_dias}
-      onChange={(e) => setForm({ ...form, duracion_dias: e.target.value })}
-    />
-  </div>
-)}
-              <div style={fieldWrapStyle()}>
-                <label style={labelStyle()}>Deuda restante</label>
-                <input
-                  style={inputStyle()}
-                  type="number"
-                  placeholder="Deuda restante"
-                  value={form.deuda_restante}
-                  onChange={(e) => setForm({ ...form, deuda_restante: e.target.value })}
-                />
-              </div>
-
-              <div style={fieldWrapStyle(true)}>
-                <label style={labelStyle()}>Notas</label>
-                <input
-                  style={inputStyle()}
-                  placeholder="Notas"
-                  value={form.notas}
-                  onChange={(e) => setForm({ ...form, notas: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-              <button style={buttonStyle(true)} onClick={guardarCliente}>
-                {guardando ? "Guardando..." : "Guardar cliente"}
-              </button>
-            </div>
-          </div>
-        )}
- {showRenovar && (
-  <div
-    style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(15,23,42,0.45)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 24,
-      zIndex: 1000,
-    }}
-  >
-    <div
-      style={{
-        width: "100%",
-        maxWidth: 820,
-        background: "#fff",
-        borderRadius: 18,
-        padding: 24,
-        boxShadow: "0 20px 60px rgba(15,23,42,0.25)",
-        border: "1px solid #e5e7eb",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-        <div>
-          <h3 style={{ margin: 0 }}>Renovar cliente</h3>
-          <div style={{ color: "#64748b", fontSize: 14 }}>
-            Actualizar plan y registrar nuevo ingreso
-          </div>
-        </div>
-
-        <button onClick={() => setShowRenovar(false)} style={buttonStyle(false)}>
-          Cerrar
-        </button>
-      </div>
-
-     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Nombre</label>
-    <input
-      style={inputStyle()}
-      value={renovarForm.nombre}
-      onChange={(e) => setRenovarForm({ ...renovarForm, nombre: e.target.value })}
-    />
-  </div>
-
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Email</label>
-    <input
-      style={inputStyle()}
-      value={renovarForm.email}
-      onChange={(e) => setRenovarForm({ ...renovarForm, email: e.target.value })}
-    />
-  </div>
-
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Servicio</label>
-    <select
-      style={inputStyle()}
-      value={renovarForm.servicio}
-      onChange={(e) => {
-        const servicio = e.target.value;
-        setRenovarForm({
-          ...renovarForm,
-          servicio,
-          monto: serviceDefaultAmount(servicio),
-          duracion_dias: serviceDefaultDuration(servicio),
-        });
-      }}
-    >
-      <option value="mensual">Mensual</option>
-      <option value="anual">Anual</option>
-      <option value="clases">Clases</option>
-    </select>
-  </div>
-
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Fecha de renovación</label>
-    <input
-      type="date"
-      style={inputStyle()}
-      value={renovarForm.fecha_inicio}
-      onChange={(e) => setRenovarForm({ ...renovarForm, fecha_inicio: e.target.value })}
-    />
-  </div>
-
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Monto</label>
-    <input
-      type="number"
-      style={inputStyle()}
-      value={renovarForm.monto}
-      onChange={(e) => setRenovarForm({ ...renovarForm, monto: e.target.value })}
-    />
-  </div>
-
-  {renovarForm.servicio !== "clases" && (
-    <div style={fieldWrapStyle()}>
-      <label style={labelStyle()}>Duración (días)</label>
-      <input
-        type="number"
-        style={inputStyle()}
-        value={renovarForm.duracion_dias}
-        onChange={(e) => setRenovarForm({ ...renovarForm, duracion_dias: e.target.value })}
-      />
-    </div>
-  )}
-
-  <div style={fieldWrapStyle()}>
-    <label style={labelStyle()}>Deuda restante</label>
-    <input
-      type="number"
-      style={inputStyle()}
-      value={renovarForm.deuda_restante}
-      onChange={(e) => setRenovarForm({ ...renovarForm, deuda_restante: e.target.value })}
-    />
-  </div>
-
-  <div style={fieldWrapStyle(true)}>
-    <label style={labelStyle()}>Notas</label>
-    <input
-      style={inputStyle()}
-      value={renovarForm.notas}
-      onChange={(e) => setRenovarForm({ ...renovarForm, notas: e.target.value })}
-    />
-  </div>
-</div>
-
-          <div style={{ marginTop: 18, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-        <button
-          onClick={() => setShowRenovar(false)}
-          style={buttonStyle(false)}
-        >
-          Cancelar
-        </button>
-
-        <button
-          style={buttonStyle(true)}
-          onClick={guardarRenovacion}
-        >
-          {renovando ? "Guardando..." : "Confirmar renovación"}
-        </button>
-      </div>
-    </div>
-  </div>
-)}       
-{view === "dashboard" && (
-  <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-      <MetricCard title="Ingresos del mes" value={money(dashboardStats.ingresosMes)} />
-      <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} />
-    </div>
-
-    <SimpleBarChart
-      title="Ventas por día (mes actual)"
-      data={dashboardStats.dailySeries}
-      valueKey="total"
-    />
-
-    <BreakdownCard
-      title="Ingresos por tipo (mes)"
-      breakdown={dashboardStats.breakdownMes}
-    />
-
-    <BreakdownCard
-      title="Ingresos totales por tipo"
-      breakdown={dashboardStats.breakdownTotal}
-    />
-
-    <div style={cardStyle()}>
-      <h3 style={{ marginTop: 0 }}>Detalle de ingresos</h3>
-
-      <div style={{ overflowX: "auto" }}>
-        <table style={tableStyle()}>
-          <thead>
-            <tr style={{ background: "#f8fafc" }}>
-              {["Fecha", "Nombre", "Email", "Servicio", "Monto", "Notas", "Eliminar"].map((h) => (
-                <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ingresosRows.map((i) => (
-              <tr key={i.id}>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {i.fecha_pago ? formatDate(i.fecha_pago) : "-"}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
-                  {i.cliente_nombre || "-"}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {i.email || "-"}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {serviceLabel(i.servicio)}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {money(i.monto)}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  {i.notas || "-"}
-                </td>
-                <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  <button
-                    style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                    onClick={() => eliminarIngreso(i.id)}
-                  >
-                    🗑
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {ingresos.length > 0 && (
-  <div
-    style={{
-      marginTop: 16,
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 12,
-      flexWrap: "wrap",
-    }}
-  >
-    <div style={{ color: "#64748b", fontSize: 14 }}>
-      Página {ingresosPage} de {ingresosTotalPages}
-    </div>
-
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <button
-        style={buttonStyle(false)}
-        onClick={() => setIngresosPage((p) => Math.max(1, p - 1))}
-        disabled={ingresosPage === 1}
-      >
-        Anterior
-      </button>
-
-      {Array.from({ length: ingresosTotalPages }, (_, i) => i + 1).map((page) => (
-        <button
-          key={page}
-          style={page === ingresosPage ? buttonStyle(true) : buttonStyle(false)}
-          onClick={() => setIngresosPage(page)}
-        >
-          {page}
-        </button>
-      ))}
-
-      <button
-        style={buttonStyle(false)}
-        onClick={() => setIngresosPage((p) => Math.min(ingresosTotalPages, p + 1))}
-        disabled={ingresosPage === ingresosTotalPages}
-      >
-        Siguiente
-      </button>
-    </div>
-  </div>
-)}
-        
-        {!ingresos.length && (
-          <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
-            No hay ingresos cargados.
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-       {view === "operativa" && (
-  <>   
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 16, marginBottom: 24 }}>
-          {[
-            ["Activos", resumen.activos],
-            ["En gracia", resumen.gracia],
-            ["Para sacar", resumen.sacar],
-            ["Deudores", resumen.deudores],
-            ["Clases", resumen.clases],
-            ["Ingresos", `USD ${resumen.ingresos}`],
-          ].map(([label, value]) => (
-            <div key={label} style={cardStyle()}>
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 6 }}>{label}</div>
-              <div style={{ fontSize: 30, fontWeight: 800 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ ...cardStyle(), marginBottom: 24, padding: 24 }}>
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
-    <div>
-      <h3 style={{ margin: 0, fontSize: 24 }}>Vencimientos críticos</h3>
-      <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
-        Seguimiento rápido de clientes sensibles para accionar sin entrar a la base completa.
-      </div>
-    </div>
-  </div>
-
-  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-    
-    <div
-      style={{
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 18,
-        padding: 18,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        minHeight: 260,
-        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
-      }}
-    >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontSize: 16, fontWeight: 800 }}>Por vencer</div>
-        <div
-          style={{
-            minWidth: 34,
-            height: 34,
-            borderRadius: 999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#e2e8f0",
-            fontWeight: 800,
-          }}
-        >
-          {vencimientosCriticos.hoy.length}
-        </div>
-      </div>
-
-      {vencimientosCriticos.hoy.length ? (
-  <>
-    <div style={{ display: "grid", gap: 10 }}>
-      {criticosHoyRows.map((c) => (
-        <div
-          key={c.id}
-          style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: 14,
-            padding: 12,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-            <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>
-              {serviceLabel(c.servicio)} · vence {formatDate(c.vencimiento)}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              style={{ ...buttonStyle(true), padding: "8px 12px" }}
-              onClick={() => {
-                if (confirm("¿Renovar cliente con el mismo plan?")) {
-                  renovarRapido(c);
-                }
-              }}
-            >
-              ✔
-            </button>
-            <button
-              style={{ ...buttonStyle(false), padding: "8px 12px" }}
-              onClick={() => abrirRenovar(c)}
-            >
-              ✏️
-            </button>
-            <button
-              style={{ ...buttonStyle(false), padding: "8px 12px" }}
-              onClick={() => {
-                if (confirm("¿Eliminar cliente?")) {
-                  eliminarCliente(c.id);
-                }
-              }}
-            >
-              🗑
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    <div
-      style={{
-        marginTop: 16,
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 12,
-      }}
-    >
-      <div style={{ color: "#64748b", fontSize: 14 }}>
-        Página {criticosHoyPage} de {criticosHoyTotalPages}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          style={buttonStyle(false)}
-          onClick={() => setCriticosHoyPage((p) => Math.max(1, p - 1))}
-          disabled={criticosHoyPage === 1}
-        >
-          Anterior
-        </button>
-
-        {Array.from({ length: criticosHoyTotalPages }, (_, i) => i + 1).map((page) => (
-          <button
-            key={page}
-            style={page === criticosHoyPage ? buttonStyle(true) : buttonStyle(false)}
-            onClick={() => setCriticosHoyPage(page)}
-          >
-            {page}
-          </button>
-        ))}
-
-        <button
-          style={buttonStyle(false)}
-          onClick={() => setCriticosHoyPage((p) => Math.min(criticosHoyTotalPages, p + 1))}
-          disabled={criticosHoyPage === criticosHoyTotalPages}
-        >
-          Siguiente
-        </button>
-      </div>
-    </div>
-  </>
-) : (
-  <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-)}
-    </div>
-
-    <div
-  style={{
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 18,
-    padding: 18,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-    minHeight: 260,
-    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
-  }}
->
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-    <div style={{ fontSize: 16, fontWeight: 800 }}>En gracia</div>
-    <div
-      style={{
-        minWidth: 34,
-        height: 34,
-        borderRadius: 999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#fef3c7",
-        color: "#92400e",
-        fontWeight: 800,
-      }}
-    >
-      {vencimientosCriticos.gracia.length}
-    </div>
-  </div>
-
-  {vencimientosCriticos.gracia.length ? (
-    <>
-      <div style={{ display: "grid", gap: 10 }}>
-        {criticosGraciaRows.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              border: "1px solid #fde68a",
-              background: "#fffbeb",
-              borderRadius: 14,
-              padding: 12,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-              <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
-                {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Renovar cliente con el mismo plan?")) {
-                    renovarRapido(c);
-                  }
-                }}
-              >
-                ✔
-              </button>
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => abrirRenovar(c)}
-              >
-                ✏️
-              </button>
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Eliminar cliente?")) {
-                    eliminarCliente(c.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 16,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div style={{ color: "#64748b", fontSize: 14 }}>
-          Página {criticosGraciaPage} de {criticosGraciaTotalPages}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            style={buttonStyle(false)}
-            onClick={() => setCriticosGraciaPage((p) => Math.max(1, p - 1))}
-            disabled={criticosGraciaPage === 1}
-          >
-            Anterior
-          </button>
-
-          {Array.from({ length: criticosGraciaTotalPages }, (_, i) => i + 1).map((page) => (
-            <button
-              key={page}
-              style={page === criticosGraciaPage ? buttonStyle(true) : buttonStyle(false)}
-              onClick={() => setCriticosGraciaPage(page)}
-            >
-              {page}
-            </button>
-          ))}
-
-          <button
-            style={buttonStyle(false)}
-            onClick={() => setCriticosGraciaPage((p) => Math.min(criticosGraciaTotalPages, p + 1))}
-            disabled={criticosGraciaPage === criticosGraciaTotalPages}
-          >
-            Siguiente
-          </button>
-        </div>
-      </div>
-    </>
-  ) : (
-    <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-  )}
-</div>
-
-    <div
-  style={{
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 18,
-    padding: 18,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-    minHeight: 260,
-    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
-  }}
->
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-    <div style={{ fontSize: 16, fontWeight: 800 }}>Vencidos</div>
-    <div
-      style={{
-        minWidth: 34,
-        height: 34,
-        borderRadius: 999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#fee2e2",
-        color: "#b91c1c",
-        fontWeight: 800,
-      }}
-    >
-      {vencimientosCriticos.vencidos.length}
-    </div>
-  </div>
-
-  {vencimientosCriticos.vencidos.length ? (
-    <>
-      <div style={{ display: "grid", gap: 10 }}>
-        {criticosVencidosRows.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              border: "1px solid #fecaca",
-              background: "#fef2f2",
-              borderRadius: 14,
-              padding: 12,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-              <div style={{ fontSize: 13, color: "#b91c1c", marginTop: 2 }}>
-                {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Renovar cliente con el mismo plan?")) {
-                    renovarRapido(c);
-                  }
-                }}
-              >
-                ✔
-              </button>
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => abrirRenovar(c)}
-              >
-                ✏️
-              </button>
-              <button
-                style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                onClick={() => {
-                  if (confirm("¿Eliminar cliente?")) {
-                    eliminarCliente(c.id);
-                  }
-                }}
-              >
-                🗑
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          marginTop: 16,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div style={{ color: "#64748b", fontSize: 14 }}>
-          Página {criticosVencidosPage} de {criticosVencidosTotalPages}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            style={buttonStyle(false)}
-            onClick={() => setCriticosVencidosPage((p) => Math.max(1, p - 1))}
-            disabled={criticosVencidosPage === 1}
-          >
-            Anterior
-          </button>
-
-          {Array.from({ length: criticosVencidosTotalPages }, (_, i) => i + 1).map((page) => (
-            <button
-              key={page}
-              style={page === criticosVencidosPage ? buttonStyle(true) : buttonStyle(false)}
-              onClick={() => setCriticosVencidosPage(page)}
-            >
-              {page}
-            </button>
-          ))}
-
-          <button
-            style={buttonStyle(false)}
-            onClick={() => setCriticosVencidosPage((p) => Math.min(criticosVencidosTotalPages, p + 1))}
-            disabled={criticosVencidosPage === criticosVencidosTotalPages}
-          >
-            Siguiente
-          </button>
-        </div>
-      </div>
-    </>
-  ) : (
-    <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-  )}
-</div>
-
-  </div>
-</div>
-        <div ref={baseRef} style={{ ...cardStyle(), marginBottom: 24 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 16,
-              alignItems: "center",
-              flexWrap: "wrap",
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0 }}>Base operativa</h3>
-              <div style={{ color: "#64748b", fontSize: 14, marginTop: 4 }}>
-                {loading ? "Cargando datos..." : "Gestión central de clientes, renovaciones y clases."}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-            <input
-              style={{ ...inputStyle(), maxWidth: 340 }}
-              placeholder="Buscar cliente o email"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-            />
-
-            <select style={{ ...inputStyle(), maxWidth: 220 }} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="mensual">Mensual</option>
-              <option value="anual">Anual</option>
-              <option value="clases">Clases</option>
-              <option value="gracia">En gracia</option>
-              <option value="sacar">Sacar</option>
-            </select>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle()}>
-              <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  {["Cliente", "Email", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Acciones"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {baseOperativaRows.map((c) => (
-  <tr key={c.id}>
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>
-      {c.nombre}
-    </td>
-
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-  <input
-    value={c.email || ""}
-    onChange={(e) => {
-      const nuevo = e.target.value;
-
-      setClientes((prev) =>
-        prev.map((cli) =>
-          cli.id === c.id ? { ...cli, email: nuevo } : cli
-        )
-      );
-    }}
-    onBlur={(e) => actualizarEmail(c.id, e.target.value)}
-    style={{
-      width: "100%",
-      padding: "6px 8px",
-      borderRadius: 8,
-      border: "1px solid #d1d5db",
-      fontSize: 13,
-      boxSizing: "border-box",
-    }}
-  />
-</td>
-
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-      {serviceLabel(c.servicio)}
-    </td>
-
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-      {c.vencimiento ? formatDate(c.vencimiento) : "-"}
-    </td>
-
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-      {c.vencimiento ? c.dias : "-"}
-    </td>
-
-    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-      <span style={badgeStyle(c.estadoSistema)}>
-        {c.estadoSistema.toUpperCase()}
-      </span>
-    </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                      <select style={inputStyle()} value={c.estado_manual} onChange={(e) => cambiarEstado(c.id, e.target.value)}>
-                        <option value="activo">Activo</option>
-                        <option value="sacar">Sacar</option>
-                      </select>
-                    </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-  <div style={{ display: "flex", gap: 8 }}>
-    <button
-      title="Renovación rápida"
-      style={{ ...buttonStyle(true), padding: "8px 12px" }}
-      onClick={() => {
-        if (confirm("¿Renovar cliente con el mismo plan?")) {
-          renovarRapido(c);
-        }
-      }}
-    >
-      ✔
-    </button>
-
-    <button
-      title="Renovar con cambios"
-      style={{ ...buttonStyle(false), padding: "8px 12px" }}
-      onClick={() => abrirRenovar(c)}
-    >
-      ✏️
-    </button>
-
-    <button
-      title="Eliminar cliente"
-      style={{ ...buttonStyle(false), padding: "8px 12px" }}
-      onClick={() => {
-        if (confirm("¿Eliminar cliente?")) {
-          eliminarCliente(c.id);
-        }
-      }}
-    >
-      🗑
-    </button>
-  </div>
-</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {!filtered.length && !loading && (
-              <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No hay resultados.</div>
-            )}
-            {filtered.length > 0 && (
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: 12,
-      marginTop: 16,
-      flexWrap: "wrap",
-    }}
-  >
-    <div style={{ color: "#64748b", fontSize: 14 }}>
-      Página {basePage} de {baseTotalPages}
-    </div>
-
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <button
-        style={buttonStyle(false)}
-        onClick={() => setBasePage((p) => Math.max(1, p - 1))}
-        disabled={basePage === 1}
-      >
-        Anterior
-      </button>
-
-      {Array.from({ length: baseTotalPages }, (_, i) => i + 1).map((page) => (
-        <button
-          key={page}
-          style={page === basePage ? buttonStyle(true) : buttonStyle(false)}
-          onClick={() => setBasePage(page)}
-        >
-          {page}
-        </button>
-      ))}
-
-      <button
-        style={buttonStyle(false)}
-        onClick={() => setBasePage((p) => Math.min(baseTotalPages, p + 1))}
-        disabled={basePage === baseTotalPages}
-      >
-        Siguiente
-      </button>
-    </div>
-  </div>
-)}
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Vencimientos</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Cliente", "Servicio", "Vence", "Días", "Estado"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {vencimientosRows.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.vencimiento ? c.dias : "-"}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        <span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div
-  style={{
-    marginTop: 16,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 12,
-  }}
->
-  <div style={{ color: "#64748b", fontSize: 14 }}>
-    Página {vencimientosPage} de {vencimientosTotalPages}
-  </div>
-
-  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-    <button
-      style={buttonStyle(false)}
-      onClick={() => setVencimientosPage((p) => Math.max(1, p - 1))}
-    >
-      Anterior
-    </button>
-
-    {Array.from({ length: vencimientosTotalPages }, (_, i) => i + 1).map((page) => (
-      <button
-        key={page}
-        style={page === vencimientosPage ? buttonStyle(true) : buttonStyle(false)}
-        onClick={() => setVencimientosPage(page)}
-      >
-        {page}
-      </button>
-    ))}
-
-    <button
-      style={buttonStyle(false)}
-      onClick={() =>
-        setVencimientosPage((p) => Math.min(vencimientosTotalPages, p + 1))
-      }
-    >
-      Siguiente
-    </button>
-  </div>
-</div>
-          </div>
-
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Deudores</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Cliente", "Servicio", "Pagado", "Resta", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {deudoresRows.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{serviceLabel(c.servicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.monto}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.deuda_restante}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div
-  style={{
-    marginTop: 16,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 12,
-  }}
->
-  <div style={{ color: "#64748b", fontSize: 14 }}>
-    Página {deudoresPage} de {deudoresTotalPages}
-  </div>
-
-  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-    <button
-      style={buttonStyle(false)}
-      onClick={() => setDeudoresPage((p) => Math.max(1, p - 1))}
-    >
-      Anterior
-    </button>
-
-    {Array.from({ length: deudoresTotalPages }, (_, i) => i + 1).map((page) => (
-  <button
-    key={page}
-    style={page === deudoresPage ? buttonStyle(true) : buttonStyle(false)}
-    onClick={() => setDeudoresPage(page)}
-  >
-    {page}
-  </button>
-))}
-
-    <button
-      style={buttonStyle(false)}
-      onClick={() =>
-        setDeudoresPage((p) => Math.min(deudoresTotalPages, p + 1))
-      }
-    >
-      Siguiente
-    </button>
-  </div>
-</div>
-          </div>
-
-          <div style={cardStyle()}>
-            <h3 style={{ marginTop: 0 }}>Clases</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle()}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    {["Alumno", "Inicio", "Mes", "Monto", "Notas"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {clasesRows.map((c) => (
-                    <tr key={c.id}>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 700 }}>{c.nombre}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{formatDate(c.fecha_inicio)}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", textTransform: "capitalize" }}>
-                        {monthLabel(monthKey(c.fecha_inicio))}
-                      </td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {c.monto}</td>
-                      <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>{c.notas || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div
-  style={{
-    marginTop: 16,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 12,
-  }}
->
-  <div style={{ color: "#64748b", fontSize: 14 }}>
-  Página {criticosHoyPage} de {criticosHoyTotalPages}
-</div>
-
-  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-    <button
-      style={buttonStyle(false)}
-      onClick={() => setClasesPage((p) => Math.max(1, p - 1))}
-      disabled={clasesPage === 1}
-    >
-      Anterior
-    </button>
-
-    {Array.from({ length: clasesTotalPages }, (_, i) => i + 1).map((page) => (
-      <button
-        key={page}
-        style={page === clasesPage ? buttonStyle(true) : buttonStyle(false)}
-        onClick={() => setClasesPage(page)}
-      >
-        {page}
-      </button>
-    ))}
-
-    <button
-      style={buttonStyle(false)}
-      onClick={() => setClasesPage((p) => Math.min(clasesTotalPages, p + 1))}
-      disabled={clasesPage === clasesTotalPages}
-    >
-      Siguiente
-    </button>
-  </div>
-</div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
-            <div style={cardStyle()}>
-              <h3 style={{ marginTop: 0 }}>Resumen mensual</h3>
               <div style={{ overflowX: "auto" }}>
-                <table style={tableStyle()}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc" }}>
-                      {["Mes", "Mensual", "Anual", "Clases", "Total"].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: 12, borderBottom: "1px solid #e5e7eb" }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
+                <table style={S.table}>
+                  <thead><TableHeader cols={["Cliente", "Email", "Servicio", "Vencimiento", "Días", "Estado", "Estado manual", "Acciones"]} /></thead>
                   <tbody>
-                    {resumenMensual.map((r) => (
-                      <tr key={r.key}>
-                        <td
-                          style={{
-                            padding: 12,
-                            borderBottom: "1px solid #e5e7eb",
-                            fontWeight: 700,
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {monthLabel(r.key)}
+                    {basePag.rows.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ ...S.td, fontWeight: 700 }}>{c.nombre}</td>
+                        <td style={S.td}>
+                          <input value={c.email || ""}
+                            onChange={(e) => setClientes((prev) => prev.map((cli) => cli.id === c.id ? { ...cli, email: e.target.value } : cli))}
+                            onBlur={(e) => actualizarEmail(c.id, e.target.value)}
+                            style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }} />
                         </td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.mensual}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.anual}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb" }}>USD {r.clases}</td>
-                        <td style={{ padding: 12, borderBottom: "1px solid #e5e7eb", fontWeight: 800 }}>USD {r.total}</td>
+                        <td style={S.td}>{serviceLabel(c.servicio)}</td>
+                        <td style={S.td}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
+                        <td style={S.td}>{c.vencimiento ? c.dias : "-"}</td>
+                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
+                        <td style={S.td}>
+                          <select style={S.input} value={c.estado_manual} onChange={(e) => cambiarEstado(c.id, e.target.value)}>
+                            <option value="activo">Activo</option>
+                            <option value="sacar">Sacar</option>
+                          </select>
+                        </td>
+                        <td style={S.td}>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button title="Renovación rápida" style={{ ...btn(true), padding: "8px 12px" }}
+                              onClick={() => confirm("¿Renovar cliente con el mismo plan?") && renovarRapido(c)}>✔</button>
+                            <button title="Renovar con cambios" style={{ ...btn(false), padding: "8px 12px" }}
+                              onClick={() => abrirRenovar(c)}>✏️</button>
+                            <button title="Eliminar cliente" style={{ ...btn(false), padding: "8px 12px" }}
+                              onClick={() => confirm("¿Eliminar cliente?") && eliminarCliente(c.id)}>🗑</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!filtered.length && !loading && <div style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No hay resultados.</div>}
+              </div>
+              <Pagination page={basePag.page} totalPages={basePag.totalPages} setPage={basePag.setPage} />
+            </div>
+
+            {/* Vencimientos */}
+            <div style={{ ...S.card, marginBottom: 24 }}>
+              <h3 style={{ marginTop: 0 }}>Vencimientos</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.table}>
+                  <thead><TableHeader cols={["Cliente", "Servicio", "Vence", "Días", "Estado"]} /></thead>
+                  <tbody>
+                    {vencimientosPag.rows.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ ...S.td, fontWeight: 700 }}>{c.nombre}</td>
+                        <td style={S.td}>{serviceLabel(c.servicio)}</td>
+                        <td style={S.td}>{c.vencimiento ? formatDate(c.vencimiento) : "-"}</td>
+                        <td style={S.td}>{c.vencimiento ? c.dias : "-"}</td>
+                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <Pagination page={vencimientosPag.page} totalPages={vencimientosPag.totalPages} setPage={vencimientosPag.setPage} />
             </div>
 
-            <div style={cardStyle()}>
-              <h3 style={{ marginTop: 0 }}>Vista rápida</h3>
-              <div style={{ display: "grid", gap: 16 }}>
-                {resumenMensual.map((r) => {
-                  const pct = Math.max((r.total / maxTotal) * 100, 6);
+            {/* Deudores */}
+            <div style={{ ...S.card, marginBottom: 24 }}>
+              <h3 style={{ marginTop: 0 }}>Deudores</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.table}>
+                  <thead><TableHeader cols={["Cliente", "Servicio", "Pagado", "Resta", "Notas"]} /></thead>
+                  <tbody>
+                    {deudoresPag.rows.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ ...S.td, fontWeight: 700 }}>{c.nombre}</td>
+                        <td style={S.td}>{serviceLabel(c.servicio)}</td>
+                        <td style={S.td}>USD {c.monto}</td>
+                        <td style={S.td}>USD {c.deuda_restante}</td>
+                        <td style={S.td}>{c.notas || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination page={deudoresPag.page} totalPages={deudoresPag.totalPages} setPage={deudoresPag.setPage} />
+            </div>
 
-                  return (
-                    <div key={r.key}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
-                        <span style={{ textTransform: "capitalize" }}>{monthLabel(r.key)}</span>
-                        <strong>USD {r.total}</strong>
-                      </div>
+            {/* Clases */}
+            <div style={{ ...S.card, marginBottom: 24 }}>
+              <h3 style={{ marginTop: 0 }}>Clases</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.table}>
+                  <thead><TableHeader cols={["Alumno", "Inicio", "Mes", "Monto", "Notas"]} /></thead>
+                  <tbody>
+                    {clasesPag.rows.map((c) => (
+                      <tr key={c.id}>
+                        <td style={{ ...S.td, fontWeight: 700 }}>{c.nombre}</td>
+                        <td style={S.td}>{formatDate(c.fecha_inicio)}</td>
+                        <td style={{ ...S.td, textTransform: "capitalize" }}>{monthLabel(monthKey(c.fecha_inicio))}</td>
+                        <td style={S.td}>USD {c.monto}</td>
+                        <td style={S.td}>{c.notas || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination page={clasesPag.page} totalPages={clasesPag.totalPages} setPage={clasesPag.setPage} />
+            </div>
 
-                      <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
-                      </div>
+            {/* Resumen mensual */}
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)", gap: 24 }}>
+              <div style={S.card}>
+                <h3 style={{ marginTop: 0 }}>Resumen mensual</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={S.table}>
+                    <thead><TableHeader cols={["Mes", "Mensual", "Anual", "Clases", "Total"]} /></thead>
+                    <tbody>
+                      {resumenMensual.map((r) => (
+                        <tr key={r.key}>
+                          <td style={{ ...S.td, fontWeight: 700, textTransform: "capitalize" }}>{monthLabel(r.key)}</td>
+                          <td style={S.td}>USD {r.mensual}</td>
+                          <td style={S.td}>USD {r.anual}</td>
+                          <td style={S.td}>USD {r.clases}</td>
+                          <td style={{ ...S.td, fontWeight: 800 }}>USD {r.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-                      <div style={{ marginTop: 6, color: "#64748b", fontSize: 12 }}>
-                        Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}
+              <div style={S.card}>
+                <h3 style={{ marginTop: 0 }}>Vista rápida</h3>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {resumenMensual.map((r) => {
+                    const pct = Math.max((r.total / maxTotal) * 100, 6);
+                    return (
+                      <div key={r.key}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 14 }}>
+                          <span style={{ textTransform: "capitalize" }}>{monthLabel(r.key)}</span>
+                          <strong>USD {r.total}</strong>
+                        </div>
+                        <div style={{ height: 12, background: "#e5e7eb", borderRadius: 999, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "#0f172a" }} />
+                        </div>
+                        <div style={{ marginTop: 6, color: "#64748b", fontSize: 12 }}>
+                          Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-    </>
-)}
+          </>
+        )}
       </div>
     </div>
   );
