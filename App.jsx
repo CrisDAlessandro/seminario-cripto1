@@ -390,7 +390,9 @@ export default function App() {
   const [ingresosPage, setIngresosPage] = useState(1);
   const INGRESOS_PAGE_SIZE = 10;
   const [criticosHoyPage, setCriticosHoyPage] = useState(1);
-  const CRITICOS_HOY_PAGE_SIZE = 3;
+  const [criticosGraciaPage, setCriticosGraciaPage] = useState(1);
+  const [criticosVencidosPage, setCriticosVencidosPage] = useState(1);
+  const CRITICOS_PAGE_SIZE = 3;
   const [renovarForm, setRenovarForm] = useState({
     id: null,
     nombre: "",
@@ -676,13 +678,56 @@ const vencimientosRows = useMemo(() => {
 }, [computed]);
 const criticosHoyTotalPages = Math.max(
   1,
-  Math.ceil(vencimientosCriticos.hoy.length / CRITICOS_HOY_PAGE_SIZE)
+  Math.ceil(vencimientosCriticos.hoy.length / CRITICOS_PAGE_SIZE)
 );
 
 const criticosHoyRows = useMemo(() => {
-  const start = (criticosHoyPage - 1) * CRITICOS_HOY_PAGE_SIZE;
-  return vencimientosCriticos.hoy.slice(start, start + CRITICOS_HOY_PAGE_SIZE);
+  const start = (criticosHoyPage - 1) * CRITICOS_PAGE_SIZE;
+  return vencimientosCriticos.hoy.slice(start, start + CRITICOS_PAGE_SIZE);
 }, [vencimientosCriticos.hoy, criticosHoyPage]);
+
+const criticosGraciaTotalPages = Math.max(
+  1,
+  Math.ceil(vencimientosCriticos.gracia.length / CRITICOS_PAGE_SIZE)
+);
+
+const criticosGraciaRows = useMemo(() => {
+  const start = (criticosGraciaPage - 1) * CRITICOS_PAGE_SIZE;
+  return vencimientosCriticos.gracia.slice(start, start + CRITICOS_PAGE_SIZE);
+}, [vencimientosCriticos.gracia, criticosGraciaPage]);
+
+const criticosVencidosTotalPages = Math.max(
+  1,
+  Math.ceil(vencimientosCriticos.vencidos.length / CRITICOS_PAGE_SIZE)
+);
+
+const criticosVencidosRows = useMemo(() => {
+  const start = (criticosVencidosPage - 1) * CRITICOS_PAGE_SIZE;
+  return vencimientosCriticos.vencidos.slice(start, start + CRITICOS_PAGE_SIZE);
+}, [vencimientosCriticos.vencidos, criticosVencidosPage]);
+  useEffect(() => {
+  setCriticosHoyPage(1);
+  setCriticosGraciaPage(1);
+  setCriticosVencidosPage(1);
+}, [computed]);
+
+useEffect(() => {
+  if (criticosHoyPage > criticosHoyTotalPages) {
+    setCriticosHoyPage(criticosHoyTotalPages);
+  }
+}, [criticosHoyPage, criticosHoyTotalPages]);
+
+useEffect(() => {
+  if (criticosGraciaPage > criticosGraciaTotalPages) {
+    setCriticosGraciaPage(criticosGraciaTotalPages);
+  }
+}, [criticosGraciaPage, criticosGraciaTotalPages]);
+
+useEffect(() => {
+  if (criticosVencidosPage > criticosVencidosTotalPages) {
+    setCriticosVencidosPage(criticosVencidosTotalPages);
+  }
+}, [criticosVencidosPage, criticosVencidosTotalPages]);
   
 const currentMonthIngresos = useMemo(() => {
   return ingresos.filter((i) => {
@@ -1624,6 +1669,10 @@ if (vencimientoActual) {
         border: "1px solid #e5e7eb",
         borderRadius: 18,
         padding: 18,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        minHeight: 260,
         boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
       }}
     >
@@ -1646,281 +1695,379 @@ if (vencimientoActual) {
       </div>
 
       {vencimientosCriticos.hoy.length ? (
-        <>
-          <div style={{ display: "grid", gap: 10 }}>
-            {criticosHoyRows.map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  padding: 12,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-                  <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>
-                    {serviceLabel(c.servicio)} · vence {formatDate(c.vencimiento)}
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button
-                    style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                    onClick={() => {
-                      if (confirm("¿Renovar cliente con el mismo plan?")) {
-                        renovarRapido(c);
-                      }
-                    }}
-                  >
-                    ✔
-                  </button>
-                  <button
-                    style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                    onClick={() => abrirRenovar(c)}
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                    onClick={() => {
-                      if (confirm("¿Eliminar cliente?")) {
-                        eliminarCliente(c.id);
-                      }
-                    }}
-                  >
-                    🗑
-                  </button>
-                </div>
-              </div>
-            ))}
+  <>
+    <div style={{ display: "grid", gap: 10 }}>
+      {criticosHoyRows.map((c) => (
+        <div
+          key={c.id}
+          style={{
+            border: "1px solid #e5e7eb",
+            borderRadius: 14,
+            padding: 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+            <div style={{ fontSize: 13, color: "#64748b", marginTop: 2 }}>
+              {serviceLabel(c.servicio)} · vence {formatDate(c.vencimiento)}
+            </div>
           </div>
 
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              style={{ ...buttonStyle(true), padding: "8px 12px" }}
+              onClick={() => {
+                if (confirm("¿Renovar cliente con el mismo plan?")) {
+                  renovarRapido(c);
+                }
+              }}
+            >
+              ✔
+            </button>
+            <button
+              style={{ ...buttonStyle(false), padding: "8px 12px" }}
+              onClick={() => abrirRenovar(c)}
+            >
+              ✏️
+            </button>
+            <button
+              style={{ ...buttonStyle(false), padding: "8px 12px" }}
+              onClick={() => {
+                if (confirm("¿Eliminar cliente?")) {
+                  eliminarCliente(c.id);
+                }
+              }}
+            >
+              🗑
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div
+      style={{
+        marginTop: 16,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 12,
+      }}
+    >
+      <div style={{ color: "#64748b", fontSize: 14 }}>
+        Página {criticosHoyPage} de {criticosHoyTotalPages}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          style={buttonStyle(false)}
+          onClick={() => setCriticosHoyPage((p) => Math.max(1, p - 1))}
+          disabled={criticosHoyPage === 1}
+        >
+          Anterior
+        </button>
+
+        {Array.from({ length: criticosHoyTotalPages }, (_, i) => i + 1).map((page) => (
+          <button
+            key={page}
+            style={page === criticosHoyPage ? buttonStyle(true) : buttonStyle(false)}
+            onClick={() => setCriticosHoyPage(page)}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          style={buttonStyle(false)}
+          onClick={() => setCriticosHoyPage((p) => Math.min(criticosHoyTotalPages, p + 1))}
+          disabled={criticosHoyPage === criticosHoyTotalPages}
+        >
+          Siguiente
+        </button>
+      </div>
+    </div>
+  </>
+) : (
+  <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
+)}
+    </div>
+
+    <div
+  style={{
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 18,
+    padding: 18,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    minHeight: 260,
+    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+  }}
+>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+    <div style={{ fontSize: 16, fontWeight: 800 }}>En gracia</div>
+    <div
+      style={{
+        minWidth: 34,
+        height: 34,
+        borderRadius: 999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#fef3c7",
+        color: "#92400e",
+        fontWeight: 800,
+      }}
+    >
+      {vencimientosCriticos.gracia.length}
+    </div>
+  </div>
+
+  {vencimientosCriticos.gracia.length ? (
+    <>
+      <div style={{ display: "grid", gap: 10 }}>
+        {criticosGraciaRows.map((c) => (
           <div
+            key={c.id}
             style={{
-              marginTop: 16,
+              border: "1px solid #fde68a",
+              background: "#fffbeb",
+              borderRadius: 14,
+              padding: 12,
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              flexWrap: "wrap",
-              gap: 12,
+              gap: 10,
             }}
           >
-            <div style={{ color: "#64748b", fontSize: 14 }}>
-              Página {criticosHoyPage} de {criticosHoyTotalPages}
+            <div>
+              <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+              <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
+                {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
+              </div>
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6 }}>
               <button
-                style={buttonStyle(false)}
-                onClick={() => setCriticosHoyPage((p) => Math.max(1, p - 1))}
-                disabled={criticosHoyPage === 1}
+                style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Renovar cliente con el mismo plan?")) {
+                    renovarRapido(c);
+                  }
+                }}
               >
-                Anterior
+                ✔
               </button>
-
-              {Array.from({ length: criticosHoyTotalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  style={page === criticosHoyPage ? buttonStyle(true) : buttonStyle(false)}
-                  onClick={() => setCriticosHoyPage(page)}
-                >
-                  {page}
-                </button>
-              ))}
-
               <button
-                style={buttonStyle(false)}
-                onClick={() => setCriticosHoyPage((p) => Math.min(criticosHoyTotalPages, p + 1))}
-                disabled={criticosHoyPage === criticosHoyTotalPages}
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => abrirRenovar(c)}
               >
-                Siguiente
+                ✏️
+              </button>
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Eliminar cliente?")) {
+                    eliminarCliente(c.id);
+                  }
+                }}
+              >
+                🗑
               </button>
             </div>
           </div>
-        </>
-      ) : (
-        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-      )}
-    </div>
-
-    <div
-      style={{
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 18,
-        padding: 18,
-        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontSize: 16, fontWeight: 800 }}>En gracia</div>
-        <div
-          style={{
-            minWidth: 34,
-            height: 34,
-            borderRadius: 999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#fef3c7",
-            color: "#92400e",
-            fontWeight: 800,
-          }}
-        >
-          {vencimientosCriticos.gracia.length}
-        </div>
+        ))}
       </div>
 
-      {vencimientosCriticos.gracia.length ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          {vencimientosCriticos.gracia.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                border: "1px solid #fde68a",
-                background: "#fffbeb",
-                borderRadius: 14,
-                padding: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-                <div style={{ fontSize: 13, color: "#92400e", marginTop: 2 }}>
-                  {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 6 }}>
-                <button
-                  style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                  onClick={() => {
-                    if (confirm("¿Renovar cliente con el mismo plan?")) {
-                      renovarRapido(c);
-                    }
-                  }}
-                >
-                  ✔
-                </button>
-                <button
-                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                  onClick={() => abrirRenovar(c)}
-                >
-                  ✏️
-                </button>
-                <button
-                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                  onClick={() => {
-                    if (confirm("¿Eliminar cliente?")) {
-                      eliminarCliente(c.id);
-                    }
-                  }}
-                >
-                  🗑
-                </button>
-              </div>
-            </div>
-          ))}
+      <div
+        style={{
+          marginTop: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div style={{ color: "#64748b", fontSize: 14 }}>
+          Página {criticosGraciaPage} de {criticosGraciaTotalPages}
         </div>
-      ) : (
-        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-      )}
-    </div>
 
-    <div
-      style={{
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 18,
-        padding: 18,
-        boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontSize: 16, fontWeight: 800 }}>Vencidos</div>
-        <div
-          style={{
-            minWidth: 34,
-            height: 34,
-            borderRadius: 999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#fee2e2",
-            color: "#b91c1c",
-            fontWeight: 800,
-          }}
-        >
-          {vencimientosCriticos.vencidos.length}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            style={buttonStyle(false)}
+            onClick={() => setCriticosGraciaPage((p) => Math.max(1, p - 1))}
+            disabled={criticosGraciaPage === 1}
+          >
+            Anterior
+          </button>
+
+          {Array.from({ length: criticosGraciaTotalPages }, (_, i) => i + 1).map((page) => (
+            <button
+              key={page}
+              style={page === criticosGraciaPage ? buttonStyle(true) : buttonStyle(false)}
+              onClick={() => setCriticosGraciaPage(page)}
+            >
+              {page}
+            </button>
+          ))}
+
+          <button
+            style={buttonStyle(false)}
+            onClick={() => setCriticosGraciaPage((p) => Math.min(criticosGraciaTotalPages, p + 1))}
+            disabled={criticosGraciaPage === criticosGraciaTotalPages}
+          >
+            Siguiente
+          </button>
         </div>
       </div>
+    </>
+  ) : (
+    <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
+  )}
+</div>
 
-      {vencimientosCriticos.vencidos.length ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          {vencimientosCriticos.vencidos.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                border: "1px solid #fecaca",
-                background: "#fef2f2",
-                borderRadius: 14,
-                padding: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 800 }}>{c.nombre}</div>
-                <div style={{ fontSize: 13, color: "#b91c1c", marginTop: 2 }}>
-                  {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
-                </div>
-              </div>
+    <div
+  style={{
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 18,
+    padding: 18,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    minHeight: 260,
+    boxShadow: "0 6px 18px rgba(15,23,42,0.04)",
+  }}
+>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+    <div style={{ fontSize: 16, fontWeight: 800 }}>Vencidos</div>
+    <div
+      style={{
+        minWidth: 34,
+        height: 34,
+        borderRadius: 999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#fee2e2",
+        color: "#b91c1c",
+        fontWeight: 800,
+      }}
+    >
+      {vencimientosCriticos.vencidos.length}
+    </div>
+  </div>
 
-              <div style={{ display: "flex", gap: 6 }}>
-                <button
-                  style={{ ...buttonStyle(true), padding: "8px 12px" }}
-                  onClick={() => {
-                    if (confirm("¿Renovar cliente con el mismo plan?")) {
-                      renovarRapido(c);
-                    }
-                  }}
-                >
-                  ✔
-                </button>
-                <button
-                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                  onClick={() => abrirRenovar(c)}
-                >
-                  ✏️
-                </button>
-                <button
-                  style={{ ...buttonStyle(false), padding: "8px 12px" }}
-                  onClick={() => {
-                    if (confirm("¿Eliminar cliente?")) {
-                      eliminarCliente(c.id);
-                    }
-                  }}
-                >
-                  🗑
-                </button>
+  {vencimientosCriticos.vencidos.length ? (
+    <>
+      <div style={{ display: "grid", gap: 10 }}>
+        {criticosVencidosRows.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              borderRadius: 14,
+              padding: 12,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 800 }}>{c.nombre}</div>
+              <div style={{ fontSize: 13, color: "#b91c1c", marginTop: 2 }}>
+                {serviceLabel(c.servicio)} · venció {formatDate(c.vencimiento)}
               </div>
             </div>
-          ))}
+
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                style={{ ...buttonStyle(true), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Renovar cliente con el mismo plan?")) {
+                    renovarRapido(c);
+                  }
+                }}
+              >
+                ✔
+              </button>
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => abrirRenovar(c)}
+              >
+                ✏️
+              </button>
+              <button
+                style={{ ...buttonStyle(false), padding: "8px 12px" }}
+                onClick={() => {
+                  if (confirm("¿Eliminar cliente?")) {
+                    eliminarCliente(c.id);
+                  }
+                }}
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          marginTop: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div style={{ color: "#64748b", fontSize: 14 }}>
+          Página {criticosVencidosPage} de {criticosVencidosTotalPages}
         </div>
-      ) : (
-        <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
-      )}
-    </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            style={buttonStyle(false)}
+            onClick={() => setCriticosVencidosPage((p) => Math.max(1, p - 1))}
+            disabled={criticosVencidosPage === 1}
+          >
+            Anterior
+          </button>
+
+          {Array.from({ length: criticosVencidosTotalPages }, (_, i) => i + 1).map((page) => (
+            <button
+              key={page}
+              style={page === criticosVencidosPage ? buttonStyle(true) : buttonStyle(false)}
+              onClick={() => setCriticosVencidosPage(page)}
+            >
+              {page}
+            </button>
+          ))}
+
+          <button
+            style={buttonStyle(false)}
+            onClick={() => setCriticosVencidosPage((p) => Math.min(criticosVencidosTotalPages, p + 1))}
+            disabled={criticosVencidosPage === criticosVencidosTotalPages}
+          >
+            Siguiente
+          </button>
+        </div>
+      </div>
+    </>
+  ) : (
+    <div style={{ color: "#64748b", fontSize: 14 }}>Sin clientes en esta categoría.</div>
+  )}
+</div>
 
   </div>
 </div>
