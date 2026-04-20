@@ -9,6 +9,31 @@ const supabase = createClient(
 const LOGO_SRC = "/logo.png";
 // index.html: <link rel="icon" type="image/png" href="/logo.png" />
 
+// ─── CSS global para date input en dark mode ─────────────────────────────────
+// Inyectar una vez al cargar
+const DARK_DATE_STYLE_ID = "sc-dark-date";
+function applyDateColorScheme(dark) {
+  let el = document.getElementById(DARK_DATE_STYLE_ID);
+  if (!el) { el = document.createElement("style"); el.id = DARK_DATE_STYLE_ID; document.head.appendChild(el); }
+  el.textContent = dark
+    ? `input[type="date"] { color-scheme: dark; } input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }`
+    : `input[type="date"] { color-scheme: light; }`;
+}
+
+// ─── Capitalización de mes: "Abril de 2026" ──────────────────────────────────
+function capMonth(str) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+// monthLabel siempre devuelve formato "Abril de 2026" — "Mes de año"
+function monthLabel(key) {
+  const [y, m] = key.split("-");
+  const raw = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" })
+    .format(new Date(Number(y), Number(m) - 1, 1));
+  // raw puede ser "abril de 2026" — asegurar solo primera letra mayúscula
+  return capMonth(raw.charAt(0)) + raw.slice(1);
+}
+
 // ─── Fecha ────────────────────────────────────────────────────────────────────
 function getToday() { return new Date(); }
 function toISODate(date) {
@@ -33,28 +58,26 @@ function monthKey(ds) {
   const d = new Date(`${ds}T12:00:00`);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 }
-function monthLabel(key) {
-  const [y, m] = key.split("-");
-  return new Intl.DateTimeFormat("es-AR", { month:"long", year:"numeric" })
-    .format(new Date(Number(y), Number(m)-1, 1));
-}
 function isSameMonth(a, b) {
   return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth();
 }
 
 // ─── Negocio ──────────────────────────────────────────────────────────────────
 const GRACE_DAYS = 3;
-const PAGE_SIZES = { base:10, vencimientos:10, deudores:3, clases:3, ingresos:10, criticos:3 };
+const WARN_DAYS = 2; // días antes del vencimiento para aparecer en "Por vencer"
+const PAGE_SIZES = { base:10, vencimientos:10, deudores:3, clases:3, ingresos:10, criticos:3, historial:15 };
 
 function safeNum(v) { const n=Number(v); return Number.isFinite(n)?n:0; }
 function money(v) { return `USD ${safeNum(v)}`; }
+
+// FIX: capitalización correcta en labels de servicio
 function svcLabel(v) {
-  if (v==="mensual") return "Plan Inversor Mensual";
-  if (v==="anual") return "Plan Inversor Anual";
+  if (v==="mensual") return "Plan inversor mensual";
+  if (v==="anual")   return "Plan inversor anual";
   return "Clases";
 }
-function svcAmount(v) { return v==="mensual"?30: 250; }
-function svcDuration(v) { return v==="mensual"?30: v==="anual"?365:0; }
+function svcAmount(v) { return v==="mensual"?30:250; }
+function svcDuration(v) { return v==="mensual"?30:v==="anual"?365:0; }
 function isValidEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
 function classRangeLabel(fi) {
@@ -74,17 +97,20 @@ function computeClient(c) {
   const isClases = c.servicio==="clases";
   const vencimiento = resolveDueDate(c);
   let estadoSistema="activo", dias=null;
-  if (isClases) { estadoSistema="clases"; }
-  else if (c.estado_manual==="sacar") { estadoSistema="sacar"; }
-  else if (vencimiento) {
+  if (isClases) {
+    estadoSistema="clases";
+  } else if (c.estado_manual==="sacar") {
+    estadoSistema="sacar";
+  } else if (vencimiento) {
     const due = parseISODate(vencimiento);
     dias = diffDays(today, due);
-    if (today>due) {
-      const ov = diffDays(due,today);
+    if (today > due) {
+      const ov = diffDays(due, today);
       estadoSistema = ov<=GRACE_DAYS?"gracia":"vencido";
     }
   }
-  return { ...c, isClases, vencimiento, dias, duracion_dias:safeNum(c.duracion_dias),
+  return {
+    ...c, isClases, vencimiento, dias, duracion_dias:safeNum(c.duracion_dias),
     estadoSistema,
     class_range_label: isClases?classRangeLabel(c.fecha_inicio):null,
     class_end_date: isClases&&c.fecha_inicio?toISODate(addDays(c.fecha_inicio,27)):null,
@@ -94,7 +120,7 @@ function computeClient(c) {
 // ─── Analytics ───────────────────────────────────────────────────────────────
 function buildDailySeriesForMonth(ingresos, year, month) {
   const end = new Date(year, month+1, 0);
-  const rows = Array.from({length: end.getDate()}, (_,i) => ({
+  const rows = Array.from({length:end.getDate()}, (_,i) => ({
     day:i+1, label:String(i+1).padStart(2,"0"),
     total:0, mensual:0, anual:0, clases:0, ventas:0,
   }));
@@ -115,14 +141,42 @@ function buildBreakdown(arr) {
   return b;
 }
 
-// ─── CSV Export ───────────────────────────────────────────────────────────────
-function exportCSV(rows, cols, filename) {
-  const header = cols.map(c=>c.label).join(",");
-  const body = rows.map(r => cols.map(c=>`"${String(r[c.key]||"").replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([header+"\n"+body], {type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href=url; a.download=filename;
-  a.click(); URL.revokeObjectURL(url);
+// ─── XLSX export (SheetJS) ───────────────────────────────────────────────────
+function exportXLSX(rows, cols, filename) {
+  // Carga SheetJS dinámicamente si no está cargado
+  function doExport(XLSX) {
+    const wsData = [
+      cols.map(c => c.label),
+      ...rows.map(r => cols.map(c => {
+        const v = r[c.key];
+        return v===null||v===undefined?"":String(v);
+      }))
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    // Ancho de columnas automático
+    ws["!cols"] = cols.map(c => ({wch: Math.max(c.label.length+2, 16)}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Datos");
+    XLSX.writeFile(wb, filename);
+  }
+  if (window.XLSX) { doExport(window.XLSX); return; }
+  const script = document.createElement("script");
+  script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+  script.onload = () => doExport(window.XLSX);
+  document.head.appendChild(script);
+}
+
+// ─── Historial helper ─────────────────────────────────────────────────────────
+async function logHistorial(userEmail, accion, entidad, entidadId, detalle) {
+  try {
+    await supabase.from("historial_cambios").insert([{
+      usuario_email: userEmail,
+      accion,
+      entidad: entidad||null,
+      entidad_id: entidadId||null,
+      detalle: detalle||null,
+    }]);
+  } catch(_) { /* silencioso — no bloquear la acción principal */ }
 }
 
 // ─── usePagination ────────────────────────────────────────────────────────────
@@ -139,7 +193,6 @@ function usePagination(items, pageSize) {
   return {page, setPage, totalPages, rows};
 }
 
-// ─── FORM DEFAULTS ────────────────────────────────────────────────────────────
 const FORM_DEFAULTS = {
   nombre:"", email:"", servicio:"mensual",
   fecha_inicio:toISODate(getToday()), monto:30, duracion_dias:30,
@@ -149,102 +202,96 @@ const FORM_DEFAULTS = {
 // ─── Tema ─────────────────────────────────────────────────────────────────────
 function getT(dark) {
   return {
-    bg:               dark?"#080e1a":"#f0ede8",
-    cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#1e2d45":"#e2ddd7",
-    cardShadow:       dark?"0 2px 20px rgba(0,0,0,0.4)":"0 2px 16px rgba(15,23,42,0.07)",
-    text:             dark?"#f0f4ff":"#0f172a",
-    textMuted:        dark?"#8899bb":"#64748b",
-    // FIXED: badge text color en dark mode usa colores propios, no hereda text
-    accent:           "#c8972a",
-    accentGrad:       "linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)",
-    inputBg:          dark?"#0d1526":"#fafaf9",
-    inputBorder:      dark?"#1e2d45":"#d4cfc9",
-    inputText:        dark?"#f0f4ff":"#0f172a",
-    thBg:             dark?"#0d1526":"#f8f6f3",
-    tdBorder:         dark?"#1a2540":"#ede9e4",
-    btnDarkBg:        dark?"#c8972a":"#0f172a",
-    btnDarkText:      dark?"#0f172a":"#ffffff",
-    btnLightBg:       dark?"#1a2540":"#ede9e4",
-    btnLightText:     dark?"#c8d4f0":"#374151",
-    navActiveBg:      dark?"#c8972a":"#0f172a",
-    navActiveText:    dark?"#0f172a":"#ffffff",
-    navInactiveBg:    dark?"#111827":"#ffffff",
-    navInactiveText:  dark?"#c8d4f0":"#374151",
-    navInactiveBorder:dark?"#1e2d45":"#d4cfc9",
-    barBg:            dark?"#1a2540":"#ede9e4",
+    bg:                dark?"#080e1a":"#f0ede8",
+    cardBg:            dark?"#111827":"#ffffff",
+    cardBorder:        dark?"#1e2d45":"#e2ddd7",
+    cardShadow:        dark?"0 2px 20px rgba(0,0,0,0.4)":"0 2px 16px rgba(15,23,42,0.07)",
+    text:              dark?"#f0f4ff":"#0f172a",
+    textMuted:         dark?"#8899bb":"#64748b",
+    accent:            "#c8972a",
+    accentGrad:        "linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)",
+    inputBg:           dark?"#0d1526":"#fafaf9",
+    inputBorder:       dark?"#1e2d45":"#d4cfc9",
+    inputText:         dark?"#f0f4ff":"#0f172a",
+    thBg:              dark?"#0d1526":"#f8f6f3",
+    tdBorder:          dark?"#1a2540":"#ede9e4",
+    btnDarkBg:         dark?"#c8972a":"#0f172a",
+    btnDarkText:       dark?"#0f172a":"#ffffff",
+    btnLightBg:        dark?"#1a2540":"#ede9e4",
+    btnLightText:      dark?"#c8d4f0":"#374151",
+    navActiveBg:       dark?"#c8972a":"#0f172a",
+    navActiveText:     dark?"#0f172a":"#ffffff",
+    navInactiveBg:     dark?"#111827":"#ffffff",
+    navInactiveText:   dark?"#c8d4f0":"#374151",
+    navInactiveBorder: dark?"#1e2d45":"#d4cfc9",
+    barBg:             dark?"#1a2540":"#ede9e4",
     dark,
   };
 }
 function makeS(t) {
   return {
-    card:  { background:t.cardBg, borderRadius:16, padding:24, boxShadow:t.cardShadow, border:`1px solid ${t.cardBorder}` },
-    input: { width:"100%", padding:"11px 14px", borderRadius:10, border:`1px solid ${t.inputBorder}`, fontSize:14, outline:"none", boxSizing:"border-box", background:t.inputBg, color:t.inputText },
-    label: { display:"block", fontSize:11, fontWeight:700, color:t.textMuted, marginBottom:5, letterSpacing:"0.06em", textTransform:"uppercase" },
-    table: { width:"100%", borderCollapse:"collapse", fontSize:14 },
-    td:    { padding:"11px 14px", borderBottom:`1px solid ${t.tdBorder}`, color:t.text },
-    thRow: { background:t.thBg },
+    card:  {background:t.cardBg,borderRadius:16,padding:24,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
+    input: {width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText},
+    label: {display:"block",fontSize:11,fontWeight:700,color:t.textMuted,marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"},
+    table: {width:"100%",borderCollapse:"collapse",fontSize:14},
+    td:    {padding:"11px 14px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text},
+    thRow: {background:t.thBg},
   };
 }
 function makeBtn(t) {
   return function btn(dark=false, gold=false) {
-    if (gold) return { padding:"11px 20px", borderRadius:10, border:"none", cursor:"pointer", fontWeight:800, fontSize:14, background:t.accentGrad, color:"#0f172a" };
-    return { padding:"10px 16px", borderRadius:10, border:"none", cursor:"pointer", fontWeight:700, fontSize:14, background:dark?t.btnDarkBg:t.btnLightBg, color:dark?t.btnDarkText:t.btnLightText };
+    if (gold) return {padding:"11px 20px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:14,background:t.accentGrad,color:"#0f172a"};
+    return {padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:dark?t.btnDarkBg:t.btnLightBg,color:dark?t.btnDarkText:t.btnLightText};
   };
 }
 function makeNavBtn(t) {
   return function navBtn(active) {
-    return { padding:"10px 18px", borderRadius:10, cursor:"pointer", fontWeight:700, fontSize:14, border:active?"none":`1px solid ${t.navInactiveBorder}`, background:active?t.navActiveBg:t.navInactiveBg, color:active?t.navActiveText:t.navInactiveText };
+    return {padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,border:active?"none":`1px solid ${t.navInactiveBorder}`,background:active?t.navActiveBg:t.navInactiveBg,color:active?t.navActiveText:t.navInactiveText};
   };
 }
-
-// FIXED: badgeStyle usa colores absolutos, nunca hereda del tema
+// Colores absolutos — nunca heredan del tema (fix dark mode)
 function badgeStyle(status) {
-  const base = { display:"inline-block", padding:"4px 10px", borderRadius:999, fontSize:11, fontWeight:700, letterSpacing:"0.05em", border:"1px solid transparent" };
-  if (status==="activo")  return {...base, background:"#d1fae5", color:"#065f46", borderColor:"#6ee7b7"};
-  if (status==="gracia")  return {...base, background:"#fef3c7", color:"#92400e", borderColor:"#fde68a"};
-  if (status==="vencido") return {...base, background:"#fee2e2", color:"#991b1b", borderColor:"#fca5a5"};
-  if (status==="clases")  return {...base, background:"#ede9fe", color:"#5b21b6", borderColor:"#c4b5fd"};
-  if (status==="sacar")   return {...base, background:"#fee2e2", color:"#991b1b", borderColor:"#fca5a5"};
-  return {...base, background:"#f1f5f9", color:"#334155", borderColor:"#cbd5e1"};
+  const base = {display:"inline-block",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,letterSpacing:"0.05em",border:"1px solid transparent"};
+  if (status==="activo")  return {...base,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
+  if (status==="gracia")  return {...base,background:"#fef3c7",color:"#92400e",borderColor:"#fde68a"};
+  if (status==="vencido") return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
+  if (status==="clases")  return {...base,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
+  if (status==="sacar")   return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
+  if (status==="por_vencer") return {...base,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
+  return {...base,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
 }
 
-// ─── Toast system ─────────────────────────────────────────────────────────────
+// ─── Toast ────────────────────────────────────────────────────────────────────
 function ToastContainer({ toasts, remove }) {
   return (
-    <div style={{ position:"fixed", bottom:24, right:24, zIndex:9999, display:"flex", flexDirection:"column", gap:10, pointerEvents:"none" }}>
+    <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:10,pointerEvents:"none"}}>
       {toasts.map(toast => (
         <div key={toast.id} style={{
           pointerEvents:"all",
-          background: toast.type==="error"?"#1a0a0a": toast.type==="success"?"#0a1a0f":"#111827",
-          border: `1px solid ${toast.type==="error"?"#7f1d1d": toast.type==="success"?"#14532d":"#1e2d45"}`,
-          borderLeft: `4px solid ${toast.type==="error"?"#ef4444": toast.type==="success"?"#22c55e":"#c8972a"}`,
-          borderRadius:12, padding:"14px 18px", color:"#f0f4ff",
-          fontSize:14, fontWeight:500, minWidth:280, maxWidth:380,
-          boxShadow:"0 8px 32px rgba(0,0,0,0.4)",
-          display:"flex", alignItems:"center", justifyContent:"space-between", gap:12,
+          background:toast.type==="error"?"#1a0a0a":toast.type==="success"?"#0a1a0f":"#111827",
+          border:`1px solid ${toast.type==="error"?"#7f1d1d":toast.type==="success"?"#14532d":"#1e2d45"}`,
+          borderLeft:`4px solid ${toast.type==="error"?"#ef4444":toast.type==="success"?"#22c55e":"#c8972a"}`,
+          borderRadius:12,padding:"14px 18px",color:"#f0f4ff",fontSize:14,fontWeight:500,
+          minWidth:280,maxWidth:380,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",
+          display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
         }}>
           <span>{toast.msg}</span>
-          <button onClick={() => remove(toast.id)} style={{ background:"none", border:"none", color:"#8899bb", cursor:"pointer", fontSize:18, lineHeight:1, padding:0 }}>×</button>
+          <button onClick={()=>remove(toast.id)} style={{background:"none",border:"none",color:"#8899bb",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
         </div>
       ))}
     </div>
   );
 }
-
 function useToast() {
   const [toasts, setToasts] = useState([]);
   const add = useCallback((msg, type="info", duration=4000) => {
     const id = Date.now()+Math.random();
-    setToasts(ts => [...ts, {id, msg, type}]);
-    if (duration>0) setTimeout(() => setToasts(ts => ts.filter(t=>t.id!==id)), duration);
+    setToasts(ts=>[...ts,{id,msg,type}]);
+    if (duration>0) setTimeout(()=>setToasts(ts=>ts.filter(t=>t.id!==id)), duration);
     return id;
   }, []);
-  const remove = useCallback(id => setToasts(ts => ts.filter(t=>t.id!==id)), []);
-  const success = (msg) => add(msg,"success");
-  const error   = (msg) => add(msg,"error");
-  const info    = (msg) => add(msg,"info");
-  return {toasts, remove, success, error, info};
+  const remove = useCallback(id=>setToasts(ts=>ts.filter(t=>t.id!==id)),[]);
+  return {toasts,remove,success:(m)=>add(m,"success"),error:(m)=>add(m,"error"),info:(m)=>add(m,"info")};
 }
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
@@ -252,13 +299,13 @@ function ConfirmModal({ open, title, message, confirmLabel="Confirmar", danger=f
   if (!open) return null;
   const btn = makeBtn(t);
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(8,14,26,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, zIndex:2000 }}>
-      <div style={{ background:t.cardBg, borderRadius:16, padding:32, border:`1px solid ${t.cardBorder}`, maxWidth:420, width:"100%", boxShadow:"0 24px 64px rgba(0,0,0,0.5)" }}>
-        <h3 style={{ margin:"0 0 10px", color:t.text, fontSize:18, fontWeight:800 }}>{title}</h3>
-        <p style={{ margin:"0 0 24px", color:t.textMuted, fontSize:14, lineHeight:1.6 }}>{message}</p>
-        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
+      <div style={{background:t.cardBg,borderRadius:16,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:420,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+        <h3 style={{margin:"0 0 10px",color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
+        <p style={{margin:"0 0 24px",color:t.textMuted,fontSize:14,lineHeight:1.6}}>{message}</p>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button style={btn(false)} onClick={onCancel}>Cancelar</button>
-          <button style={{ ...btn(false,!danger), ...(danger?{background:"#ef4444",color:"#fff",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,padding:"10px 16px"}:{}) }} onClick={onConfirm}>
+          <button style={danger?{padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:"#ef4444",color:"#fff"}:btn(false,true)} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>
@@ -267,88 +314,67 @@ function ConfirmModal({ open, title, message, confirmLabel="Confirmar", danger=f
   );
 }
 
-// ─── Panel de detalle de cliente ──────────────────────────────────────────────
+// ─── Panel detalle cliente ────────────────────────────────────────────────────
 function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onEliminar, t }) {
   if (!cliente) return null;
-  const S = makeS(t);
-  const btn = makeBtn(t);
-  const historial = ingresos
-    .filter(i => i.cliente_id===cliente.id)
-    .sort((a,b) => (b.fecha_pago||"").localeCompare(a.fecha_pago||""));
-  const totalPagado = historial.reduce((acc,i) => acc+safeNum(i.monto), 0);
-  const renovaciones = historial.length;
+  const S = makeS(t); const btn = makeBtn(t);
+  const historial = ingresos.filter(i=>i.cliente_id===cliente.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""));
+  const totalPagado = historial.reduce((a,i)=>a+safeNum(i.monto),0);
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(8,14,26,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, zIndex:1500, overflowY:"auto" }}>
-      <div style={{ background:t.cardBg, borderRadius:20, padding:32, border:`1px solid ${t.cardBorder}`, maxWidth:600, width:"100%", boxShadow:"0 24px 64px rgba(0,0,0,0.5)" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24 }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1500,overflowY:"auto"}}>
+      <div style={{background:t.cardBg,borderRadius:20,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:600,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
           <div>
-            <h2 style={{ margin:0, color:t.text, fontSize:22, fontWeight:900, letterSpacing:"-0.02em" }}>{cliente.nombre}</h2>
-            <div style={{ color:t.textMuted, fontSize:13, marginTop:4 }}>{cliente.email}</div>
+            <h2 style={{margin:0,color:t.text,fontSize:22,fontWeight:900,letterSpacing:"-0.02em"}}>{cliente.nombre}</h2>
+            <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{cliente.email}</div>
           </div>
-          <button onClick={onClose} style={{ ...btn(false), padding:"8px 14px" }}>Cerrar</button>
+          <button onClick={onClose} style={{...btn(false),padding:"8px 14px"}}>Cerrar</button>
         </div>
-
-        {/* KPIs del cliente */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
-          {[
-            ["Renovaciones", renovaciones],
-            ["Total pagado", `USD ${totalPagado}`],
-            ["Deuda restante", cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"],
-          ].map(([l,v]) => (
-            <div key={l} style={{ background:t.dark?"#0d1526":"#f8f6f3", borderRadius:12, padding:"14px 16px", border:`1px solid ${t.cardBorder}` }}>
-              <div style={{ fontSize:11, color:t.textMuted, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", marginBottom:6 }}>{l}</div>
-              <div style={{ fontSize:20, fontWeight:800, color:t.text }}>{v}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
+          {[["Renovaciones",historial.length],["Total pagado",`USD ${totalPagado}`],["Deuda",cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"]].map(([l,v])=>(
+            <div key={l} style={{background:t.dark?"#0d1526":"#f8f6f3",borderRadius:12,padding:"14px 16px",border:`1px solid ${t.cardBorder}`}}>
+              <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>{l}</div>
+              <div style={{fontSize:20,fontWeight:800,color:t.text}}>{v}</div>
             </div>
           ))}
         </div>
-
-        {/* Info */}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:24 }}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
           {[
-            ["Servicio", svcLabel(cliente.servicio)],
-            ["Estado", <span style={badgeStyle(cliente.estadoSistema)}>{cliente.estadoSistema?.toUpperCase()}</span>],
-            ["Vencimiento", formatDate(cliente.vencimiento)],
-            ["Días restantes", cliente.dias!=null?cliente.dias:"—"],
-            ["Inicio", formatDate(cliente.fecha_inicio)],
-            ["Notas", cliente.notas||"—"],
-          ].map(([l,v]) => (
+            ["Servicio",svcLabel(cliente.servicio)],
+            ["Estado",<span style={badgeStyle(cliente.estadoSistema)}>{cliente.estadoSistema?.toUpperCase()}</span>],
+            ["Vencimiento",formatDate(cliente.vencimiento)],
+            ["Días restantes",cliente.dias!=null?cliente.dias:"—"],
+            ["Inicio",formatDate(cliente.fecha_inicio)],
+            ["Notas",cliente.notas||"—"],
+          ].map(([l,v])=>(
             <div key={l}>
-              <div style={{ fontSize:11, color:t.textMuted, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", marginBottom:3 }}>{l}</div>
-              <div style={{ fontSize:14, color:t.text, fontWeight:500 }}>{v}</div>
+              <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:3}}>{l}</div>
+              <div style={{fontSize:14,color:t.text,fontWeight:500}}>{v}</div>
             </div>
           ))}
         </div>
-
-        {/* Historial de pagos */}
-        <h4 style={{ margin:"0 0 12px", color:t.text, fontSize:15, fontWeight:700 }}>Historial de pagos</h4>
+        <h4 style={{margin:"0 0 12px",color:t.text,fontSize:15,fontWeight:700}}>Historial de pagos</h4>
         {historial.length===0
-          ? <div style={{ color:t.textMuted, fontSize:13 }}>Sin registros de pago.</div>
-          : (
-            <div style={{ maxHeight:200, overflowY:"auto" }}>
+          ? <div style={{color:t.textMuted,fontSize:13}}>Sin registros de pago.</div>
+          : <div style={{maxHeight:200,overflowY:"auto"}}>
               <table style={S.table}>
-                <thead><tr style={S.thRow}>
-                  {["Fecha","Servicio","Monto","Notas"].map(h => (
-                    <th key={h} style={{ ...S.td, fontSize:11, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", color:t.textMuted }}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {historial.map(i => (
-                    <tr key={i.id}>
-                      <td style={S.td}>{formatDate(i.fecha_pago)}</td>
-                      <td style={S.td}>{svcLabel(i.servicio)}</td>
-                      <td style={{ ...S.td, color:t.accent, fontWeight:700 }}>{money(i.monto)}</td>
-                      <td style={S.td}>{i.notas||"—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
+                  <th key={h} style={{...S.td,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
+                ))}</tr></thead>
+                <tbody>{historial.map(i=>(
+                  <tr key={i.id}>
+                    <td style={S.td}>{formatDate(i.fecha_pago)}</td>
+                    <td style={S.td}>{svcLabel(i.servicio)}</td>
+                    <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
+                    <td style={S.td}>{i.notas||"—"}</td>
+                  </tr>
+                ))}</tbody>
               </table>
             </div>
-          )
         }
-
-        <div style={{ marginTop:20, display:"flex", gap:10, justifyContent:"flex-end" }}>
-          <button style={btn(false)} onClick={() => { onClose(); onAbrirRenovar(cliente); }}>Renovar</button>
-          <button style={{ ...btn(false), background:"#fee2e2", color:"#991b1b" }} onClick={() => onEliminar(cliente)}>Eliminar cliente</button>
+        <div style={{marginTop:20,display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
+          <button style={{...btn(false),background:"#fee2e2",color:"#991b1b"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
         </div>
       </div>
     </div>
@@ -357,24 +383,23 @@ function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onElim
 
 // ─── Pago parcial modal ───────────────────────────────────────────────────────
 function PagoModal({ cliente, onClose, onConfirm, t }) {
-  const S = makeS(t);
-  const btn = makeBtn(t);
+  const S = makeS(t); const btn = makeBtn(t);
   const [monto, setMonto] = useState("");
   if (!cliente) return null;
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(8,14,26,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, zIndex:2000 }}>
-      <div style={{ background:t.cardBg, borderRadius:16, padding:32, border:`1px solid ${t.cardBorder}`, maxWidth:380, width:"100%", boxShadow:"0 24px 64px rgba(0,0,0,0.5)" }}>
-        <h3 style={{ margin:"0 0 6px", color:t.text, fontSize:18, fontWeight:800 }}>Registrar pago</h3>
-        <p style={{ margin:"0 0 20px", color:t.textMuted, fontSize:13 }}>
-          <strong style={{ color:t.text }}>{cliente.nombre}</strong> · Deuda actual: <strong style={{ color:"#ef4444" }}>USD {cliente.deuda_restante}</strong>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
+      <div style={{background:t.cardBg,borderRadius:16,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:380,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+        <h3 style={{margin:"0 0 6px",color:t.text,fontSize:18,fontWeight:800}}>Registrar pago</h3>
+        <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
+          <strong style={{color:t.text}}>{cliente.nombre}</strong> · Deuda actual: <strong style={{color:"#ef4444"}}>USD {cliente.deuda_restante}</strong>
         </p>
-        <div style={{ marginBottom:20 }}>
+        <div style={{marginBottom:20}}>
           <label style={S.label}>Monto a abonar (USD)</label>
           <input type="number" style={S.input} placeholder="0" value={monto} onChange={e=>setMonto(e.target.value)} />
         </div>
-        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button style={btn(false)} onClick={onClose}>Cancelar</button>
-          <button style={btn(false,true)} onClick={() => onConfirm(cliente, Number(monto))}>Registrar</button>
+          <button style={btn(false,true)} onClick={()=>onConfirm(cliente,Number(monto))}>Registrar</button>
         </div>
       </div>
     </div>
@@ -387,17 +412,17 @@ function Pagination({ page, totalPages, setPage, sectionRef, t }) {
   if (totalPages<=1) return null;
   function goTo(n) {
     setPage(n);
-    setTimeout(() => sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}), 50);
+    setTimeout(()=>sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);
   }
   return (
-    <div style={{ marginTop:16, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
-      <div style={{ color:t.textMuted, fontSize:13 }}>Página {page} de {totalPages}</div>
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-        <button style={{ ...btn(false), padding:"7px 13px", fontSize:13 }} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
-        {Array.from({length:totalPages},(_,i)=>i+1).map(n => (
-          <button key={n} style={{ ...btn(n===page), padding:"7px 11px", fontSize:13 }} onClick={()=>goTo(n)}>{n}</button>
+    <div style={{marginTop:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+      <div style={{color:t.textMuted,fontSize:13}}>Página {page} de {totalPages}</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <button style={{...btn(false),padding:"7px 13px",fontSize:13}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
+        {Array.from({length:totalPages},(_,i)=>i+1).map(n=>(
+          <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13}} onClick={()=>goTo(n)}>{n}</button>
         ))}
-        <button style={{ ...btn(false), padding:"7px 13px", fontSize:13 }} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
+        <button style={{...btn(false),padding:"7px 13px",fontSize:13}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
       </div>
     </div>
   );
@@ -407,8 +432,8 @@ function TableHeader({ cols, t }) {
   const S = makeS(t);
   return (
     <tr style={S.thRow}>
-      {cols.map(h => (
-        <th key={h} style={{ textAlign:"left", ...S.td, color:t.textMuted, fontWeight:700, fontSize:11, letterSpacing:"0.06em", textTransform:"uppercase" }}>{h}</th>
+      {cols.map(h=>(
+        <th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:700,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>
       ))}
     </tr>
   );
@@ -417,17 +442,13 @@ function TableHeader({ cols, t }) {
 function MetricCard({ title, value, sub, accent, trend, t }) {
   const S = makeS(t);
   return (
-    <div style={{ ...S.card, borderTop:accent?`3px solid ${t.accent}`:undefined }}>
-      <div style={{ fontSize:11, color:t.textMuted, marginBottom:8, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase" }}>{title}</div>
-      <div style={{ fontSize:26, fontWeight:800, color:accent?t.accent:t.text, letterSpacing:"-0.02em", display:"flex", alignItems:"center", gap:8 }}>
+    <div style={{...S.card,borderTop:accent?`3px solid ${t.accent}`:undefined}}>
+      <div style={{fontSize:11,color:t.textMuted,marginBottom:8,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{title}</div>
+      <div style={{fontSize:26,fontWeight:800,color:accent?t.accent:t.text,letterSpacing:"-0.02em",display:"flex",alignItems:"center",gap:8}}>
         {value}
-        {trend!==undefined && trend!==null && (
-          <span style={{ fontSize:13, fontWeight:700, color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted }}>
-            {trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%
-          </span>
-        )}
+        {trend!=null&&(<span style={{fontSize:13,fontWeight:700,color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>)}
       </div>
-      {sub && <div style={{ marginTop:5, fontSize:12, color:t.textMuted }}>{sub}</div>}
+      {sub&&<div style={{marginTop:5,fontSize:12,color:t.textMuted}}>{sub}</div>}
     </div>
   );
 }
@@ -435,17 +456,16 @@ function MetricCard({ title, value, sub, accent, trend, t }) {
 function BarList({ items, t }) {
   const max = Math.max(...items.map(i=>i.value),1);
   return (
-    <div style={{ display:"grid", gap:14 }}>
-      {items.map(({label,value}) => {
-        const pct = Math.max((value/max)*100, value>0?4:0);
+    <div style={{display:"grid",gap:14}}>
+      {items.map(({label,value})=>{
+        const pct=Math.max((value/max)*100,value>0?4:0);
         return (
           <div key={label}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:14, color:t.text }}>
-              <span>{label}</span>
-              <strong style={{ color:t.accent }}>{money(value)}</strong>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
+              <span>{label}</span><strong style={{color:t.accent}}>{money(value)}</strong>
             </div>
-            <div style={{ height:8, background:t.barBg, borderRadius:999, overflow:"hidden" }}>
-              <div style={{ width:`${pct}%`, height:"100%", background:t.accentGrad, borderRadius:999 }} />
+            <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
+              <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}} />
             </div>
           </div>
         );
@@ -455,23 +475,23 @@ function BarList({ items, t }) {
 }
 
 function SimpleBarChart({ title, data, valueKey, labelKey="label", emptyText="Sin datos.", t }) {
-  const S = makeS(t);
-  const hasData = data.some(r => safeNum(r[valueKey])>0);
+  const S=makeS(t);
+  const hasData=data.some(r=>safeNum(r[valueKey])>0);
   return (
     <div style={S.card}>
-      <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:18 }}>{title}</h3>
-      {!hasData ? <div style={{ color:t.textMuted }}>{emptyText}</div>
-        : <BarList items={data.map(r=>({label:r[labelKey],value:safeNum(r[valueKey])}))} t={t} />}
+      <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
+      {!hasData?<div style={{color:t.textMuted}}>{emptyText}</div>
+        :<BarList items={data.map(r=>({label:r[labelKey],value:safeNum(r[valueKey])}))} t={t} />}
     </div>
   );
 }
 
 function BreakdownCard({ title, breakdown, t }) {
-  const S = makeS(t);
-  const items = [{key:"mensual",label:"Plan mensual"},{key:"anual",label:"Plan anual"},{key:"clases",label:"Clases"}];
+  const S=makeS(t);
+  const items=[{key:"mensual",label:"Plan inversor mensual"},{key:"anual",label:"Plan inversor anual"},{key:"clases",label:"Clases"}];
   return (
     <div style={S.card}>
-      <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:18 }}>{title}</h3>
+      <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
       <BarList items={items.map(({key,label})=>({label,value:safeNum(breakdown[key])}))} t={t} />
     </div>
   );
@@ -480,81 +500,56 @@ function BreakdownCard({ title, breakdown, t }) {
 // ─── Gráfico de línea con selector de mes ────────────────────────────────────
 function LineChart({ ingresos, t }) {
   const today = getToday();
-  // Obtener meses disponibles
-  const availableMonths = useMemo(() => {
-    const keys = new Set();
-    ingresos.forEach(i => { if (i.fecha_pago) keys.add(monthKey(i.fecha_pago)); });
+  const availableMonths = useMemo(()=>{
+    const keys=new Set();
+    ingresos.forEach(i=>{if(i.fecha_pago)keys.add(monthKey(i.fecha_pago));});
     keys.add(monthKey(toISODate(today)));
     return Array.from(keys).sort().reverse();
-  }, [ingresos]);
-
-  const [selectedMonth, setSelectedMonth] = useState(monthKey(toISODate(today)));
-  const [tooltip, setTooltip] = useState(null);
-
-  const data = useMemo(() => {
-    const [y,m] = selectedMonth.split("-");
-    return buildDailySeriesForMonth(ingresos, Number(y), Number(m)-1);
-  }, [ingresos, selectedMonth]);
-
-  const W=760, H=220, PL=50, PR=16, PT=16, PB=36;
-  const cW=W-PL-PR, cH=H-PT-PB;
-  const maxVal = Math.max(...data.map(d=>d.total),1);
-  const pts = data.map((d,i) => ({
-    x: PL+(i/Math.max(data.length-1,1))*cW,
-    y: PT+cH-(d.total/maxVal)*cH,
-    d,
-  }));
-  const pathD = pts.map((p,i) => `${i===0?"M":"L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-  const areaD = `${pathD} L ${pts[pts.length-1].x.toFixed(1)} ${(PT+cH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(PT+cH).toFixed(1)} Z`;
-  const yTicks = [0,.25,.5,.75,1].map(f => ({val:Math.round(maxVal*f), y:PT+cH-f*cH}));
-  const S = makeS(t);
-
+  },[ingresos]);
+  const [selectedMonth,setSelectedMonth]=useState(monthKey(toISODate(today)));
+  const [tooltip,setTooltip]=useState(null);
+  const data=useMemo(()=>{
+    const [y,m]=selectedMonth.split("-");
+    return buildDailySeriesForMonth(ingresos,Number(y),Number(m)-1);
+  },[ingresos,selectedMonth]);
+  const W=760,H=220,PL=50,PR=16,PT=16,PB=36;
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const maxVal=Math.max(...data.map(d=>d.total),1);
+  const pts=data.map((d,i)=>({x:PL+(i/Math.max(data.length-1,1))*cW,y:PT+cH-(d.total/maxVal)*cH,d}));
+  const pathD=pts.map((p,i)=>`${i===0?"M":"L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const areaD=`${pathD} L ${pts[pts.length-1].x.toFixed(1)} ${(PT+cH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(PT+cH).toFixed(1)} Z`;
+  const yTicks=[0,.25,.5,.75,1].map(f=>({val:Math.round(maxVal*f),y:PT+cH-f*cH}));
+  const S=makeS(t);
   return (
     <div>
-      {/* Selector de mes */}
-      <div style={{ marginBottom:16 }}>
-        <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}
-          style={{ ...S.input, width:"auto", minWidth:200 }}>
-          {availableMonths.map(k => (
-            <option key={k} value={k} style={{ textTransform:"capitalize" }}>{monthLabel(k)}</option>
-          ))}
+      <div style={{marginBottom:16}}>
+        <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} style={{...S.input,width:"auto",minWidth:200}}>
+          {availableMonths.map(k=>(<option key={k} value={k}>{monthLabel(k)}</option>))}
         </select>
       </div>
-      <div style={{ position:"relative", width:"100%", overflowX:"auto" }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", display:"block" }}>
+      <div style={{position:"relative",width:"100%",overflowX:"auto"}}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",display:"block"}}>
           <defs>
             <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={t.accent} stopOpacity="0.22" />
-              <stop offset="100%" stopColor={t.accent} stopOpacity="0.01" />
+              <stop offset="0%" stopColor={t.accent} stopOpacity="0.22"/>
+              <stop offset="100%" stopColor={t.accent} stopOpacity="0.01"/>
             </linearGradient>
           </defs>
-          {yTicks.map(tk => (
-            <g key={tk.val}>
-              <line x1={PL} y1={tk.y} x2={W-PR} y2={tk.y} stroke={t.tdBorder} strokeWidth="1" />
-              <text x={PL-6} y={tk.y+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{tk.val}</text>
-            </g>
-          ))}
-          {pts.filter((_,i)=>i%5===0||i===pts.length-1).map(p => (
-            <text key={p.d.day} x={p.x} y={H-6} textAnchor="middle" fontSize="11" fill={t.textMuted}>{p.d.label}</text>
-          ))}
-          <path d={areaD} fill="url(#aGrad)" />
-          <path d={pathD} fill="none" stroke={t.accent} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-          {pts.map(p => (
-            <rect key={p.d.day} x={p.x-cW/data.length/2} y={PT} width={cW/data.length} height={cH}
-              fill="transparent" onMouseEnter={()=>setTooltip(p)} onMouseLeave={()=>setTooltip(null)} />
-          ))}
-          {tooltip && <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={t.accent} stroke={t.cardBg} strokeWidth="2" />}
+          {yTicks.map(tk=>(<g key={tk.val}><line x1={PL} y1={tk.y} x2={W-PR} y2={tk.y} stroke={t.tdBorder} strokeWidth="1"/><text x={PL-6} y={tk.y+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{tk.val}</text></g>))}
+          {pts.filter((_,i)=>i%5===0||i===pts.length-1).map(p=>(<text key={p.d.day} x={p.x} y={H-6} textAnchor="middle" fontSize="11" fill={t.textMuted}>{p.d.label}</text>))}
+          <path d={areaD} fill="url(#aGrad)"/>
+          <path d={pathD} fill="none" stroke={t.accent} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+          {pts.map(p=>(<rect key={p.d.day} x={p.x-cW/data.length/2} y={PT} width={cW/data.length} height={cH} fill="transparent" onMouseEnter={()=>setTooltip(p)} onMouseLeave={()=>setTooltip(null)}/>))}
+          {tooltip&&<circle cx={tooltip.x} cy={tooltip.y} r="5" fill={t.accent} stroke={t.cardBg} strokeWidth="2"/>}
         </svg>
-        {tooltip && (
-          <div style={{ position:"absolute", top:Math.max(0,tooltip.y-8), left:Math.min(tooltip.x+10,W-145),
-            background:t.cardBg, border:`1px solid ${t.cardBorder}`, borderRadius:10, padding:"10px 14px",
-            pointerEvents:"none", zIndex:10, fontSize:13, boxShadow:t.cardShadow, minWidth:130 }}>
-            <div style={{ fontWeight:700, color:t.text, marginBottom:4 }}>Día {tooltip.d.day}</div>
-            <div style={{ color:t.accent, fontWeight:800, fontSize:15 }}>USD {tooltip.d.total}</div>
-            <div style={{ color:t.textMuted, fontSize:12, marginTop:4 }}>{tooltip.d.ventas} venta{tooltip.d.ventas!==1?"s":""}</div>
-            {tooltip.d.mensual>0 && <div style={{ color:t.textMuted, fontSize:12 }}>Mensual: USD {tooltip.d.mensual}</div>}
-            {tooltip.d.anual>0   && <div style={{ color:t.textMuted, fontSize:12 }}>Anual: USD {tooltip.d.anual}</div>}
-            {tooltip.d.clases>0  && <div style={{ color:t.textMuted, fontSize:12 }}>Clases: USD {tooltip.d.clases}</div>}
+        {tooltip&&(
+          <div style={{position:"absolute",top:Math.max(0,tooltip.y-8),left:Math.min(tooltip.x+10,W-145),background:t.cardBg,border:`1px solid ${t.cardBorder}`,borderRadius:10,padding:"10px 14px",pointerEvents:"none",zIndex:10,fontSize:13,boxShadow:t.cardShadow,minWidth:130}}>
+            <div style={{fontWeight:700,color:t.text,marginBottom:4}}>Día {tooltip.d.day}</div>
+            <div style={{color:t.accent,fontWeight:800,fontSize:15}}>USD {tooltip.d.total}</div>
+            <div style={{color:t.textMuted,fontSize:12,marginTop:4}}>{tooltip.d.ventas} venta{tooltip.d.ventas!==1?"s":""}</div>
+            {tooltip.d.mensual>0&&<div style={{color:t.textMuted,fontSize:12}}>Mensual: USD {tooltip.d.mensual}</div>}
+            {tooltip.d.anual>0&&<div style={{color:t.textMuted,fontSize:12}}>Anual: USD {tooltip.d.anual}</div>}
+            {tooltip.d.clases>0&&<div style={{color:t.textMuted,fontSize:12}}>Clases: USD {tooltip.d.clases}</div>}
           </div>
         )}
       </div>
@@ -564,59 +559,35 @@ function LineChart({ ingresos, t }) {
 
 // ─── Torta ────────────────────────────────────────────────────────────────────
 function PieChart({ breakdown, title, t }) {
-  const S = makeS(t);
-  const [hovered, setHovered] = useState(null);
-  const slices = [
-    {key:"mensual",label:"Plan mensual",color:t.accent},
-    {key:"anual",  label:"Plan anual",  color:"#5b8dee"},
-    {key:"clases", label:"Clases",      color:"#34d399"},
-  ];
-  const total = slices.reduce((a,s)=>a+safeNum(breakdown[s.key]),0);
-  if (total===0) return (
-    <div style={S.card}>
-      <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:12 }}>{title}</h3>
-      <div style={{ color:t.textMuted }}>Sin datos disponibles.</div>
-    </div>
-  );
-  const CX=90, CY=90, R=72, RI=40;
-  let angle=-Math.PI/2;
-  const paths = slices.map(s => {
+  const S=makeS(t);
+  const [hovered,setHovered]=useState(null);
+  const slices=[{key:"mensual",label:"Plan inversor mensual",color:t.accent},{key:"anual",label:"Plan inversor anual",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"}];
+  const total=slices.reduce((a,s)=>a+safeNum(breakdown[s.key]),0);
+  if (total===0) return (<div style={S.card}><h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:12}}>{title}</h3><div style={{color:t.textMuted}}>Sin datos disponibles.</div></div>);
+  const CX=90,CY=90,R=72,RI=40; let angle=-Math.PI/2;
+  const paths=slices.map(s=>{
     const val=safeNum(breakdown[s.key]);
     const sweep=(val/total)*2*Math.PI;
-    const x1=CX+R*Math.cos(angle), y1=CY+R*Math.sin(angle);
-    const x2=CX+R*Math.cos(angle+sweep), y2=CY+R*Math.sin(angle+sweep);
-    const xi1=CX+RI*Math.cos(angle), yi1=CY+RI*Math.sin(angle);
-    const xi2=CX+RI*Math.cos(angle+sweep), yi2=CY+RI*Math.sin(angle+sweep);
+    const x1=CX+R*Math.cos(angle),y1=CY+R*Math.sin(angle);
+    const x2=CX+R*Math.cos(angle+sweep),y2=CY+R*Math.sin(angle+sweep);
+    const xi1=CX+RI*Math.cos(angle),yi1=CY+RI*Math.sin(angle);
+    const xi2=CX+RI*Math.cos(angle+sweep),yi2=CY+RI*Math.sin(angle+sweep);
     const large=sweep>Math.PI?1:0;
     const d=`M ${xi1} ${yi1} L ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${RI} ${RI} 0 ${large} 0 ${xi1} ${yi1} Z`;
     angle+=sweep;
-    return {...s, val, pct:Math.round((val/total)*100), d};
+    return {...s,val,pct:Math.round((val/total)*100),d};
   }).filter(s=>s.val>0);
   return (
     <div style={S.card}>
-      <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:16 }}>{title}</h3>
-      <div style={{ display:"flex", alignItems:"center", gap:24, flexWrap:"wrap" }}>
-        <svg viewBox="0 0 180 180" style={{ width:170, flexShrink:0 }}>
-          {paths.map(p => (
-            <path key={p.key} d={p.d} fill={p.color}
-              opacity={hovered&&hovered!==p.key?0.35:1}
-              style={{ cursor:"pointer", transition:"opacity 0.15s" }}
-              onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)} />
-          ))}
+      <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:16}}>{title}</h3>
+      <div style={{display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"}}>
+        <svg viewBox="0 0 180 180" style={{width:170,flexShrink:0}}>
+          {paths.map(p=>(<path key={p.key} d={p.d} fill={p.color} opacity={hovered&&hovered!==p.key?0.35:1} style={{cursor:"pointer",transition:"opacity 0.15s"}} onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)}/>))}
           <text x={CX} y={CY-7} textAnchor="middle" fontSize="12" fontWeight="700" fill={t.textMuted}>TOTAL</text>
           <text x={CX} y={CY+10} textAnchor="middle" fontSize="14" fontWeight="800" fill={t.accent}>{total}</text>
         </svg>
-        <div style={{ display:"grid", gap:10 }}>
-          {paths.map(p => (
-            <div key={p.key} style={{ display:"flex", alignItems:"center", gap:10, opacity:hovered&&hovered!==p.key?0.35:1, transition:"opacity 0.15s", cursor:"default" }}
-              onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)}>
-              <div style={{ width:11, height:11, borderRadius:3, background:p.color, flexShrink:0 }} />
-              <div>
-                <div style={{ fontSize:13, fontWeight:600, color:t.text }}>{p.label}</div>
-                <div style={{ fontSize:12, color:t.textMuted }}>USD {p.val} · {p.pct}%</div>
-              </div>
-            </div>
-          ))}
+        <div style={{display:"grid",gap:10}}>
+          {paths.map(p=>(<div key={p.key} style={{display:"flex",alignItems:"center",gap:10,opacity:hovered&&hovered!==p.key?0.35:1,transition:"opacity 0.15s",cursor:"default"}} onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)}><div style={{width:11,height:11,borderRadius:3,background:p.color,flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{p.label}</div><div style={{fontSize:12,color:t.textMuted}}>USD {p.val} · {p.pct}%</div></div></div>))}
         </div>
       </div>
     </div>
@@ -624,21 +595,20 @@ function PieChart({ breakdown, title, t }) {
 }
 
 // ─── ClienteCard (críticos) ───────────────────────────────────────────────────
+// FIX: nombre siempre en t.text, accentText solo para subtítulo
 function ClienteCard({ cliente, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar, onVerDetalle, t }) {
-  const btn = makeBtn(t);
+  const btn=makeBtn(t);
   return (
-    <div style={{ border:`1px solid ${accentBorder}`, background:accentBg, borderRadius:12, padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
-      <div style={{ cursor:"pointer", flex:1 }} onClick={()=>onVerDetalle(cliente)}>
-        <div style={{ fontWeight:700, color:t.text, fontSize:14 }}>{cliente.nombre}</div>
-        <div style={{ fontSize:12, color:accentText, marginTop:2 }}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
+    <div style={{border:`1px solid ${accentBorder}`,background:accentBg,borderRadius:12,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+      <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
+        {/* NOMBRE siempre en t.text para visibilidad en dark mode */}
+        <div style={{fontWeight:700,color:t.text,fontSize:14}}>{cliente.nombre}</div>
+        <div style={{fontSize:12,color:accentText,marginTop:2}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
       </div>
-      <div style={{ display:"flex", gap:6 }}>
-        <button style={{ ...btn(true), padding:"7px 11px", fontSize:13 }} title="Renovación rápida"
-          onClick={()=>onRenovarRapido(cliente)}>✔</button>
-        <button style={{ ...btn(false), padding:"7px 11px", fontSize:13 }} title="Renovar con cambios"
-          onClick={()=>onAbrirRenovar(cliente)}>✏️</button>
-        <button style={{ ...btn(false), padding:"7px 11px", fontSize:13 }} title="Eliminar"
-          onClick={()=>onEliminar(cliente)}>🗑</button>
+      <div style={{display:"flex",gap:6}}>
+        <button style={{...btn(true),padding:"7px 11px",fontSize:13}} title="Renovación rápida" onClick={()=>onRenovarRapido(cliente)}>✔</button>
+        <button style={{...btn(false),padding:"7px 11px",fontSize:13}} title="Renovar con cambios" onClick={()=>onAbrirRenovar(cliente)}>✏️</button>
+        <button style={{...btn(false),padding:"7px 11px",fontSize:13}} title="Eliminar" onClick={()=>onEliminar(cliente)}>🗑</button>
       </div>
     </div>
   );
@@ -646,90 +616,144 @@ function ClienteCard({ cliente, accentBorder, accentBg, accentText, dateLabel, o
 
 // ─── CriticosPanel ────────────────────────────────────────────────────────────
 function CriticosPanel({ titulo, badgeBg, badgeColor, clientes, rows, page, totalPages, setPage, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar, onVerDetalle, sectionRef, t }) {
-  const S = makeS(t);
+  const S=makeS(t);
   return (
-    <div style={{ ...S.card, display:"flex", flexDirection:"column", minHeight:280 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-        <div style={{ fontSize:15, fontWeight:800, color:t.text }}>{titulo}</div>
-        <div style={{ minWidth:30, height:30, borderRadius:999, display:"flex", alignItems:"center", justifyContent:"center", background:badgeBg, color:badgeColor, fontWeight:800, fontSize:13 }}>
-          {clientes.length}
-        </div>
+    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontSize:15,fontWeight:800,color:t.text}}>{titulo}</div>
+        <div style={{minWidth:30,height:30,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:badgeBg,color:badgeColor,fontWeight:800,fontSize:13}}>{clientes.length}</div>
       </div>
-      <div style={{ flex:1 }}>
-        {clientes.length ? (
-          <div style={{ display:"grid", gap:8 }}>
-            {rows.map(c => (
-              <ClienteCard key={c.id} cliente={c}
-                accentBorder={accentBorder} accentBg={accentBg} accentText={accentText}
-                dateLabel={dateLabel}
-                onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar}
-                onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t} />
-            ))}
+      <div style={{flex:1}}>
+        {clientes.length?(
+          <div style={{display:"grid",gap:8}}>
+            {rows.map(c=>(<ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>))}
           </div>
-        ) : (
-          <div style={{ color:t.textMuted, fontSize:13 }}>Sin clientes en esta categoría.</div>
+        ):(
+          <div style={{color:t.textMuted,fontSize:13}}>Sin clientes en esta categoría.</div>
         )}
       </div>
-      <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t} />
+      <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t}/>
     </div>
   );
 }
 
 // ─── ClienteForm ─────────────────────────────────────────────────────────────
 function ClienteForm({ title, subtitle, form, setForm, onGuardar, onCancelar, guardando, isModal=false, t }) {
-  const S = makeS(t);
-  const btn = makeBtn(t);
-  const isClases = form.servicio==="clases";
-  const inner = (
-    <div style={{ width:"100%", maxWidth:isModal?820:undefined, background:t.cardBg, borderRadius:16, padding:28, boxShadow:isModal?"0 24px 64px rgba(0,0,0,0.4)":undefined, border:`1px solid ${t.cardBorder}` }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:22 }}>
+  const S=makeS(t); const btn=makeBtn(t);
+  const isClases=form.servicio==="clases";
+  const inner=(
+    <div style={{width:"100%",maxWidth:isModal?820:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 24px 64px rgba(0,0,0,0.4)":undefined,border:`1px solid ${t.cardBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div>
-          <h3 style={{ margin:0, color:t.text, fontSize:18, fontWeight:800 }}>{title}</h3>
-          {subtitle && <div style={{ color:t.textMuted, fontSize:13, marginTop:4 }}>{subtitle}</div>}
+          <h3 style={{margin:0,color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
+          {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{subtitle}</div>}
         </div>
-        {isModal && <button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
+        {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:16 }}>
-        <Field label="Nombre" t={t}><input style={S.input} placeholder="Nombre completo" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} /></Field>
-        <Field label="Email" t={t}><input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} /></Field>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
+        {/* FIX: label cambiado a "Nombre y apellido" */}
+        <Field label="Nombre y apellido" t={t}><input style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/></Field>
+        <Field label="Email" t={t}><input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></Field>
         <Field label="Servicio" t={t}>
-          <select style={S.input} value={form.servicio} onChange={e=>{
-            const s=e.target.value;
-            setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s)});
-          }}>
-            <option value="mensual">Plan Inversor Mensual</option>
-            <option value="anual">Plan Inversor Anual</option>
+          <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s)});}}>
+            {/* FIX: capitalización correcta */}
+            <option value="mensual">Plan inversor mensual</option>
+            <option value="anual">Plan inversor anual</option>
             <option value="clases">Clases</option>
           </select>
         </Field>
-        <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}><input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})} /></Field>
-        <Field label="Monto (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})} /></Field>
-        {!isClases && <Field label="Duración (días)" t={t}><input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})} /></Field>}
-        <Field label="Deuda restante (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})} /></Field>
-        <Field label="Notas" spanAll t={t}><input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} /></Field>
+        <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}><input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/></Field>
+        <Field label="Monto (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/></Field>
+        {!isClases&&<Field label="Duración (días)" t={t}><input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/></Field>}
+        <Field label="Deuda restante (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/></Field>
+        <Field label="Notas" spanAll t={t}><input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/></Field>
       </div>
-      <div style={{ marginTop:20, display:"flex", justifyContent:"flex-end", gap:10 }}>
-        {isModal && <button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
-        <button style={btn(false,true)} onClick={onGuardar}>
-          {guardando?"Guardando...": isModal?"Confirmar renovación":"Guardar cliente"}
-        </button>
+      <div style={{marginTop:20,display:"flex",justifyContent:"flex-end",gap:10}}>
+        {isModal&&<button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
+        <button style={btn(false,true)} onClick={onGuardar}>{guardando?"Guardando...":isModal?"Confirmar renovación":"Guardar cliente"}</button>
       </div>
     </div>
   );
   if (!isModal) return inner;
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(8,14,26,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, zIndex:1000 }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}>
       {inner}
     </div>
   );
 }
-
 function Field({ label, children, spanAll=false, t }) {
-  const S = makeS(t);
+  const S=makeS(t);
+  return (<div style={{gridColumn:spanAll?"1 / -1":"auto"}}><label style={S.label}>{label}</label>{children}</div>);
+}
+
+// ─── Vista Historial ──────────────────────────────────────────────────────────
+function HistorialView({ t }) {
+  const S=makeS(t);
+  const [historial,setHistorial]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const histRef=useRef(null);
+  const histPag=usePagination(historial,PAGE_SIZES.historial);
+
+  useEffect(()=>{
+    supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500)
+      .then(({data,error})=>{
+        if (!error) setHistorial(data||[]);
+        setLoading(false);
+      });
+  },[]);
+
+  function formatTS(ts) {
+    if (!ts) return "-";
+    const d=new Date(ts);
+    return new Intl.DateTimeFormat("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(d);
+  }
+  function accionBadge(accion) {
+    const base={display:"inline-block",padding:"3px 9px",borderRadius:999,fontSize:11,fontWeight:700,border:"1px solid transparent"};
+    if (accion?.includes("eliminó")||accion?.includes("eliminó")) return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
+    if (accion?.includes("renovó")||accion?.includes("renovación")) return {...base,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
+    if (accion?.includes("guardó")||accion?.includes("nuevo")) return {...base,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
+    if (accion?.includes("pago")) return {...base,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
+    return {...base,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
+  }
+
   return (
-    <div style={{ gridColumn:spanAll?"1 / -1":"auto" }}>
-      <label style={S.label}>{label}</label>
-      {children}
+    <div style={{display:"grid",gap:24}}>
+      <div ref={histRef} style={S.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div>
+            <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:20}}>Historial de cambios</h3>
+            <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Registro completo de todas las acciones realizadas en el sistema.</div>
+          </div>
+        </div>
+        {loading
+          ? <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Cargando historial...</div>
+          : historial.length===0
+            ? <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros todavía.</div>
+            : (
+              <>
+                <div style={{overflowX:"auto"}}>
+                  <table style={S.table}>
+                    <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente / entidad","Detalle"]} t={t}/></thead>
+                    <tbody>
+                      {histPag.rows.map(h=>(
+                        <tr key={h.id}>
+                          <td style={{...S.td,whiteSpace:"nowrap",fontSize:13}}>{formatTS(h.created_at)}</td>
+                          <td style={{...S.td,fontSize:13}}>{h.usuario_email||"-"}</td>
+                          <td style={S.td}><span style={accionBadge(h.accion)}>{h.accion||"-"}</span></td>
+                          <td style={{...S.td,fontWeight:600}}>{h.detalle?.nombre||h.entidad||"-"}</td>
+                          <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {h.detalle?JSON.stringify(h.detalle).replace(/[{}"]/g,"").slice(0,80):"—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination page={histPag.page} totalPages={histPag.totalPages} setPage={histPag.setPage} sectionRef={histRef} t={t}/>
+              </>
+            )
+        }
+      </div>
     </div>
   );
 }
@@ -751,43 +775,35 @@ export default function App() {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("todos");
   const [form, setForm] = useState(FORM_DEFAULTS);
-  const [renovarForm, setRenovarForm] = useState({...FORM_DEFAULTS, id:null});
+  const [renovarForm, setRenovarForm] = useState({...FORM_DEFAULTS,id:null});
   const [darkMode, setDarkMode] = useState(false);
-
-  // Modals / panels
   const [clienteDetalle, setClienteDetalle] = useState(null);
   const [pagoCliente, setPagoCliente] = useState(null);
-  const [confirm, setConfirm] = useState(null); // {title,message,onConfirm,danger,label}
+  const [confirm, setConfirm] = useState(null);
 
   const toast = useToast();
 
-  // Refs
-  const baseRef = useRef(null);
-  const vencimientosRef = useRef(null);
-  const deudoresRef = useRef(null);
-  const clasesRef = useRef(null);
-  const ingresosRef = useRef(null);
-  const criticosRef = useRef(null);
+  const baseRef=useRef(null); const vencimientosRef=useRef(null);
+  const deudoresRef=useRef(null); const clasesRef=useRef(null);
+  const ingresosRef=useRef(null); const criticosRef=useRef(null);
 
-  const t = getT(darkMode);
-  const S = makeS(t);
-  const btn = makeBtn(t);
-  const navBtn = makeNavBtn(t);
+  // Aplicar color-scheme al date input cuando cambia el modo
+  useEffect(()=>{ applyDateColorScheme(darkMode); },[darkMode]);
 
-  // Helper: pedir confirmación con modal premium
-  function askConfirm(title, message, onConfirm, { danger=false, label="Confirmar" }={}) {
-    setConfirm({ title, message, onConfirm, danger, label });
+  const t=getT(darkMode); const S=makeS(t); const btn=makeBtn(t); const navBtn=makeNavBtn(t);
+
+  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar"}={}) {
+    setConfirm({title,message,onConfirm,danger,label});
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    supabase.auth.getSession().then(({data}) => setUser(data.session?.user||null));
-    const {data:listener} = supabase.auth.onAuthStateChange((_e,s) => setUser(s?.user||null));
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>setUser(data.session?.user||null));
+    const {data:listener}=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null));
+    return ()=>listener.subscription.unsubscribe();
+  },[]);
   async function login() {
-    const {error} = await supabase.auth.signInWithPassword({email:emailLogin, password});
+    const {error}=await supabase.auth.signInWithPassword({email:emailLogin,password});
     if (error) toast.error(error.message);
   }
   async function logout() { await supabase.auth.signOut(); }
@@ -795,277 +811,251 @@ export default function App() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchClientes() {
     setLoading(true);
-    const {data,error} = await supabase.from("clientes").select("*").order("id",{ascending:false});
-    if (error) { toast.error("No se pudieron cargar los clientes"); setLoading(false); return; }
-    setClientes(data||[]);
-    setLoading(false);
+    const {data,error}=await supabase.from("clientes").select("*").order("id",{ascending:false});
+    if (error){toast.error("No se pudieron cargar los clientes");setLoading(false);return;}
+    setClientes(data||[]); setLoading(false);
   }
   async function fetchIngresos() {
-    const {data,error} = await supabase.from("ingresos").select("*").order("fecha_pago",{ascending:false});
-    if (error) { toast.error("No se pudieron cargar los ingresos"); return; }
+    const {data,error}=await supabase.from("ingresos").select("*").order("fecha_pago",{ascending:false});
+    if (error){toast.error("No se pudieron cargar los ingresos");return;}
     setIngresos(data||[]);
   }
-  async function refetch() { await Promise.all([fetchClientes(), fetchIngresos()]); }
-  useEffect(() => { fetchClientes(); fetchIngresos(); }, []);
+  async function refetch(){await Promise.all([fetchClientes(),fetchIngresos()]);}
+  useEffect(()=>{fetchClientes();fetchIngresos();},[]);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f) {
-    const nombre = f.nombre.trim();
-    const emailVal = f.email.trim().toLowerCase();
-    if (!nombre) { toast.error("Falta el nombre"); return null; }
-    if (!emailVal) { toast.error("Falta el email"); return null; }
-    if (!isValidEmail(emailVal)) { toast.error("El email no es válido"); return null; }
-    if (f.servicio!=="clases" && Number(f.duracion_dias||0)<=0) { toast.error("Falta la duración en días"); return null; }
-    return {nombre, email:emailVal};
+    const nombre=f.nombre.trim(); const emailVal=f.email.trim().toLowerCase();
+    if (!nombre){toast.error("Falta el nombre y apellido");return null;}
+    if (!emailVal){toast.error("Falta el email");return null;}
+    if (!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
+    if (f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
+    return {nombre,email:emailVal};
   }
-  function buildPayload(f, nombre, emailVal) {
-    const dur = f.servicio==="clases"?0:Number(f.duracion_dias||0);
-    return { ...f, nombre, email:emailVal, estado_manual:"activo",
-      monto:Number(f.monto||0), duracion_dias:dur, deuda_restante:Number(f.deuda_restante||0),
-      fecha_vencimiento: f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur)),
-    };
+  function buildPayload(f,nombre,emailVal) {
+    const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
+    return {...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),
+      fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
-  function buildIngreso(cid, nombre, emailVal, servicio, monto, fecha, notas) {
-    return {cliente_id:cid, cliente_nombre:nombre, email:emailVal, servicio, monto:Number(monto||0), fecha_pago:fecha, notas:notas||""};
+  function buildIngreso(cid,nombre,emailVal,servicio,monto,fecha,notas) {
+    return {cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
   }
 
   async function guardarCliente() {
-    const v = validateForm(form); if (!v) return;
-    // Check duplicado
-    const dup = clientes.find(c => c.email?.toLowerCase()===v.email && !c.id===false);
-    if (dup) { toast.error(`Ya existe un cliente con el email ${v.email}`); return; }
+    const v=validateForm(form);if(!v)return;
+    const dup=clientes.find(c=>c.email?.toLowerCase()===v.email);
+    if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
     setGuardando(true);
-    const payload = buildPayload(form, v.nombre, v.email);
-    const {data:ins, error} = await supabase.from("clientes").insert([payload]).select().single();
-    if (error) { setGuardando(false); toast.error("No se pudo guardar el cliente"); return; }
-    const {error:eI} = await supabase.from("ingresos").insert([buildIngreso(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
-    if (eI) toast.error("El cliente se guardó pero no se registró el ingreso");
-    setGuardando(false); setShowForm(false); setForm(FORM_DEFAULTS);
-    toast.success(`Cliente ${v.nombre} agregado correctamente`);
-    refetch();
+    const payload=buildPayload(form,v.nombre,v.email);
+    const {data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
+    if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
+    await supabase.from("ingresos").insert([buildIngreso(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
+    await logHistorial(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
+    setGuardando(false);setShowForm(false);setForm(FORM_DEFAULTS);
+    toast.success(`${v.nombre} agregado correctamente`);refetch();
   }
 
   async function guardarRenovacion() {
-    const v = validateForm(renovarForm); if (!v) return;
+    const v=validateForm(renovarForm);if(!v)return;
     setRenovando(true);
-    const payload = buildPayload(renovarForm, v.nombre, v.email);
-    const {error:eC} = await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
-    if (eC) { setRenovando(false); toast.error("No se pudo renovar el cliente"); return; }
-    const {error:eI} = await supabase.from("ingresos").insert([buildIngreso(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
-    if (eI) toast.error("Renovación guardada pero sin registro de ingreso");
-    setRenovando(false); setShowRenovar(false);
-    toast.success(`${v.nombre} renovado correctamente`);
-    refetch();
+    const payload=buildPayload(renovarForm,v.nombre,v.email);
+    const {error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
+    if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
+    await supabase.from("ingresos").insert([buildIngreso(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
+    await logHistorial(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
+    setRenovando(false);setShowRenovar(false);
+    toast.success(`${v.nombre} renovado correctamente`);refetch();
   }
 
   async function renovarRapido(cliente) {
-    const today = getToday();
-    const dur = cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
-    const va = cliente.vencimiento||cliente.fecha_vencimiento||null;
-    let fb = toISODate(today);
-    if (va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia")) fb=va;
-    const nv = cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(fb,dur));
-    const payload = { nombre:cliente.nombre||"", email:(cliente.email||"").trim().toLowerCase(),
-      servicio:cliente.servicio, fecha_inicio:fb, monto:Number(cliente.monto||0),
-      duracion_dias:dur, estado_manual:"activo",
-      deuda_restante:Number(cliente.deuda_restante||0), notas:cliente.notas||"",
-      fecha_vencimiento:nv };
-    const {error:eC} = await supabase.from("clientes").update(payload).eq("id",cliente.id);
-    if (eC) { toast.error("No se pudo renovar el cliente"); return; }
-    const {error:eI} = await supabase.from("ingresos").insert([buildIngreso(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
-    if (eI) toast.error("Renovado pero sin registro de ingreso");
-    toast.success(`${cliente.nombre} renovado con el mismo plan`);
-    refetch();
+    const today=getToday();
+    const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
+    const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
+    let fb=toISODate(today);
+    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"||cliente.estadoSistema==="por_vencer"))fb=va;
+    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(fb,dur));
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",fecha_vencimiento:nv};
+    const {error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    if(eC){toast.error("No se pudo renovar el cliente");return;}
+    await supabase.from("ingresos").insert([buildIngreso(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
+    await logHistorial(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
+    toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
   }
 
   async function eliminarClienteConfirmado(cliente) {
-    const {error} = await supabase.from("clientes").delete().eq("id",cliente.id);
-    if (error) { toast.error("No se pudo eliminar"); return; }
-    setClienteDetalle(null);
-    toast.success(`${cliente.nombre} eliminado`);
-    refetch();
+    const {error}=await supabase.from("clientes").delete().eq("id",cliente.id);
+    if(error){toast.error("No se pudo eliminar");return;}
+    await logHistorial(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email});
+    setClienteDetalle(null);toast.success(`${cliente.nombre} eliminado`);refetch();
   }
 
   async function eliminarIngreso(id) {
-    const {error} = await supabase.from("ingresos").delete().eq("id",id);
-    if (error) { toast.error("No se pudo eliminar el ingreso"); return; }
-    toast.success("Ingreso eliminado");
-    fetchIngresos();
+    const ing=ingresos.find(i=>i.id===id);
+    const {error}=await supabase.from("ingresos").delete().eq("id",id);
+    if(error){toast.error("No se pudo eliminar el ingreso");return;}
+    await logHistorial(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto});
+    toast.success("Ingreso eliminado");fetchIngresos();
   }
 
-  async function cambiarEstado(id, value) {
-    const {error} = await supabase.from("clientes").update({estado_manual:value}).eq("id",id);
-    if (error) { toast.error("No se pudo actualizar"); return; }
+  async function cambiarEstado(id,value) {
+    const {error}=await supabase.from("clientes").update({estado_manual:value}).eq("id",id);
+    if(error){toast.error("No se pudo actualizar");return;}
+    const c=clientes.find(cl=>cl.id===id);
+    await logHistorial(user?.email,"cambió estado manual","cliente",id,{nombre:c?.nombre,estado:value});
     fetchClientes();
   }
 
-  async function actualizarEmail(id, nuevoEmail) {
-    const {error} = await supabase.from("clientes").update({email:nuevoEmail}).eq("id",id);
-    if (error) { toast.error("No se pudo actualizar el email"); return; }
+  async function actualizarEmail(id,nuevoEmail) {
+    const {error}=await supabase.from("clientes").update({email:nuevoEmail}).eq("id",id);
+    if(error){toast.error("No se pudo actualizar el email");return;}
     fetchClientes();
   }
 
-  async function registrarPagoParcial(cliente, monto) {
-    if (!monto||monto<=0) { toast.error("Ingresá un monto válido"); return; }
-    const nuevaDeuda = Math.max(0, safeNum(cliente.deuda_restante)-monto);
-    const {error} = await supabase.from("clientes").update({deuda_restante:nuevaDeuda}).eq("id",cliente.id);
-    if (error) { toast.error("No se pudo registrar el pago"); return; }
-    setPagoCliente(null);
-    toast.success(`Pago de USD ${monto} registrado. Deuda restante: USD ${nuevaDeuda}`);
-    fetchClientes();
+  async function registrarPagoParcial(cliente,monto) {
+    if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
+    const nuevaDeuda=Math.max(0,safeNum(cliente.deuda_restante)-monto);
+    const {error}=await supabase.from("clientes").update({deuda_restante:nuevaDeuda}).eq("id",cliente.id);
+    if(error){toast.error("No se pudo registrar el pago");return;}
+    await logHistorial(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
+    setPagoCliente(null);toast.success(`Pago de USD ${monto} registrado. Deuda restante: USD ${nuevaDeuda}`);fetchClientes();
   }
 
   function abrirRenovar(cliente) {
-    const va = cliente.vencimiento||cliente.fecha_vencimiento||null;
-    let fb = toISODate(getToday());
-    if (va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia")) fb=va;
-    setRenovarForm({ id:cliente.id, nombre:cliente.nombre||"", email:cliente.email||"",
-      servicio:cliente.servicio||"mensual", fecha_inicio:fb, monto:safeNum(cliente.monto),
-      duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),
-      deuda_restante:safeNum(cliente.deuda_restante), notas:cliente.notas||"" });
+    const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
+    let fb=toISODate(getToday());
+    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"||cliente.estadoSistema==="por_vencer"))fb=va;
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
     setShowRenovar(true);
   }
-
-  function handleSetView(v) { setActiveView(v); setShowForm(false); }
+  function handleSetView(v){setActiveView(v);setShowForm(false);}
 
   // ── Datos derivados ───────────────────────────────────────────────────────
-  const computed = useMemo(() => clientes.map(computeClient), [clientes]);
+  const computed=useMemo(()=>clientes.map(computeClient),[clientes]);
 
-  const filtered = useMemo(() => computed.filter(c => {
-    const txt = `${c.nombre||""} ${c.email||""}`.toLowerCase();
-    const okB = txt.includes(busqueda.toLowerCase());
-    const okF = filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
+  const filtered=useMemo(()=>computed.filter(c=>{
+    const txt=`${c.nombre||""} ${c.email||""}`.toLowerCase();
+    const okB=txt.includes(busqueda.toLowerCase());
+    const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
-  }), [computed,busqueda,filtro]);
+  }),[computed,busqueda,filtro]);
 
-  const deudores = useMemo(() => computed.filter(c=>Number(c.deuda_restante||0)>0), [computed]);
-  const clasesList = useMemo(() => computed.filter(c=>c.servicio==="clases"), [computed]);
-  const vencimientos = useMemo(() => computed
-    .filter(c=>c.servicio!=="clases")
-    .sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),
-    [computed]);
+  const deudores=useMemo(()=>computed.filter(c=>Number(c.deuda_restante||0)>0),[computed]);
+  const clasesList=useMemo(()=>computed.filter(c=>c.servicio==="clases"),[computed]);
+  const vencimientos=useMemo(()=>computed.filter(c=>c.servicio!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
 
-  const vencimientosCriticos = useMemo(() => {
-    const hoy=[],gracia=[],vencidos=[];
-    computed.forEach(c => {
-      if (!c.vencimiento) return;
-      if (c.estadoSistema==="activo"&&c.dias<=0) hoy.push(c);
-      else if (c.estadoSistema==="gracia") gracia.push(c);
-      else if (c.estadoSistema==="vencido") vencidos.push(c);
+  // FIX: "Por vencer" = activo con 0, 1 o 2 días restantes (antes del vencimiento)
+  const vencimientosCriticos=useMemo(()=>{
+    const porVencer=[],gracia=[],vencidos=[];
+    computed.forEach(c=>{
+      if(!c.vencimiento)return;
+      if(c.estadoSistema==="activo"&&c.dias>=0&&c.dias<=WARN_DAYS) porVencer.push(c);
+      else if(c.estadoSistema==="gracia") gracia.push(c);
+      else if(c.estadoSistema==="vencido") vencidos.push(c);
     });
-    return {hoy,gracia,vencidos};
-  }, [computed]);
+    return {hoy:porVencer,gracia,vencidos};
+  },[computed]);
 
-  const totalCriticos = vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
+  const totalCriticos=vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
 
-  const resumen = useMemo(() => {
-    const b = {activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
-    computed.forEach(c => {
-      if (c.estadoSistema==="activo") b.activos++;
-      if (c.estadoSistema==="gracia") b.gracia++;
-      if (c.estadoSistema==="sacar"||c.estadoSistema==="vencido") b.sacar++;
-      if (Number(c.deuda_restante||0)>0) b.deudores++;
-      if (c.servicio==="clases") b.clases++;
+  const resumen=useMemo(()=>{
+    const b={activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
+    computed.forEach(c=>{
+      if(c.estadoSistema==="activo")b.activos++;
+      if(c.estadoSistema==="gracia")b.gracia++;
+      if(c.estadoSistema==="sacar"||c.estadoSistema==="vencido")b.sacar++;
+      if(Number(c.deuda_restante||0)>0)b.deudores++;
+      if(c.servicio==="clases")b.clases++;
       b.ingresos+=Number(c.monto||0);
     });
     return b;
-  }, [computed]);
+  },[computed]);
 
-  const today = getToday();
-  const currentMonthKey = monthKey(toISODate(today));
-  const prevMonthDate = new Date(today.getFullYear(), today.getMonth()-1, 1);
-  const prevMonthKey = monthKey(toISODate(prevMonthDate));
-
-  const currentMonthIngresos = useMemo(() => ingresos.filter(i => {
-    const d=parseISODate(i.fecha_pago);
-    return d&&d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth();
-  }), [ingresos]);
-
-  const prevMonthIngresos = useMemo(() => ingresos.filter(i => {
-    const d=parseISODate(i.fecha_pago);
-    return d&&d.getFullYear()===prevMonthDate.getFullYear()&&d.getMonth()===prevMonthDate.getMonth();
-  }), [ingresos]);
-
-  const ingresosMes = currentMonthIngresos.reduce((a,i)=>a+safeNum(i.monto),0);
-  const ingresosMesAnt = prevMonthIngresos.reduce((a,i)=>a+safeNum(i.monto),0);
-  const trendMes = ingresosMesAnt>0 ? Math.round(((ingresosMes-ingresosMesAnt)/ingresosMesAnt)*100) : null;
-
-  const dashboardStats = useMemo(() => ({
-    ingresosMes,
-    ventasMes: currentMonthIngresos.length,
-    breakdownMes: buildBreakdown(currentMonthIngresos),
-    breakdownTotal: buildBreakdown(ingresos),
-  }), [ingresos, currentMonthIngresos, ingresosMes]);
-
-  const resumenMensual = useMemo(() => {
-    const map = new Map();
-    ingresos.forEach(i => {
-      if (!i.fecha_pago) return;
+  const today=getToday();
+  const currentMonthKey=monthKey(toISODate(today));
+  const prevMonthDate=new Date(today.getFullYear(),today.getMonth()-1,1);
+  const currentMonthIngresos=useMemo(()=>ingresos.filter(i=>{const d=parseISODate(i.fecha_pago);return d&&d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth();}),[ingresos]);
+  const prevMonthIngresos=useMemo(()=>ingresos.filter(i=>{const d=parseISODate(i.fecha_pago);return d&&d.getFullYear()===prevMonthDate.getFullYear()&&d.getMonth()===prevMonthDate.getMonth();}),[ingresos]);
+  const ingresosMes=currentMonthIngresos.reduce((a,i)=>a+safeNum(i.monto),0);
+  const ingresosMesAnt=prevMonthIngresos.reduce((a,i)=>a+safeNum(i.monto),0);
+  const trendMes=ingresosMesAnt>0?Math.round(((ingresosMes-ingresosMesAnt)/ingresosMesAnt)*100):null;
+  const dashboardStats=useMemo(()=>({ingresosMes,ventasMes:currentMonthIngresos.length,breakdownMes:buildBreakdown(currentMonthIngresos),breakdownTotal:buildBreakdown(ingresos)}),[ingresos,currentMonthIngresos,ingresosMes]);
+  const resumenMensual=useMemo(()=>{
+    const map=new Map();
+    ingresos.forEach(i=>{
+      if(!i.fecha_pago)return;
       const key=monthKey(i.fecha_pago);
-      if (!map.has(key)) map.set(key,{key,mensual:0,anual:0,clases:0,total:0,ventasMensual:0,ventasAnual:0,ventasClases:0});
-      const r=map.get(key); const m=Number(i.monto||0);
-      if (i.servicio==="mensual"){r.mensual+=m;r.ventasMensual++;}
-      else if (i.servicio==="anual"){r.anual+=m;r.ventasAnual++;}
-      else {r.clases+=m;r.ventasClases++;}
+      if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,total:0,ventasMensual:0,ventasAnual:0,ventasClases:0});
+      const r=map.get(key);const m=Number(i.monto||0);
+      if(i.servicio==="mensual"){r.mensual+=m;r.ventasMensual++;}
+      else if(i.servicio==="anual"){r.anual+=m;r.ventasAnual++;}
+      else{r.clases+=m;r.ventasClases++;}
       r.total+=m;
     });
     return Array.from(map.values()).sort((a,b)=>a.key.localeCompare(b.key));
-  }, [ingresos]);
+  },[ingresos]);
+  const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
 
-  const maxTotal = resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
+  // Tasa de renovación: de los que vencieron el mes pasado, cuántos tienen ingreso este mes
+  const tasaRenovacion=useMemo(()=>{
+    const vencieronMesAnt=computed.filter(c=>{
+      if(!c.vencimiento)return false;
+      const vk=monthKey(c.vencimiento);
+      return vk===monthKey(toISODate(prevMonthDate));
+    });
+    if(vencieronMesAnt.length===0)return null;
+    const renovaron=vencieronMesAnt.filter(c=>currentMonthIngresos.some(i=>i.cliente_id===c.id));
+    return Math.round((renovaron.length/vencieronMesAnt.length)*100);
+  },[computed,currentMonthIngresos]);
 
-  // ── Paginaciones ──────────────────────────────────────────────────────────
-  const basePag = usePagination(filtered, PAGE_SIZES.base);
-  const vencimientosPag = usePagination(vencimientos, PAGE_SIZES.vencimientos);
-  const deudoresPag = usePagination(deudores, PAGE_SIZES.deudores);
-  const clasesPag = usePagination(clasesList, PAGE_SIZES.clases);
-  const ingresosPag = usePagination(ingresos, PAGE_SIZES.ingresos);
-  const criticosHoyPag = usePagination(vencimientosCriticos.hoy, PAGE_SIZES.criticos);
-  const criticosGraciaPag = usePagination(vencimientosCriticos.gracia, PAGE_SIZES.criticos);
-  const criticosVencidosPag = usePagination(vencimientosCriticos.vencidos, PAGE_SIZES.criticos);
-  useEffect(() => { basePag.setPage(1); }, [busqueda, filtro]);
+  const basePag=usePagination(filtered,PAGE_SIZES.base);
+  const vencimientosPag=usePagination(vencimientos,PAGE_SIZES.vencimientos);
+  const deudoresPag=usePagination(deudores,PAGE_SIZES.deudores);
+  const clasesPag=usePagination(clasesList,PAGE_SIZES.clases);
+  const ingresosPag=usePagination(ingresos,PAGE_SIZES.ingresos);
+  const criticosHoyPag=usePagination(vencimientosCriticos.hoy,PAGE_SIZES.criticos);
+  const criticosGraciaPag=usePagination(vencimientosCriticos.gracia,PAGE_SIZES.criticos);
+  const criticosVencidosPag=usePagination(vencimientosCriticos.vencidos,PAGE_SIZES.criticos);
+  useEffect(()=>{basePag.setPage(1);},[busqueda,filtro]);
 
   // ── Login ─────────────────────────────────────────────────────────────────
   if (!user) {
     return (
       <>
-        <ToastContainer toasts={toast.toasts} remove={toast.remove} />
-        <div style={{ display:"flex", minHeight:"100vh", alignItems:"center", justifyContent:"center", background:"#080e1a", padding:24 }}>
-          <div style={{ width:390, background:"#111827", borderRadius:20, padding:36, border:"1px solid #1e2d45", boxShadow:"0 8px 48px rgba(0,0,0,0.6)" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:32 }}>
-              <img src={LOGO_SRC} alt="Logo" style={{ width:50, height:50, objectFit:"contain" }} onError={e=>{e.target.style.display="none";}} />
+        <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
+        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"#080e1a",padding:24}}>
+          <div style={{width:390,background:"#111827",borderRadius:20,padding:36,border:"1px solid #1e2d45",boxShadow:"0 8px 48px rgba(0,0,0,0.6)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
+              <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
-                <div style={{ fontSize:22, fontWeight:900, color:"#f0f4ff", letterSpacing:"-0.02em" }}>Seminario Cripto</div>
-                <div style={{ fontSize:13, color:"#8899bb", marginTop:2 }}>Sistema de gestión interno</div>
+                <div style={{fontSize:22,fontWeight:900,color:"#f0f4ff",letterSpacing:"-0.02em"}}>Seminario Cripto</div>
+                <div style={{fontSize:13,color:"#8899bb",marginTop:2}}>Sistema de gestión interno</div>
               </div>
             </div>
-            <div style={{ marginBottom:14 }}>
-              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#8899bb", marginBottom:5, letterSpacing:"0.06em", textTransform:"uppercase" }}>Email</label>
-              <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{ width:"100%", padding:"11px 14px", borderRadius:10, border:"1px solid #1e2d45", fontSize:14, outline:"none", boxSizing:"border-box", background:"#0d1526", color:"#f0f4ff" }} />
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
+              <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
+                style={{width:"100%",padding:"11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff",colorScheme:"dark"}}/>
             </div>
-            <div style={{ position:"relative", marginBottom:22 }}>
-              <label style={{ display:"block", fontSize:11, fontWeight:700, color:"#8899bb", marginBottom:5, letterSpacing:"0.06em", textTransform:"uppercase" }}>Contraseña</label>
-              <input type={showPassword?"text":"password"} placeholder="••••••••" value={password}
-                onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{ width:"100%", padding:"11px 44px 11px 14px", borderRadius:10, border:"1px solid #1e2d45", fontSize:14, outline:"none", boxSizing:"border-box", background:"#0d1526", color:"#f0f4ff" }} />
-              <span onClick={()=>setShowPassword(!showPassword)} style={{ position:"absolute", right:12, bottom:11, cursor:"pointer", color:"#8899bb", display:"flex", alignItems:"center" }}>
-                {showPassword ? (
+            <div style={{position:"relative",marginBottom:22}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
+              <input type={showPassword?"text":"password"} placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
+                style={{width:"100%",padding:"11px 44px 11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff"}}/>
+              <span onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#8899bb",display:"flex",alignItems:"center"}}>
+                {showPassword?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
                   </svg>
-                ) : (
+                ):(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
                   </svg>
                 )}
               </span>
             </div>
-            <button onClick={login} style={{ width:"100%", padding:"13px", borderRadius:10, border:"none", cursor:"pointer", fontWeight:800, fontSize:15, background:"linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)", color:"#0f172a" }}>
+            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:15,background:"linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)",color:"#0f172a"}}>
               Ingresar
             </button>
           </div>
@@ -1076,259 +1066,214 @@ export default function App() {
 
   // ── App ───────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight:"100vh", background:t.bg, color:t.text, fontFamily:"'Inter','Segoe UI',Arial,sans-serif" }}>
-      <ToastContainer toasts={toast.toasts} remove={toast.remove} />
-
-      {/* Confirm modal */}
-      {confirm && (
-        <ConfirmModal open={!!confirm}
-          title={confirm.title} message={confirm.message}
-          confirmLabel={confirm.label} danger={confirm.danger}
-          onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
-          onCancel={() => setConfirm(null)}
-          t={t} />
+    <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
+      <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
+      {confirm&&(
+        <ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
+          onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>
       )}
-
-      {/* Panel de detalle */}
-      {clienteDetalle && (
-        <ClienteDetailModal
-          cliente={clienteDetalle} ingresos={ingresos}
-          onClose={()=>setClienteDetalle(null)}
-          onAbrirRenovar={(c)=>{ setClienteDetalle(null); abrirRenovar(c); }}
-          onEliminar={(c) => {
-            setClienteDetalle(null);
-            askConfirm("Eliminar cliente", `¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,
-              ()=>eliminarClienteConfirmado(c), {danger:true, label:"Eliminar"});
-          }}
-          t={t} />
+      {clienteDetalle&&(
+        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} onClose={()=>setClienteDetalle(null)}
+          onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
+          onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
+          t={t}/>
       )}
+      {pagoCliente&&(<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>)}
 
-      {/* Pago parcial modal */}
-      {pagoCliente && (
-        <PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)}
-          onConfirm={registrarPagoParcial} t={t} />
-      )}
-
-      <div style={{ maxWidth:1320, margin:"0 auto", padding:"24px 28px" }}>
+      <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}}>
 
         {/* Header */}
-        <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"center", marginBottom:28, flexWrap:"wrap" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-            <img src={LOGO_SRC} alt="Logo" style={{ width:44, height:44, objectFit:"contain" }} onError={e=>{e.target.style.display="none";}} />
+        <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <img src={LOGO_SRC} alt="Logo" style={{width:44,height:44,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
-              <h1 style={{ margin:0, fontSize:24, fontWeight:900, color:t.text, letterSpacing:"-0.03em" }}>Seminario Cripto</h1>
-              <div style={{ color:t.textMuted, fontSize:13, marginTop:2 }}>Panel de gestión comercial y operativa</div>
+              <h1 style={{margin:0,fontSize:24,fontWeight:900,color:t.text,letterSpacing:"-0.03em"}}>Seminario Cripto</h1>
+              <div style={{color:t.textMuted,fontSize:13,marginTop:2}}>Panel de gestión comercial y operativa</div>
             </div>
           </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
               Operativa
-              {totalCriticos>0 && (
-                <span style={{ marginLeft:7, background:"#ef4444", color:"#fff", borderRadius:999, fontSize:11, fontWeight:800, padding:"2px 7px", verticalAlign:"middle" }}>
-                  {totalCriticos}
-                </span>
-              )}
+              {totalCriticos>0&&<span style={{marginLeft:7,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"2px 7px",verticalAlign:"middle"}}>{totalCriticos}</span>}
             </button>
             <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
-            <button style={{ ...btn(false,true), padding:"10px 18px" }} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo cliente"}</button>
+            <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
+            <button style={{...btn(false,true),padding:"10px 18px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo cliente"}</button>
             <button onClick={()=>setDarkMode(!darkMode)} title={darkMode?"Modo claro":"Modo oscuro"}
-              style={{ padding:"10px 14px", borderRadius:10, border:`1px solid ${t.navInactiveBorder}`, background:t.navInactiveBg, cursor:"pointer", color:t.text, fontSize:16 }}>
+              style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${t.navInactiveBorder}`,background:t.navInactiveBg,cursor:"pointer",color:t.text,fontSize:16}}>
               {darkMode?"☀":"☾"}
             </button>
-            <button onClick={logout} style={{ padding:"10px 16px", borderRadius:10, border:`1px solid ${t.navInactiveBorder}`, background:t.navInactiveBg, cursor:"pointer", fontWeight:600, color:t.text, fontSize:14 }}>Salir</button>
+            <button onClick={logout} style={{padding:"10px 16px",borderRadius:10,border:`1px solid ${t.navInactiveBorder}`,background:t.navInactiveBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:14}}>Salir</button>
           </div>
         </div>
 
-        {showForm && (
-          <div style={{ marginBottom:24 }}>
-            <ClienteForm title="Alta de cliente" form={form} setForm={setForm}
-              onGuardar={guardarCliente} onCancelar={()=>setShowForm(false)} guardando={guardando} t={t} />
+        {showForm&&(
+          <div style={{marginBottom:24}}>
+            <ClienteForm title="Alta de cliente" form={form} setForm={setForm} onGuardar={guardarCliente} onCancelar={()=>setShowForm(false)} guardando={guardando} t={t}/>
           </div>
         )}
-        {showRenovar && (
-          <ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso"
-            form={renovarForm} setForm={setRenovarForm}
-            onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)}
-            guardando={renovando} isModal t={t} />
+        {showRenovar&&(
+          <ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>
         )}
 
+        {/* ── HISTORIAL ────────────────────────────────────────────── */}
+        {activeView==="historial"&&<HistorialView t={t}/>}
+
         {/* ── GRÁFICOS ──────────────────────────────────────────────── */}
-        {activeView==="graficos" && (
-          <div style={{ display:"grid", gap:24 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:14 }}>
-              <MetricCard title="Ingresos del mes" value={money(ingresosMes)} accent trend={trendMes} sub={trendMes!==null?`vs mes anterior (USD ${ingresosMesAnt})`:undefined} t={t} />
-              <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} t={t} />
-              <MetricCard title="Clientes activos" value={resumen.activos} t={t} />
-              <MetricCard title="En gracia / Vencidos" value={`${resumen.gracia} / ${vencimientosCriticos.vencidos.length}`} t={t} />
+        {activeView==="graficos"&&(
+          <div style={{display:"grid",gap:24}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+              <MetricCard title="Ingresos del mes" value={money(ingresosMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingresosMesAnt})`:undefined} t={t}/>
+              <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} t={t}/>
+              <MetricCard title="Clientes activos" value={resumen.activos} t={t}/>
+              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
-              <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:16 }}>Fluctuación de ingresos</h3>
-              <LineChart ingresos={ingresos} t={t} />
+              <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:16}}>Fluctuación de ingresos</h3>
+              <LineChart ingresos={ingresos} t={t}/>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))", gap:24 }}>
-              <PieChart breakdown={dashboardStats.breakdownMes} title="Ingresos por tipo — mes actual" t={t} />
-              <PieChart breakdown={dashboardStats.breakdownTotal} title="Ingresos totales por tipo" t={t} />
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:24}}>
+              <PieChart breakdown={dashboardStats.breakdownMes} title="Ingresos por tipo — mes actual" t={t}/>
+              <PieChart breakdown={dashboardStats.breakdownTotal} title="Ingresos totales por tipo" t={t}/>
             </div>
             <div style={S.card}>
-              <h3 style={{ marginTop:0, color:t.text, fontWeight:700, fontSize:16, marginBottom:18 }}>Evolución mensual</h3>
-              {resumenMensual.length===0
-                ? <div style={{ color:t.textMuted }}>Sin datos históricos.</div>
-                : <div style={{ display:"grid", gap:14 }}>
-                    {resumenMensual.map(r => {
-                      const pct=Math.max((r.total/maxTotal)*100,4);
-                      const isCurrentMonth = r.key===currentMonthKey;
-                      return (
-                        <div key={r.key}>
-                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:14, color:t.text }}>
-                            <span style={{ textTransform:"capitalize", fontWeight:isCurrentMonth?800:600 }}>{monthLabel(r.key)}{isCurrentMonth?" ★":""}</span>
-                            <strong style={{ color:t.accent }}>USD {r.total}</strong>
-                          </div>
-                          <div style={{ height:8, background:t.barBg, borderRadius:999, overflow:"hidden" }}>
-                            <div style={{ width:`${pct}%`, height:"100%", background:t.accentGrad, borderRadius:999 }} />
-                          </div>
-                          <div style={{ marginTop:5, color:t.textMuted, fontSize:12 }}>Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}</div>
+              <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Evolución mensual</h3>
+              {resumenMensual.length===0?<div style={{color:t.textMuted}}>Sin datos históricos.</div>:(
+                <div style={{display:"grid",gap:14}}>
+                  {resumenMensual.map(r=>{
+                    const pct=Math.max((r.total/maxTotal)*100,4);
+                    const isCurrent=r.key===currentMonthKey;
+                    return (
+                      <div key={r.key}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
+                          <span style={{fontWeight:isCurrent?800:600}}>{monthLabel(r.key)}{isCurrent?" ★":""}</span>
+                          <strong style={{color:t.accent}}>USD {r.total}</strong>
                         </div>
-                      );
-                    })}
-                  </div>
-              }
+                        <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
+                          <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
+                        </div>
+                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* ── DASHBOARD ──────────────────────────────────────────────── */}
-        {activeView==="dashboard" && (
-          <div style={{ display:"grid", gap:24 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:14 }}>
-              <MetricCard title="Ingresos del mes" value={money(ingresosMes)} accent trend={trendMes} t={t} />
-              <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} t={t} />
+        {activeView==="dashboard"&&(
+          <div style={{display:"grid",gap:24}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+              <MetricCard title="Ingresos del mes" value={money(ingresosMes)} accent trend={trendMes} t={t}/>
+              <MetricCard title="Ventas del mes" value={dashboardStats.ventasMes} t={t}/>
+              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
-            <SimpleBarChart title="Ventas por día (mes actual)" data={buildDailySeriesForMonth(ingresos,today.getFullYear(),today.getMonth())} valueKey="total" t={t} />
-            <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashboardStats.breakdownMes} t={t} />
-            <BreakdownCard title="Ingresos totales por tipo" breakdown={dashboardStats.breakdownTotal} t={t} />
+            <SimpleBarChart title="Ventas por día (mes actual)" data={buildDailySeriesForMonth(ingresos,today.getFullYear(),today.getMonth())} valueKey="total" t={t}/>
+            <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashboardStats.breakdownMes} t={t}/>
+            <BreakdownCard title="Ingresos totales por tipo" breakdown={dashboardStats.breakdownTotal} t={t}/>
             <div ref={ingresosRef} style={S.card}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
-                <h3 style={{ margin:0, color:t.text, fontWeight:700, fontSize:16 }}>Detalle de ingresos</h3>
-                <button style={{ ...btn(false), padding:"8px 14px", fontSize:13 }}
-                  onClick={()=>exportCSV(ingresos,[
-                    {key:"fecha_pago",label:"Fecha"},
-                    {key:"cliente_nombre",label:"Nombre"},
-                    {key:"email",label:"Email"},
-                    {key:"servicio",label:"Servicio"},
-                    {key:"monto",label:"Monto"},
-                    {key:"notas",label:"Notas"},
-                  ],"ingresos_seminario_cripto.csv")}>
-                  Exportar CSV
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+                <h3 style={{margin:0,color:t.text,fontWeight:700,fontSize:16}}>Detalle de ingresos</h3>
+                <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
+                  onClick={()=>exportXLSX(ingresos,[
+                    {key:"fecha_pago",label:"Fecha"},{key:"cliente_nombre",label:"Nombre"},
+                    {key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
+                    {key:"monto",label:"Monto"},{key:"notas",label:"Notas"},
+                  ],"ingresos_seminario_cripto.xlsx")}>
+                  Exportar Excel
                 </button>
               </div>
-              <div style={{ overflowX:"auto" }}>
+              <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Eliminar"]} t={t} /></thead>
+                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
                   <tbody>
-                    {ingresosPag.rows.map(i => (
+                    {ingresosPag.rows.map(i=>(
                       <tr key={i.id}>
                         <td style={S.td}>{i.fecha_pago?formatDate(i.fecha_pago):"-"}</td>
-                        <td style={{ ...S.td, fontWeight:700 }}>{i.cliente_nombre||"-"}</td>
+                        <td style={{...S.td,fontWeight:700}}>{i.cliente_nombre||"-"}</td>
                         <td style={S.td}>{i.email||"-"}</td>
                         <td style={S.td}>{svcLabel(i.servicio)}</td>
-                        <td style={{ ...S.td, color:t.accent, fontWeight:700 }}>{money(i.monto)}</td>
+                        <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
                         <td style={S.td}>{i.notas||"-"}</td>
-                        <td style={S.td}>
-                          <button style={{ ...btn(false), padding:"6px 11px", fontSize:13 }}
-                            onClick={()=>askConfirm("Eliminar ingreso","¿Confirmás que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button>
-                        </td>
+                        <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!ingresos.length && <div style={{ padding:24, textAlign:"center", color:t.textMuted }}>No hay ingresos cargados.</div>}
+                {!ingresos.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>No hay ingresos cargados.</div>}
               </div>
-              <Pagination page={ingresosPag.page} totalPages={ingresosPag.totalPages} setPage={ingresosPag.setPage} sectionRef={ingresosRef} t={t} />
+              <Pagination page={ingresosPag.page} totalPages={ingresosPag.totalPages} setPage={ingresosPag.setPage} sectionRef={ingresosRef} t={t}/>
             </div>
           </div>
         )}
 
         {/* ── OPERATIVA ──────────────────────────────────────────────── */}
-        {activeView==="operativa" && (
+        {activeView==="operativa"&&(
           <>
-            {/* Métricas */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:14, marginBottom:28 }}>
-              {[
-                ["Activos",resumen.activos,false],
-                ["En gracia",resumen.gracia,false],
-                ["Para sacar",resumen.sacar,false],
-                ["Deudores",resumen.deudores,false],
-                ["Clases",resumen.clases,false],
-                ["Ingresos totales",`USD ${resumen.ingresos}`,true],
-              ].map(([l,v,a]) => (
-                <div key={l} style={{ ...S.card, borderTop:a?`3px solid ${t.accent}`:undefined }}>
-                  <div style={{ fontSize:11, color:t.textMuted, marginBottom:6, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase" }}>{l}</div>
-                  <div style={{ fontSize:24, fontWeight:800, color:a?t.accent:t.text, letterSpacing:"-0.02em" }}>{v}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14,marginBottom:28}}>
+              {[["Activos",resumen.activos,false],["En gracia",resumen.gracia,false],["Para sacar",resumen.sacar,false],["Deudores",resumen.deudores,false],["Clases",resumen.clases,false],["Ingresos totales",`USD ${resumen.ingresos}`,true]].map(([l,v,a])=>(
+                <div key={l} style={{...S.card,borderTop:a?`3px solid ${t.accent}`:undefined}}>
+                  <div style={{fontSize:11,color:t.textMuted,marginBottom:6,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
+                  <div style={{fontSize:24,fontWeight:800,color:a?t.accent:t.text,letterSpacing:"-0.02em"}}>{v}</div>
                 </div>
               ))}
             </div>
 
             {/* Vencimientos críticos */}
-            <div ref={criticosRef} style={{ ...S.card, marginBottom:24, padding:24 }}>
-              <div style={{ marginBottom:20 }}>
-                <h3 style={{ margin:0, fontSize:20, fontWeight:800, color:t.text, letterSpacing:"-0.02em" }}>
+            <div ref={criticosRef} style={{...S.card,marginBottom:24,padding:24}}>
+              <div style={{marginBottom:20}}>
+                <h3 style={{margin:0,fontSize:20,fontWeight:800,color:t.text,letterSpacing:"-0.02em"}}>
                   Vencimientos críticos
-                  {totalCriticos>0 && <span style={{ marginLeft:10, background:"#ef4444", color:"#fff", borderRadius:999, fontSize:13, fontWeight:800, padding:"3px 10px" }}>{totalCriticos}</span>}
+                  {totalCriticos>0&&<span style={{marginLeft:10,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px"}}>{totalCriticos}</span>}
                 </h3>
-                <div style={{ color:t.textMuted, fontSize:13, marginTop:4 }}>Clic en el nombre para ver el historial completo del cliente.</div>
+                <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Clic en el nombre para ver el historial completo del cliente.</div>
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16, alignItems:"stretch" }}>
-                <CriticosPanel titulo="Por vencer" badgeBg="#e2e8f0" badgeColor="#0f172a"
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
+                <CriticosPanel titulo="Por vencer" badgeBg="#fff7ed" badgeColor="#9a3412"
                   clientes={vencimientosCriticos.hoy} {...criticosHoyPag}
-                  accentBorder={t.cardBorder} accentBg={t.cardBg} accentText={t.textMuted} dateLabel="vence"
+                  accentBorder={t.dark?"#3a2000":"#fdba74"} accentBg={t.dark?"#1a1000":"#fff7ed"} accentText={t.dark?"#fdba74":"#9a3412"} dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
-                  onVerDetalle={setClienteDetalle}
-                  sectionRef={criticosRef} t={t} />
+                  onVerDetalle={setClienteDetalle} sectionRef={criticosRef} t={t}/>
                 <CriticosPanel titulo="En gracia" badgeBg="#fef3c7" badgeColor="#92400e"
                   clientes={vencimientosCriticos.gracia} {...criticosGraciaPag}
                   accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e" dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
-                  onVerDetalle={setClienteDetalle}
-                  sectionRef={criticosRef} t={t} />
+                  onVerDetalle={setClienteDetalle} sectionRef={criticosRef} t={t}/>
                 <CriticosPanel titulo="Vencidos" badgeBg="#fee2e2" badgeColor="#991b1b"
                   clientes={vencimientosCriticos.vencidos} {...criticosVencidosPag}
                   accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b" dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
-                  onVerDetalle={setClienteDetalle}
-                  sectionRef={criticosRef} t={t} />
+                  onVerDetalle={setClienteDetalle} sectionRef={criticosRef} t={t}/>
               </div>
             </div>
 
             {/* Base operativa */}
-            <div ref={baseRef} style={{ ...S.card, marginBottom:24 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"center", flexWrap:"wrap", marginBottom:18 }}>
+            <div ref={baseRef} style={{...S.card,marginBottom:24}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",flexWrap:"wrap",marginBottom:18}}>
                 <div>
-                  <h3 style={{ margin:0, color:t.text, fontWeight:800, fontSize:18 }}>Base operativa</h3>
-                  <div style={{ color:t.textMuted, fontSize:13, marginTop:4 }}>{loading?"Cargando datos...":"Gestión central de clientes, renovaciones y clases."}</div>
+                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Base operativa</h3>
+                  <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{loading?"Cargando datos...":"Gestión central de clientes, renovaciones y clases."}</div>
                 </div>
-                <button style={{ ...btn(false), padding:"8px 14px", fontSize:13 }}
-                  onClick={()=>exportCSV(filtered,[
-                    {key:"nombre",label:"Nombre"},
-                    {key:"email",label:"Email"},
-                    {key:"servicio",label:"Servicio"},
-                    {key:"vencimiento",label:"Vencimiento"},
-                    {key:"estadoSistema",label:"Estado"},
-                    {key:"monto",label:"Monto"},
-                    {key:"deuda_restante",label:"Deuda"},
-                  ],"clientes_seminario_cripto.csv")}>
-                  Exportar CSV
+                <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
+                  onClick={()=>exportXLSX(filtered,[
+                    {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
+                    {key:"vencimiento",label:"Vencimiento"},{key:"estadoSistema",label:"Estado"},{key:"monto",label:"Monto"},{key:"deuda_restante",label:"Deuda"},
+                  ],"clientes_seminario_cripto.xlsx")}>
+                  Exportar Excel
                 </button>
               </div>
-              <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:18 }}>
-                <input style={{ ...S.input, maxWidth:340 }} placeholder="Buscar cliente o email" value={busqueda} onChange={e=>setBusqueda(e.target.value)} />
-                <select style={{ ...S.input, maxWidth:220 }} value={filtro} onChange={e=>setFiltro(e.target.value)}>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
+                <input style={{...S.input,maxWidth:340}} placeholder="Buscar cliente o email" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
+                <select style={{...S.input,maxWidth:220}} value={filtro} onChange={e=>setFiltro(e.target.value)}>
                   <option value="todos">Todos</option>
                   <option value="mensual">Mensual</option>
                   <option value="anual">Anual</option>
@@ -1337,58 +1282,53 @@ export default function App() {
                   <option value="sacar">Sacar</option>
                 </select>
               </div>
-              <div style={{ overflowX:"auto" }}>
+              <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Estado manual","Acciones"]} t={t} /></thead>
+                  <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Estado manual","Acciones"]} t={t}/></thead>
                   <tbody>
-                    {basePag.rows.map(c => (
+                    {basePag.rows.map(c=>(
                       <tr key={c.id}>
-                        <td style={{ ...S.td, fontWeight:700, cursor:"pointer", color:t.accent }} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                        <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
                         <td style={S.td}>
-                          <input value={c.email||""}
-                            onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))}
-                            onBlur={e=>actualizarEmail(c.id,e.target.value)}
-                            style={{ width:"100%", padding:"6px 10px", borderRadius:8, border:`1px solid ${t.inputBorder}`, fontSize:13, boxSizing:"border-box", background:t.inputBg, color:t.inputText }} />
+                          <input value={c.email||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value)}
+                            style={{width:"100%",padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,boxSizing:"border-box",background:t.inputBg,color:t.inputText}}/>
                         </td>
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
                         <td style={S.td}>{c.vencimiento?c.dias:"-"}</td>
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
-                          <select style={{ ...S.input, padding:"8px 12px" }} value={c.estado_manual} onChange={e=>cambiarEstado(c.id,e.target.value)}>
+                          <select style={{...S.input,padding:"8px 12px"}} value={c.estado_manual} onChange={e=>cambiarEstado(c.id,e.target.value)}>
                             <option value="activo">Activo</option>
                             <option value="sacar">Sacar</option>
                           </select>
                         </td>
                         <td style={S.td}>
-                          <div style={{ display:"flex", gap:6 }}>
-                            <button title="Renovación rápida" style={{ ...btn(true), padding:"7px 11px", fontSize:13 }}
-                              onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}>✔</button>
-                            <button title="Renovar con cambios" style={{ ...btn(false), padding:"7px 11px", fontSize:13 }}
-                              onClick={()=>abrirRenovar(c)}>✏️</button>
-                            <button title="Eliminar" style={{ ...btn(false), padding:"7px 11px", fontSize:13 }}
-                              onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
+                          <div style={{display:"flex",gap:6}}>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}>✔</button>
+                            <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
+                            <button title="Eliminar" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!filtered.length&&!loading && <div style={{ padding:24, textAlign:"center", color:t.textMuted }}>No hay resultados.</div>}
+                {!filtered.length&&!loading&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>No hay resultados.</div>}
               </div>
-              <Pagination page={basePag.page} totalPages={basePag.totalPages} setPage={basePag.setPage} sectionRef={baseRef} t={t} />
+              <Pagination page={basePag.page} totalPages={basePag.totalPages} setPage={basePag.setPage} sectionRef={baseRef} t={t}/>
             </div>
 
             {/* Vencimientos */}
-            <div ref={vencimientosRef} style={{ ...S.card, marginBottom:24 }}>
-              <h3 style={{ marginTop:0, color:t.text, fontWeight:800, fontSize:18, marginBottom:16 }}>Vencimientos</h3>
-              <div style={{ overflowX:"auto" }}>
+            <div ref={vencimientosRef} style={{...S.card,marginBottom:24}}>
+              <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Vencimientos</h3>
+              <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Servicio","Vence","Días","Estado"]} t={t} /></thead>
+                  <thead><TableHeader cols={["Cliente","Servicio","Vence","Días","Estado"]} t={t}/></thead>
                   <tbody>
-                    {vencimientosPag.rows.map(c => (
+                    {vencimientosPag.rows.map(c=>(
                       <tr key={c.id}>
-                        <td style={{ ...S.td, fontWeight:700, cursor:"pointer", color:t.accent }} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                        <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
                         <td style={S.td}>{c.vencimiento?c.dias:"-"}</td>
@@ -1398,84 +1338,80 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
-              <Pagination page={vencimientosPag.page} totalPages={vencimientosPag.totalPages} setPage={vencimientosPag.setPage} sectionRef={vencimientosRef} t={t} />
+              <Pagination page={vencimientosPag.page} totalPages={vencimientosPag.totalPages} setPage={vencimientosPag.setPage} sectionRef={vencimientosRef} t={t}/>
             </div>
 
             {/* Deudores */}
-            <div ref={deudoresRef} style={{ ...S.card, marginBottom:24 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-                <h3 style={{ margin:0, color:t.text, fontWeight:800, fontSize:18 }}>Deudores</h3>
-                <button style={{ ...btn(false), padding:"8px 14px", fontSize:13 }}
-                  onClick={()=>exportCSV(deudores,[
+            <div ref={deudoresRef} style={{...S.card,marginBottom:24}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Deudores</h3>
+                <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
+                  onClick={()=>exportXLSX(deudores,[
                     {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
                     {key:"monto",label:"Monto pagado"},{key:"deuda_restante",label:"Deuda restante"},{key:"notas",label:"Notas"},
-                  ],"deudores.csv")}>
-                  Exportar CSV
+                  ],"deudores_seminario_cripto.xlsx")}>
+                  Exportar Excel
                 </button>
               </div>
-              <div style={{ overflowX:"auto" }}>
+              <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Servicio","Pagado","Resta","Notas","Acción"]} t={t} /></thead>
+                  <thead><TableHeader cols={["Cliente","Servicio","Pagado","Resta","Notas","Acción"]} t={t}/></thead>
                   <tbody>
-                    {deudoresPag.rows.map(c => (
+                    {deudoresPag.rows.map(c=>(
                       <tr key={c.id}>
-                        <td style={{ ...S.td, fontWeight:700, cursor:"pointer", color:t.accent }} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                        <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>USD {c.monto}</td>
-                        <td style={{ ...S.td, color:"#ef4444", fontWeight:700 }}>USD {c.deuda_restante}</td>
+                        <td style={{...S.td,color:"#ef4444",fontWeight:700}}>USD {c.deuda_restante}</td>
                         <td style={S.td}>{c.notas||"-"}</td>
-                        <td style={S.td}>
-                          <button style={{ ...btn(false,true), padding:"6px 12px", fontSize:12 }} onClick={()=>setPagoCliente(c)}>
-                            Registrar pago
-                          </button>
-                        </td>
+                        <td style={S.td}><button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!deudores.length && <div style={{ padding:24, textAlign:"center", color:t.textMuted }}>Sin deudores registrados.</div>}
+                {!deudores.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>Sin deudores registrados.</div>}
               </div>
-              <Pagination page={deudoresPag.page} totalPages={deudoresPag.totalPages} setPage={deudoresPag.setPage} sectionRef={deudoresRef} t={t} />
+              <Pagination page={deudoresPag.page} totalPages={deudoresPag.totalPages} setPage={deudoresPag.setPage} sectionRef={deudoresRef} t={t}/>
             </div>
 
             {/* Clases */}
-            <div ref={clasesRef} style={{ ...S.card, marginBottom:24 }}>
-              <h3 style={{ marginTop:0, color:t.text, fontWeight:800, fontSize:18, marginBottom:16 }}>Clases</h3>
-              <div style={{ overflowX:"auto" }}>
+            <div ref={clasesRef} style={{...S.card,marginBottom:24}}>
+              <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Clases</h3>
+              <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Alumno","Inicio","Mes","Monto","Notas"]} t={t} /></thead>
+                  <thead><TableHeader cols={["Alumno","Inicio","Mes","Monto","Notas"]} t={t}/></thead>
                   <tbody>
-                    {clasesPag.rows.map(c => (
+                    {clasesPag.rows.map(c=>(
                       <tr key={c.id}>
-                        <td style={{ ...S.td, fontWeight:700, cursor:"pointer", color:t.accent }} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                        <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
                         <td style={S.td}>{formatDate(c.fecha_inicio)}</td>
-                        <td style={{ ...S.td, textTransform:"capitalize" }}>{monthLabel(monthKey(c.fecha_inicio))}</td>
-                        <td style={{ ...S.td, color:t.accent, fontWeight:700 }}>USD {c.monto}</td>
+                        <td style={{...S.td}}>{monthLabel(monthKey(c.fecha_inicio))}</td>
+                        <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {c.monto}</td>
                         <td style={S.td}>{c.notas||"-"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {!clasesList.length && <div style={{ padding:24, textAlign:"center", color:t.textMuted }}>Sin alumnos registrados.</div>}
+                {!clasesList.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>Sin alumnos registrados.</div>}
               </div>
-              <Pagination page={clasesPag.page} totalPages={clasesPag.totalPages} setPage={clasesPag.setPage} sectionRef={clasesRef} t={t} />
+              <Pagination page={clasesPag.page} totalPages={clasesPag.totalPages} setPage={clasesPag.setPage} sectionRef={clasesRef} t={t}/>
             </div>
 
             {/* Resumen mensual */}
-            <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1.2fr) minmax(0,0.8fr)", gap:24 }}>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.2fr) minmax(0,0.8fr)",gap:24}}>
               <div style={S.card}>
-                <h3 style={{ marginTop:0, color:t.text, fontWeight:800, fontSize:18, marginBottom:16 }}>Resumen mensual</h3>
-                <div style={{ overflowX:"auto" }}>
+                <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Resumen mensual</h3>
+                <div style={{overflowX:"auto"}}>
                   <table style={S.table}>
-                    <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total"]} t={t} /></thead>
+                    <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total"]} t={t}/></thead>
                     <tbody>
-                      {resumenMensual.map(r => (
+                      {resumenMensual.map(r=>(
                         <tr key={r.key}>
-                          <td style={{ ...S.td, fontWeight:700, textTransform:"capitalize" }}>{monthLabel(r.key)}</td>
+                          <td style={{...S.td,fontWeight:700}}>{monthLabel(r.key)}</td>
                           <td style={S.td}>USD {r.mensual}</td>
                           <td style={S.td}>USD {r.anual}</td>
                           <td style={S.td}>USD {r.clases}</td>
-                          <td style={{ ...S.td, fontWeight:800, color:t.accent }}>USD {r.total}</td>
+                          <td style={{...S.td,fontWeight:800,color:t.accent}}>USD {r.total}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1483,20 +1419,20 @@ export default function App() {
                 </div>
               </div>
               <div style={S.card}>
-                <h3 style={{ marginTop:0, color:t.text, fontWeight:800, fontSize:18, marginBottom:16 }}>Vista rápida</h3>
-                <div style={{ display:"grid", gap:16 }}>
-                  {resumenMensual.map(r => {
+                <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Vista rápida</h3>
+                <div style={{display:"grid",gap:16}}>
+                  {resumenMensual.map(r=>{
                     const pct=Math.max((r.total/maxTotal)*100,4);
                     return (
                       <div key={r.key}>
-                        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:14, color:t.text }}>
-                          <span style={{ textTransform:"capitalize", fontWeight:600 }}>{monthLabel(r.key)}</span>
-                          <strong style={{ color:t.accent }}>USD {r.total}</strong>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
+                          <span style={{fontWeight:600}}>{monthLabel(r.key)}</span>
+                          <strong style={{color:t.accent}}>USD {r.total}</strong>
                         </div>
-                        <div style={{ height:8, background:t.barBg, borderRadius:999, overflow:"hidden" }}>
-                          <div style={{ width:`${pct}%`, height:"100%", background:t.accentGrad, borderRadius:999 }} />
+                        <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
+                          <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
                         </div>
-                        <div style={{ marginTop:5, color:t.textMuted, fontSize:12 }}>Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}</div>
+                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.ventasMensual} · Anuales: {r.ventasAnual} · Clases: {r.ventasClases}</div>
                       </div>
                     );
                   })}
