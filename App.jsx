@@ -7,41 +7,47 @@ const supabase = createClient(
 );
 
 const LOGO_SRC = "/logo.png";
-// index.html: <link rel="icon" type="image/png" href="/logo.png" />
 
-// ─── CSS global para date input en dark mode ─────────────────────────────────
-// Inyectar una vez al cargar
+// ─── Errores Supabase Auth → español ─────────────────────────────────────────
+function traducirError(msg) {
+  if (!msg) return "Ocurrió un error inesperado";
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login") || m.includes("invalid credentials") || m.includes("wrong password")) return "Email o contraseña incorrectos";
+  if (m.includes("email not confirmed")) return "El email no fue confirmado. Revisá tu casilla de correo";
+  if (m.includes("too many requests") || m.includes("rate limit")) return "Demasiados intentos. Esperá unos minutos e intentá de nuevo";
+  if (m.includes("user not found")) return "No existe una cuenta con ese email";
+  if (m.includes("network") || m.includes("fetch")) return "Error de conexión. Verificá tu internet";
+  if (m.includes("password")) return "La contraseña no cumple los requisitos mínimos";
+  if (m.includes("email")) return "El email ingresado no es válido";
+  return msg;
+}
+
+// ─── Date input dark mode ─────────────────────────────────────────────────────
 const DARK_DATE_STYLE_ID = "sc-dark-date";
 function applyDateColorScheme(dark) {
   let el = document.getElementById(DARK_DATE_STYLE_ID);
   if (!el) { el = document.createElement("style"); el.id = DARK_DATE_STYLE_ID; document.head.appendChild(el); }
   el.textContent = dark
-    ? `input[type="date"] { color-scheme: dark; } input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }`
-    : `input[type="date"] { color-scheme: light; }`;
+    ? `input[type="date"]{color-scheme:dark;}input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);}`
+    : `input[type="date"]{color-scheme:light;}`;
 }
 
-// ─── Capitalización de mes: "Abril de 2026" ──────────────────────────────────
-function capMonth(str) {
-  if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
-// monthLabel siempre devuelve formato "Abril de 2026" — "Mes de año"
+// ─── Capitalización mes ───────────────────────────────────────────────────────
 function monthLabel(key) {
   const [y, m] = key.split("-");
-  const raw = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" })
-    .format(new Date(Number(y), Number(m) - 1, 1));
-  // raw puede ser "abril de 2026" — asegurar solo primera letra mayúscula
-  return capMonth(raw.charAt(0)) + raw.slice(1);
+  const raw = new Intl.DateTimeFormat("es-AR", { month:"long", year:"numeric" })
+    .format(new Date(Number(y), Number(m)-1, 1));
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 // ─── Fecha ────────────────────────────────────────────────────────────────────
 function getToday() { return new Date(); }
-function toISODate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+function toISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 function addDays(ds, days) {
   const d = new Date(`${ds}T12:00:00`);
-  d.setDate(d.getDate() + Number(days || 0));
+  d.setDate(d.getDate()+Number(days||0));
   return d;
 }
 function parseISODate(ds) { return ds ? new Date(`${ds}T12:00:00`) : null; }
@@ -50,27 +56,23 @@ function formatDate(ds) {
   return new Intl.DateTimeFormat("es-AR").format(new Date(`${ds}T12:00:00`));
 }
 function diffDays(a, b) {
-  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate());
-  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.floor((db - da) / 86400000);
+  const da = new Date(a.getFullYear(),a.getMonth(),a.getDate());
+  const db = new Date(b.getFullYear(),b.getMonth(),b.getDate());
+  return Math.floor((db-da)/86400000);
 }
 function monthKey(ds) {
   const d = new Date(`${ds}T12:00:00`);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 }
-function isSameMonth(a, b) {
-  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth();
-}
+function isSameMonth(a,b) { return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth(); }
 
 // ─── Negocio ──────────────────────────────────────────────────────────────────
 const GRACE_DAYS = 3;
-const WARN_DAYS = 2; // días antes del vencimiento para aparecer en "Por vencer"
+const WARN_DAYS  = 2;
 const PAGE_SIZES = { base:10, vencimientos:10, deudores:3, clases:3, ingresos:10, criticos:3, historial:15 };
 
 function safeNum(v) { const n=Number(v); return Number.isFinite(n)?n:0; }
 function money(v) { return `USD ${safeNum(v)}`; }
-
-// FIX: capitalización correcta en labels de servicio
 function svcLabel(v) {
   if (v==="mensual") return "Plan inversor mensual";
   if (v==="anual")   return "Plan inversor anual";
@@ -82,121 +84,110 @@ function isValidEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
 function classRangeLabel(fi) {
   if (!fi) return "-";
-  const s = parseISODate(fi), e = addDays(fi, 27);
+  const s=parseISODate(fi), e=addDays(fi,27);
   const fmt = d => new Intl.DateTimeFormat("es-AR",{month:"long"}).format(d);
-  return isSameMonth(s,e) ? fmt(s) : `${fmt(s)} / ${fmt(e)}`;
+  return isSameMonth(s,e)?fmt(s):`${fmt(s)} / ${fmt(e)}`;
 }
 function resolveDueDate(c) {
   if (c.fecha_vencimiento) return c.fecha_vencimiento;
-  const dur = Number(c.duracion_dias||0);
+  const dur=Number(c.duracion_dias||0);
   if (c.servicio==="clases"||!c.fecha_inicio||dur<=0) return null;
-  return toISODate(addDays(c.fecha_inicio, dur));
+  return toISODate(addDays(c.fecha_inicio,dur));
 }
 function computeClient(c) {
-  const today = getToday();
-  const isClases = c.servicio==="clases";
-  const vencimiento = resolveDueDate(c);
+  const today=getToday();
+  const isClases=c.servicio==="clases";
+  const vencimiento=resolveDueDate(c);
   let estadoSistema="activo", dias=null;
-  if (isClases) {
-    estadoSistema="clases";
-  } else if (c.estado_manual==="sacar") {
-    estadoSistema="sacar";
-  } else if (vencimiento) {
-    const due = parseISODate(vencimiento);
-    dias = diffDays(today, due);
-    if (today > due) {
-      const ov = diffDays(due, today);
-      estadoSistema = ov<=GRACE_DAYS?"gracia":"vencido";
+  if (isClases) { estadoSistema="clases"; }
+  else if (c.estado_manual==="sacar") { estadoSistema="sacar"; }
+  else if (vencimiento) {
+    const due=parseISODate(vencimiento);
+    dias=diffDays(today,due);
+    if (today>due) {
+      const ov=diffDays(due,today);
+      estadoSistema=ov<=GRACE_DAYS?"gracia":"vencido";
     }
   }
-  return {
-    ...c, isClases, vencimiento, dias, duracion_dias:safeNum(c.duracion_dias),
+  return { ...c, isClases, vencimiento, dias, duracion_dias:safeNum(c.duracion_dias),
     estadoSistema,
-    class_range_label: isClases?classRangeLabel(c.fecha_inicio):null,
-    class_end_date: isClases&&c.fecha_inicio?toISODate(addDays(c.fecha_inicio,27)):null,
+    class_range_label:isClases?classRangeLabel(c.fecha_inicio):null,
+    class_end_date:isClases&&c.fecha_inicio?toISODate(addDays(c.fecha_inicio,27)):null,
   };
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
-function buildDailySeriesForMonth(ingresos, year, month) {
-  const end = new Date(year, month+1, 0);
-  const rows = Array.from({length:end.getDate()}, (_,i) => ({
-    day:i+1, label:String(i+1).padStart(2,"0"),
-    total:0, mensual:0, anual:0, clases:0, ventas:0,
-  }));
-  ingresos.forEach(i => {
+function buildDailySeriesForMonth(ingresos,year,month) {
+  const end=new Date(year,month+1,0);
+  const rows=Array.from({length:end.getDate()},(_,i)=>({day:i+1,label:String(i+1).padStart(2,"0"),total:0,mensual:0,anual:0,clases:0,ventas:0}));
+  ingresos.forEach(i=>{
     if (!i.fecha_pago) return;
-    const d = parseISODate(i.fecha_pago);
+    const d=parseISODate(i.fecha_pago);
     if (!d||d.getFullYear()!==year||d.getMonth()!==month) return;
-    const row = rows[d.getDate()-1];
-    const m = safeNum(i.monto);
+    const row=rows[d.getDate()-1];
+    const m=safeNum(i.monto);
     row.total+=m; row.ventas+=1;
     if (row[i.servicio]!==undefined) row[i.servicio]+=m;
   });
   return rows;
 }
 function buildBreakdown(arr) {
-  const b = {mensual:0,anual:0,clases:0};
-  arr.forEach(i => { if (b[i.servicio]!==undefined) b[i.servicio]+=safeNum(i.monto); });
+  const b={mensual:0,anual:0,clases:0};
+  arr.forEach(i=>{if(b[i.servicio]!==undefined)b[i.servicio]+=safeNum(i.monto);});
   return b;
 }
 
-// ─── XLSX export (SheetJS) ───────────────────────────────────────────────────
-function exportXLSX(rows, cols, filename) {
-  // Carga SheetJS dinámicamente si no está cargado
+// ─── XLSX export ─────────────────────────────────────────────────────────────
+function exportXLSX(rows,cols,filename) {
   function doExport(XLSX) {
-    const wsData = [
-      cols.map(c => c.label),
-      ...rows.map(r => cols.map(c => {
-        const v = r[c.key];
-        return v===null||v===undefined?"":String(v);
-      }))
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    // Ancho de columnas automático
-    ws["!cols"] = cols.map(c => ({wch: Math.max(c.label.length+2, 16)}));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Datos");
-    XLSX.writeFile(wb, filename);
+    const wsData=[cols.map(c=>c.label),...rows.map(r=>cols.map(c=>{const v=r[c.key];return v===null||v===undefined?"":String(v);}))];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws["!cols"]=cols.map(c=>({wch:Math.max(c.label.length+2,16)}));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Datos");
+    XLSX.writeFile(wb,filename);
   }
-  if (window.XLSX) { doExport(window.XLSX); return; }
-  const script = document.createElement("script");
-  script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-  script.onload = () => doExport(window.XLSX);
-  document.head.appendChild(script);
+  if (window.XLSX){doExport(window.XLSX);return;}
+  const s=document.createElement("script");
+  s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+  s.onload=()=>doExport(window.XLSX);
+  document.head.appendChild(s);
 }
 
-// ─── Historial helper ─────────────────────────────────────────────────────────
-async function logHistorial(userEmail, accion, entidad, entidadId, detalle) {
+// ─── Historial helper + limpieza automática 24h ───────────────────────────────
+async function logHistorial(userEmail,accion,entidad,entidadId,detalle) {
   try {
     await supabase.from("historial_cambios").insert([{
-      usuario_email: userEmail,
-      accion,
-      entidad: entidad||null,
-      entidad_id: entidadId||null,
-      detalle: detalle||null,
+      usuario_email:userEmail, accion,
+      entidad:entidad||null, entidad_id:entidadId||null, detalle:detalle||null,
     }]);
-  } catch(_) { /* silencioso — no bloquear la acción principal */ }
+  } catch(_) {}
+}
+async function limpiarHistorialViejo() {
+  try {
+    const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
+    await supabase.from("historial_cambios").delete().lt("created_at", cutoff);
+  } catch(_) {}
+}
+
+// ─── Copiar al portapapeles ───────────────────────────────────────────────────
+function copiarAlPortapapeles(texto, onSuccess) {
+  navigator.clipboard?.writeText(texto).then(()=>onSuccess&&onSuccess()).catch(()=>{});
 }
 
 // ─── usePagination ────────────────────────────────────────────────────────────
-function usePagination(items, pageSize) {
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(items.length/pageSize));
-  useEffect(() => {
-    setPage(p => Math.min(p, Math.max(1, Math.ceil(items.length/pageSize))));
-  }, [items, pageSize]);
-  const rows = useMemo(() => {
-    const s = (page-1)*pageSize;
-    return items.slice(s, s+pageSize);
-  }, [items, page, pageSize]);
-  return {page, setPage, totalPages, rows};
+function usePagination(items,pageSize) {
+  const [page,setPage]=useState(1);
+  const totalPages=Math.max(1,Math.ceil(items.length/pageSize));
+  useEffect(()=>{setPage(p=>Math.min(p,Math.max(1,Math.ceil(items.length/pageSize))));},[items,pageSize]);
+  const rows=useMemo(()=>{const s=(page-1)*pageSize;return items.slice(s,s+pageSize);},[items,page,pageSize]);
+  return {page,setPage,totalPages,rows};
 }
 
 const FORM_DEFAULTS = {
-  nombre:"", email:"", servicio:"mensual",
+  nombre:"", email:"", telefono:"", servicio:"mensual",
   fecha_inicio:toISODate(getToday()), monto:30, duracion_dias:30,
-  estado_manual:"activo", deuda_restante:0, acceso_drive:false, notas:"",
+  estado_manual:"activo", deuda_restante:0, notas:"",
 };
 
 // ─── Tema ─────────────────────────────────────────────────────────────────────
@@ -239,7 +230,7 @@ function makeS(t) {
   };
 }
 function makeBtn(t) {
-  return function btn(dark=false, gold=false) {
+  return function btn(dark=false,gold=false) {
     if (gold) return {padding:"11px 20px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:14,background:t.accentGrad,color:"#0f172a"};
     return {padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:dark?t.btnDarkBg:t.btnLightBg,color:dark?t.btnDarkText:t.btnLightText};
   };
@@ -249,23 +240,37 @@ function makeNavBtn(t) {
     return {padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,border:active?"none":`1px solid ${t.navInactiveBorder}`,background:active?t.navActiveBg:t.navInactiveBg,color:active?t.navActiveText:t.navInactiveText};
   };
 }
-// Colores absolutos — nunca heredan del tema (fix dark mode)
 function badgeStyle(status) {
-  const base = {display:"inline-block",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,letterSpacing:"0.05em",border:"1px solid transparent"};
+  const base={display:"inline-block",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,letterSpacing:"0.05em",border:"1px solid transparent"};
   if (status==="activo")  return {...base,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
   if (status==="gracia")  return {...base,background:"#fef3c7",color:"#92400e",borderColor:"#fde68a"};
   if (status==="vencido") return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
   if (status==="clases")  return {...base,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
   if (status==="sacar")   return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
-  if (status==="por_vencer") return {...base,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
   return {...base,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
+}
+
+// ─── Skeleton loader ──────────────────────────────────────────────────────────
+function Skeleton({ rows=5, cols=5, t }) {
+  return (
+    <div style={{padding:"8px 0"}}>
+      {Array.from({length:rows}).map((_,r)=>(
+        <div key={r} style={{display:"grid",gridTemplateColumns:`repeat(${cols},1fr)`,gap:12,padding:"12px 14px",borderBottom:`1px solid ${t.tdBorder}`}}>
+          {Array.from({length:cols}).map((_,c)=>(
+            <div key={c} style={{height:14,borderRadius:6,background:t.dark?"#1a2540":"#ede9e4",animation:"pulse 1.5s ease-in-out infinite",opacity:0.7,width:c===0?"80%":"60%"}}/>
+          ))}
+        </div>
+      ))}
+      <style>{`@keyframes pulse{0%,100%{opacity:0.7}50%{opacity:0.35}}`}</style>
+    </div>
+  );
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function ToastContainer({ toasts, remove }) {
   return (
     <div style={{position:"fixed",bottom:24,right:24,zIndex:9999,display:"flex",flexDirection:"column",gap:10,pointerEvents:"none"}}>
-      {toasts.map(toast => (
+      {toasts.map(toast=>(
         <div key={toast.id} style={{
           pointerEvents:"all",
           background:toast.type==="error"?"#1a0a0a":toast.type==="success"?"#0a1a0f":"#111827",
@@ -283,21 +288,21 @@ function ToastContainer({ toasts, remove }) {
   );
 }
 function useToast() {
-  const [toasts, setToasts] = useState([]);
-  const add = useCallback((msg, type="info", duration=4000) => {
-    const id = Date.now()+Math.random();
+  const [toasts,setToasts]=useState([]);
+  const add=useCallback((msg,type="info",duration=4000)=>{
+    const id=Date.now()+Math.random();
     setToasts(ts=>[...ts,{id,msg,type}]);
-    if (duration>0) setTimeout(()=>setToasts(ts=>ts.filter(t=>t.id!==id)), duration);
+    if (duration>0) setTimeout(()=>setToasts(ts=>ts.filter(t=>t.id!==id)),duration);
     return id;
-  }, []);
-  const remove = useCallback(id=>setToasts(ts=>ts.filter(t=>t.id!==id)),[]);
-  return {toasts,remove,success:(m)=>add(m,"success"),error:(m)=>add(m,"error"),info:(m)=>add(m,"info")};
+  },[]);
+  const remove=useCallback(id=>setToasts(ts=>ts.filter(t=>t.id!==id)),[]);
+  return {toasts,remove,success:m=>add(m,"success"),error:m=>add(m,"error"),info:m=>add(m,"info")};
 }
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
-function ConfirmModal({ open, title, message, confirmLabel="Confirmar", danger=false, onConfirm, onCancel, t }) {
+function ConfirmModal({ open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t }) {
   if (!open) return null;
-  const btn = makeBtn(t);
+  const btn=makeBtn(t);
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
       <div style={{background:t.cardBg,borderRadius:16,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:420,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
@@ -314,22 +319,100 @@ function ConfirmModal({ open, title, message, confirmLabel="Confirmar", danger=f
   );
 }
 
-// ─── Panel detalle cliente ────────────────────────────────────────────────────
-function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onEliminar, t }) {
+// ─── Búsqueda global Ctrl+K ───────────────────────────────────────────────────
+function GlobalSearch({ clientes, onSelect, onClose, t }) {
+  const S=makeS(t);
+  const [q,setQ]=useState("");
+  const ref=useRef(null);
+  useEffect(()=>{ ref.current?.focus(); },[]);
+  const results=useMemo(()=>{
+    if (!q.trim()) return [];
+    const lo=q.toLowerCase();
+    return clientes.filter(c=>`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase().includes(lo)).slice(0,8);
+  },[clientes,q]);
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"80px 24px 24px",zIndex:3000}} onClick={onClose}>
+      <div style={{background:t.cardBg,borderRadius:16,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 24px 64px rgba(0,0,0,0.5)",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{color:t.textMuted,fontSize:18}}>🔍</span>
+          <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
+            placeholder="Buscar cliente por nombre, email o teléfono..."
+            style={{flex:1,border:"none",outline:"none",background:"transparent",color:t.text,fontSize:15}}/>
+          <span style={{color:t.textMuted,fontSize:12,cursor:"pointer"}} onClick={onClose}>Esc</span>
+        </div>
+        {results.length>0?(
+          <div style={{maxHeight:360,overflowY:"auto"}}>
+            {results.map(c=>(
+              <div key={c.id} onClick={()=>{onSelect(c);onClose();}}
+                style={{padding:"14px 20px",cursor:"pointer",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                onMouseEnter={e=>e.currentTarget.style.background=t.dark?"#1a2540":"#f8f6f3"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div>
+                  <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</div>
+                  <div style={{color:t.textMuted,fontSize:12,marginTop:2}}>{c.email}{c.telefono?` · ${c.telefono}`:""}</div>
+                </div>
+                <span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema?.toUpperCase()}</span>
+              </div>
+            ))}
+          </div>
+        ):q.trim()?(
+          <div style={{padding:24,textAlign:"center",color:t.textMuted,fontSize:14}}>Sin resultados para "{q}"</div>
+        ):(
+          <div style={{padding:24,textAlign:"center",color:t.textMuted,fontSize:13}}>Escribí para buscar</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Panel detalle cliente (con notas editables + teléfono + copiar email) ────
+function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onEliminar, onNotaGuardada, t }) {
   if (!cliente) return null;
-  const S = makeS(t); const btn = makeBtn(t);
-  const historial = ingresos.filter(i=>i.cliente_id===cliente.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""));
-  const totalPagado = historial.reduce((a,i)=>a+safeNum(i.monto),0);
+  const S=makeS(t); const btn=makeBtn(t);
+  const [nota,setNota]=useState(cliente.notas||"");
+  const [guardandoNota,setGuardandoNota]=useState(false);
+  const [notaGuardada,setNotaGuardada]=useState(false);
+  const [copiado,setCopiado]=useState(false);
+  const historial=ingresos.filter(i=>i.cliente_id===cliente.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""));
+  const totalPagado=historial.reduce((a,i)=>a+safeNum(i.monto),0);
+
+  async function guardarNota() {
+    setGuardandoNota(true);
+    await supabase.from("clientes").update({notas:nota}).eq("id",cliente.id);
+    setGuardandoNota(false);
+    setNotaGuardada(true);
+    setTimeout(()=>setNotaGuardada(false),2000);
+    onNotaGuardada&&onNotaGuardada(cliente.id,nota);
+  }
+
+  function copiarEmail() {
+    copiarAlPortapapeles(cliente.email,()=>{setCopiado(true);setTimeout(()=>setCopiado(false),2000);});
+  }
+
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1500,overflowY:"auto"}}>
-      <div style={{background:t.cardBg,borderRadius:20,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:600,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+      <div style={{background:t.cardBg,borderRadius:20,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:620,width:"100%",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
           <div>
             <h2 style={{margin:0,color:t.text,fontSize:22,fontWeight:900,letterSpacing:"-0.02em"}}>{cliente.nombre}</h2>
-            <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{cliente.email}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
+              <span style={{color:t.textMuted,fontSize:13}}>{cliente.email}</span>
+              <button onClick={copiarEmail} title="Copiar email"
+                style={{background:"none",border:"none",cursor:"pointer",color:copiado?"#22c55e":t.textMuted,fontSize:12,padding:"2px 8px",borderRadius:6,fontWeight:copiado?700:400}}>
+                {copiado?"✓ Copiado":"Copiar"}
+              </button>
+              {cliente.telefono&&(
+                <a href={`https://wa.me/${cliente.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                  style={{color:"#22c55e",fontSize:12,fontWeight:700,textDecoration:"none",padding:"2px 8px",borderRadius:6,background:"#0a1a0f"}}>
+                  WhatsApp
+                </a>
+              )}
+            </div>
           </div>
           <button onClick={onClose} style={{...btn(false),padding:"8px 14px"}}>Cerrar</button>
         </div>
+
+        {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
           {[["Renovaciones",historial.length],["Total pagado",`USD ${totalPagado}`],["Deuda",cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"]].map(([l,v])=>(
             <div key={l} style={{background:t.dark?"#0d1526":"#f8f6f3",borderRadius:12,padding:"14px 16px",border:`1px solid ${t.cardBorder}`}}>
@@ -338,14 +421,16 @@ function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onElim
             </div>
           ))}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
+
+        {/* Info */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
           {[
             ["Servicio",svcLabel(cliente.servicio)],
             ["Estado",<span style={badgeStyle(cliente.estadoSistema)}>{cliente.estadoSistema?.toUpperCase()}</span>],
             ["Vencimiento",formatDate(cliente.vencimiento)],
             ["Días restantes",cliente.dias!=null?cliente.dias:"—"],
             ["Inicio",formatDate(cliente.fecha_inicio)],
-            ["Notas",cliente.notas||"—"],
+            ["Teléfono",cliente.telefono||"—"],
           ].map(([l,v])=>(
             <div key={l}>
               <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:3}}>{l}</div>
@@ -353,20 +438,37 @@ function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onElim
             </div>
           ))}
         </div>
+
+        {/* Notas editables */}
+        <div style={{marginBottom:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <label style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Notas</label>
+            <button onClick={guardarNota} disabled={guardandoNota}
+              style={{...btn(false,!notaGuardada),padding:"5px 12px",fontSize:12,
+                ...(notaGuardada?{background:"#0a1a0f",color:"#22c55e"}:{})}}>
+              {guardandoNota?"Guardando...":notaGuardada?"✓ Guardado":"Guardar nota"}
+            </button>
+          </div>
+          <textarea value={nota} onChange={e=>setNota(e.target.value)} rows={3}
+            placeholder="Escribí observaciones sobre este cliente..."
+            style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+
+        {/* Historial pagos */}
         <h4 style={{margin:"0 0 12px",color:t.text,fontSize:15,fontWeight:700}}>Historial de pagos</h4>
         {historial.length===0
           ? <div style={{color:t.textMuted,fontSize:13}}>Sin registros de pago.</div>
           : <div style={{maxHeight:200,overflowY:"auto"}}>
-              <table style={S.table}>
-                <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
-                  <th key={h} style={{...S.td,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
+              <table style={makeS(t).table}>
+                <thead><tr style={makeS(t).thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
+                  <th key={h} style={{...makeS(t).td,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
                 ))}</tr></thead>
                 <tbody>{historial.map(i=>(
                   <tr key={i.id}>
-                    <td style={S.td}>{formatDate(i.fecha_pago)}</td>
-                    <td style={S.td}>{svcLabel(i.servicio)}</td>
-                    <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
-                    <td style={S.td}>{i.notas||"—"}</td>
+                    <td style={makeS(t).td}>{formatDate(i.fecha_pago)}</td>
+                    <td style={makeS(t).td}>{svcLabel(i.servicio)}</td>
+                    <td style={{...makeS(t).td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
+                    <td style={makeS(t).td}>{i.notas||"—"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -383,8 +485,8 @@ function ClienteDetailModal({ cliente, ingresos, onClose, onAbrirRenovar, onElim
 
 // ─── Pago parcial modal ───────────────────────────────────────────────────────
 function PagoModal({ cliente, onClose, onConfirm, t }) {
-  const S = makeS(t); const btn = makeBtn(t);
-  const [monto, setMonto] = useState("");
+  const S=makeS(t); const btn=makeBtn(t);
+  const [monto,setMonto]=useState("");
   if (!cliente) return null;
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
@@ -395,7 +497,7 @@ function PagoModal({ cliente, onClose, onConfirm, t }) {
         </p>
         <div style={{marginBottom:20}}>
           <label style={S.label}>Monto a abonar (USD)</label>
-          <input type="number" style={S.input} placeholder="0" value={monto} onChange={e=>setMonto(e.target.value)} />
+          <input type="number" style={S.input} placeholder="0" value={monto} onChange={e=>setMonto(e.target.value)} onKeyDown={e=>e.key==="Enter"&&onConfirm(cliente,Number(monto))}/>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button style={btn(false)} onClick={onClose}>Cancelar</button>
@@ -406,14 +508,11 @@ function PagoModal({ cliente, onClose, onConfirm, t }) {
   );
 }
 
-// ─── Componentes base ─────────────────────────────────────────────────────────
-function Pagination({ page, totalPages, setPage, sectionRef, t }) {
-  const btn = makeBtn(t);
+// ─── Pagination ───────────────────────────────────────────────────────────────
+function Pagination({ page,totalPages,setPage,sectionRef,t }) {
+  const btn=makeBtn(t);
   if (totalPages<=1) return null;
-  function goTo(n) {
-    setPage(n);
-    setTimeout(()=>sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);
-  }
+  function goTo(n) { setPage(n); setTimeout(()=>sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}),50); }
   return (
     <div style={{marginTop:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
       <div style={{color:t.textMuted,fontSize:13}}>Página {page} de {totalPages}</div>
@@ -428,33 +527,31 @@ function Pagination({ page, totalPages, setPage, sectionRef, t }) {
   );
 }
 
-function TableHeader({ cols, t }) {
-  const S = makeS(t);
+function TableHeader({ cols,t }) {
+  const S=makeS(t);
   return (
     <tr style={S.thRow}>
-      {cols.map(h=>(
-        <th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:700,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>
-      ))}
+      {cols.map(h=>(<th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:700,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>))}
     </tr>
   );
 }
 
-function MetricCard({ title, value, sub, accent, trend, t }) {
-  const S = makeS(t);
+function MetricCard({ title,value,sub,accent,trend,t }) {
+  const S=makeS(t);
   return (
     <div style={{...S.card,borderTop:accent?`3px solid ${t.accent}`:undefined}}>
       <div style={{fontSize:11,color:t.textMuted,marginBottom:8,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{title}</div>
       <div style={{fontSize:26,fontWeight:800,color:accent?t.accent:t.text,letterSpacing:"-0.02em",display:"flex",alignItems:"center",gap:8}}>
         {value}
-        {trend!=null&&(<span style={{fontSize:13,fontWeight:700,color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>)}
+        {trend!=null&&<span style={{fontSize:13,fontWeight:700,color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
       {sub&&<div style={{marginTop:5,fontSize:12,color:t.textMuted}}>{sub}</div>}
     </div>
   );
 }
 
-function BarList({ items, t }) {
-  const max = Math.max(...items.map(i=>i.value),1);
+function BarList({ items,t }) {
+  const max=Math.max(...items.map(i=>i.value),1);
   return (
     <div style={{display:"grid",gap:14}}>
       {items.map(({label,value})=>{
@@ -465,7 +562,7 @@ function BarList({ items, t }) {
               <span>{label}</span><strong style={{color:t.accent}}>{money(value)}</strong>
             </div>
             <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
-              <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}} />
+              <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
             </div>
           </div>
         );
@@ -474,33 +571,32 @@ function BarList({ items, t }) {
   );
 }
 
-function SimpleBarChart({ title, data, valueKey, labelKey="label", emptyText="Sin datos.", t }) {
+function SimpleBarChart({ title,data,valueKey,labelKey="label",emptyText="Sin datos.",t }) {
   const S=makeS(t);
   const hasData=data.some(r=>safeNum(r[valueKey])>0);
   return (
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
-      {!hasData?<div style={{color:t.textMuted}}>{emptyText}</div>
-        :<BarList items={data.map(r=>({label:r[labelKey],value:safeNum(r[valueKey])}))} t={t} />}
+      {!hasData?<div style={{color:t.textMuted}}>{emptyText}</div>:<BarList items={data.map(r=>({label:r[labelKey],value:safeNum(r[valueKey])}))} t={t}/>}
     </div>
   );
 }
 
-function BreakdownCard({ title, breakdown, t }) {
+function BreakdownCard({ title,breakdown,t }) {
   const S=makeS(t);
   const items=[{key:"mensual",label:"Plan inversor mensual"},{key:"anual",label:"Plan inversor anual"},{key:"clases",label:"Clases"}];
   return (
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
-      <BarList items={items.map(({key,label})=>({label,value:safeNum(breakdown[key])}))} t={t} />
+      <BarList items={items.map(({key,label})=>({label,value:safeNum(breakdown[key])}))} t={t}/>
     </div>
   );
 }
 
-// ─── Gráfico de línea con selector de mes ────────────────────────────────────
-function LineChart({ ingresos, t }) {
-  const today = getToday();
-  const availableMonths = useMemo(()=>{
+// ─── Gráfico de línea ─────────────────────────────────────────────────────────
+function LineChart({ ingresos,t }) {
+  const today=getToday();
+  const availableMonths=useMemo(()=>{
     const keys=new Set();
     ingresos.forEach(i=>{if(i.fecha_pago)keys.add(monthKey(i.fecha_pago));});
     keys.add(monthKey(toISODate(today)));
@@ -529,12 +625,7 @@ function LineChart({ ingresos, t }) {
       </div>
       <div style={{position:"relative",width:"100%",overflowX:"auto"}}>
         <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",display:"block"}}>
-          <defs>
-            <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={t.accent} stopOpacity="0.22"/>
-              <stop offset="100%" stopColor={t.accent} stopOpacity="0.01"/>
-            </linearGradient>
-          </defs>
+          <defs><linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.accent} stopOpacity="0.22"/><stop offset="100%" stopColor={t.accent} stopOpacity="0.01"/></linearGradient></defs>
           {yTicks.map(tk=>(<g key={tk.val}><line x1={PL} y1={tk.y} x2={W-PR} y2={tk.y} stroke={t.tdBorder} strokeWidth="1"/><text x={PL-6} y={tk.y+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{tk.val}</text></g>))}
           {pts.filter((_,i)=>i%5===0||i===pts.length-1).map(p=>(<text key={p.d.day} x={p.x} y={H-6} textAnchor="middle" fontSize="11" fill={t.textMuted}>{p.d.label}</text>))}
           <path d={areaD} fill="url(#aGrad)"/>
@@ -558,7 +649,7 @@ function LineChart({ ingresos, t }) {
 }
 
 // ─── Torta ────────────────────────────────────────────────────────────────────
-function PieChart({ breakdown, title, t }) {
+function PieChart({ breakdown,title,t }) {
   const S=makeS(t);
   const [hovered,setHovered]=useState(null);
   const slices=[{key:"mensual",label:"Plan inversor mensual",color:t.accent},{key:"anual",label:"Plan inversor anual",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"}];
@@ -587,21 +678,19 @@ function PieChart({ breakdown, title, t }) {
           <text x={CX} y={CY+10} textAnchor="middle" fontSize="14" fontWeight="800" fill={t.accent}>{total}</text>
         </svg>
         <div style={{display:"grid",gap:10}}>
-          {paths.map(p=>(<div key={p.key} style={{display:"flex",alignItems:"center",gap:10,opacity:hovered&&hovered!==p.key?0.35:1,transition:"opacity 0.15s",cursor:"default"}} onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)}><div style={{width:11,height:11,borderRadius:3,background:p.color,flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{p.label}</div><div style={{fontSize:12,color:t.textMuted}}>USD {p.val} · {p.pct}%</div></div></div>))}
+          {paths.map(p=>(<div key={p.key} style={{display:"flex",alignItems:"center",gap:10,opacity:hovered&&hovered!==p.key?0.35:1,transition:"opacity 0.15s"}} onMouseEnter={()=>setHovered(p.key)} onMouseLeave={()=>setHovered(null)}><div style={{width:11,height:11,borderRadius:3,background:p.color,flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{p.label}</div><div style={{fontSize:12,color:t.textMuted}}>USD {p.val} · {p.pct}%</div></div></div>))}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── ClienteCard (críticos) ───────────────────────────────────────────────────
-// FIX: nombre siempre en t.text, accentText solo para subtítulo
-function ClienteCard({ cliente, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar, onVerDetalle, t }) {
+// ─── ClienteCard ──────────────────────────────────────────────────────────────
+function ClienteCard({ cliente,accentBorder,accentBg,accentText,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t }) {
   const btn=makeBtn(t);
   return (
     <div style={{border:`1px solid ${accentBorder}`,background:accentBg,borderRadius:12,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
       <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
-        {/* NOMBRE siempre en t.text para visibilidad en dark mode */}
         <div style={{fontWeight:700,color:t.text,fontSize:14}}>{cliente.nombre}</div>
         <div style={{fontSize:12,color:accentText,marginTop:2}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
       </div>
@@ -615,7 +704,7 @@ function ClienteCard({ cliente, accentBorder, accentBg, accentText, dateLabel, o
 }
 
 // ─── CriticosPanel ────────────────────────────────────────────────────────────
-function CriticosPanel({ titulo, badgeBg, badgeColor, clientes, rows, page, totalPages, setPage, accentBorder, accentBg, accentText, dateLabel, onRenovarRapido, onAbrirRenovar, onEliminar, onVerDetalle, sectionRef, t }) {
+function CriticosPanel({ titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t }) {
   const S=makeS(t);
   return (
     <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280}}>
@@ -638,11 +727,11 @@ function CriticosPanel({ titulo, badgeBg, badgeColor, clientes, rows, page, tota
 }
 
 // ─── ClienteForm ─────────────────────────────────────────────────────────────
-function ClienteForm({ title, subtitle, form, setForm, onGuardar, onCancelar, guardando, isModal=false, t }) {
+function ClienteForm({ title,subtitle,form,setForm,onGuardar,onCancelar,guardando,isModal=false,t }) {
   const S=makeS(t); const btn=makeBtn(t);
   const isClases=form.servicio==="clases";
   const inner=(
-    <div style={{width:"100%",maxWidth:isModal?820:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 24px 64px rgba(0,0,0,0.4)":undefined,border:`1px solid ${t.cardBorder}`}}>
+    <div style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 24px 64px rgba(0,0,0,0.4)":undefined,border:`1px solid ${t.cardBorder}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div>
           <h3 style={{margin:0,color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
@@ -650,13 +739,12 @@ function ClienteForm({ title, subtitle, form, setForm, onGuardar, onCancelar, gu
         </div>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
-        {/* FIX: label cambiado a "Nombre y apellido" */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         <Field label="Nombre y apellido" t={t}><input style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/></Field>
         <Field label="Email" t={t}><input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></Field>
+        <Field label="Teléfono / WhatsApp" t={t}><input style={S.input} placeholder="Ej: 5491112345678" value={form.telefono||""} onChange={e=>setForm({...form,telefono:e.target.value})}/></Field>
         <Field label="Servicio" t={t}>
           <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s)});}}>
-            {/* FIX: capitalización correcta */}
             <option value="mensual">Plan inversor mensual</option>
             <option value="anual">Plan inversor anual</option>
             <option value="clases">Clases</option>
@@ -681,7 +769,7 @@ function ClienteForm({ title, subtitle, form, setForm, onGuardar, onCancelar, gu
     </div>
   );
 }
-function Field({ label, children, spanAll=false, t }) {
+function Field({ label,children,spanAll=false,t }) {
   const S=makeS(t);
   return (<div style={{gridColumn:spanAll?"1 / -1":"auto"}}><label style={S.label}>{label}</label>{children}</div>);
 }
@@ -693,104 +781,105 @@ function HistorialView({ t }) {
   const [loading,setLoading]=useState(true);
   const histRef=useRef(null);
   const histPag=usePagination(historial,PAGE_SIZES.historial);
-
   useEffect(()=>{
-    supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500)
-      .then(({data,error})=>{
-        if (!error) setHistorial(data||[]);
-        setLoading(false);
-      });
+    supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(200)
+      .then(({data,error})=>{if(!error)setHistorial(data||[]);setLoading(false);});
   },[]);
-
   function formatTS(ts) {
     if (!ts) return "-";
-    const d=new Date(ts);
-    return new Intl.DateTimeFormat("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(d);
+    return new Intl.DateTimeFormat("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(ts));
   }
   function accionBadge(accion) {
     const base={display:"inline-block",padding:"3px 9px",borderRadius:999,fontSize:11,fontWeight:700,border:"1px solid transparent"};
-    if (accion?.includes("eliminó")||accion?.includes("eliminó")) return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
+    if (accion?.includes("eliminó")) return {...base,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
     if (accion?.includes("renovó")||accion?.includes("renovación")) return {...base,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
     if (accion?.includes("guardó")||accion?.includes("nuevo")) return {...base,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
     if (accion?.includes("pago")) return {...base,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
     return {...base,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
   }
-
   return (
-    <div style={{display:"grid",gap:24}}>
-      <div ref={histRef} style={S.card}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div>
-            <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:20}}>Historial de cambios</h3>
-            <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Registro completo de todas las acciones realizadas en el sistema.</div>
-          </div>
+    <div ref={histRef} style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div>
+          <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:20}}>Historial de cambios</h3>
+          <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Registro de las últimas 24 horas. Se limpia automáticamente.</div>
         </div>
-        {loading
-          ? <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Cargando historial...</div>
-          : historial.length===0
-            ? <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros todavía.</div>
-            : (
-              <>
-                <div style={{overflowX:"auto"}}>
-                  <table style={S.table}>
-                    <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente / entidad","Detalle"]} t={t}/></thead>
-                    <tbody>
-                      {histPag.rows.map(h=>(
-                        <tr key={h.id}>
-                          <td style={{...S.td,whiteSpace:"nowrap",fontSize:13}}>{formatTS(h.created_at)}</td>
-                          <td style={{...S.td,fontSize:13}}>{h.usuario_email||"-"}</td>
-                          <td style={S.td}><span style={accionBadge(h.accion)}>{h.accion||"-"}</span></td>
-                          <td style={{...S.td,fontWeight:600}}>{h.detalle?.nombre||h.entidad||"-"}</td>
-                          <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            {h.detalle?JSON.stringify(h.detalle).replace(/[{}"]/g,"").slice(0,80):"—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <Pagination page={histPag.page} totalPages={histPag.totalPages} setPage={histPag.setPage} sectionRef={histRef} t={t}/>
-              </>
-            )
-        }
       </div>
+      {loading?<Skeleton rows={6} cols={5} t={t}/>:historial.length===0?(
+        <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros en las últimas 24 horas.</div>
+      ):(
+        <>
+          <div style={{overflowX:"auto"}}>
+            <table style={S.table}>
+              <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente","Detalle"]} t={t}/></thead>
+              <tbody>
+                {histPag.rows.map(h=>(
+                  <tr key={h.id}>
+                    <td style={{...S.td,whiteSpace:"nowrap",fontSize:13}}>{formatTS(h.created_at)}</td>
+                    <td style={{...S.td,fontSize:13}}>{h.usuario_email||"-"}</td>
+                    <td style={S.td}><span style={accionBadge(h.accion)}>{h.accion||"-"}</span></td>
+                    <td style={{...S.td,fontWeight:600}}>{h.detalle?.nombre||h.entidad||"-"}</td>
+                    <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {h.detalle?Object.entries(h.detalle).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · ").slice(0,80):"—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={histPag.page} totalPages={histPag.totalPages} setPage={histPag.setPage} sectionRef={histRef} t={t}/>
+        </>
+      )}
     </div>
   );
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [emailLogin, setEmailLogin] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [clientes, setClientes] = useState([]);
-  const [ingresos, setIngresos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState("operativa");
-  const [showForm, setShowForm] = useState(false);
-  const [showRenovar, setShowRenovar] = useState(false);
-  const [guardando, setGuardando] = useState(false);
-  const [renovando, setRenovando] = useState(false);
-  const [busqueda, setBusqueda] = useState("");
-  const [filtro, setFiltro] = useState("todos");
-  const [form, setForm] = useState(FORM_DEFAULTS);
-  const [renovarForm, setRenovarForm] = useState({...FORM_DEFAULTS,id:null});
-  const [darkMode, setDarkMode] = useState(false);
-  const [clienteDetalle, setClienteDetalle] = useState(null);
-  const [pagoCliente, setPagoCliente] = useState(null);
-  const [confirm, setConfirm] = useState(null);
+  const [user,setUser]=useState(null);
+  const [emailLogin,setEmailLogin]=useState("");
+  const [password,setPassword]=useState("");
+  const [showPassword,setShowPassword]=useState(false);
+  const [clientes,setClientes]=useState([]);
+  const [ingresos,setIngresos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [activeView,setActiveView]=useState("operativa");
+  const [showForm,setShowForm]=useState(false);
+  const [showRenovar,setShowRenovar]=useState(false);
+  const [guardando,setGuardando]=useState(false);
+  const [renovando,setRenovando]=useState(false);
+  const [busqueda,setBusqueda]=useState("");
+  const [filtro,setFiltro]=useState("todos");
+  const [form,setForm]=useState(FORM_DEFAULTS);
+  const [renovarForm,setRenovarForm]=useState({...FORM_DEFAULTS,id:null});
+  const [darkMode,setDarkMode]=useState(false);
+  const [clienteDetalle,setClienteDetalle]=useState(null);
+  const [pagoCliente,setPagoCliente]=useState(null);
+  const [confirm,setConfirm]=useState(null);
+  const [globalSearch,setGlobalSearch]=useState(false);
+  // Filtros de fecha para ingresos
+  const [ingresosFechaDesde,setIngresosFechaDesde]=useState("");
+  const [ingresosFechaHasta,setIngresosFechaHasta]=useState("");
+  // Email save feedback
+  const [emailGuardado,setEmailGuardado]=useState(null);
 
-  const toast = useToast();
+  const toast=useToast();
 
   const baseRef=useRef(null); const vencimientosRef=useRef(null);
   const deudoresRef=useRef(null); const clasesRef=useRef(null);
   const ingresosRef=useRef(null); const criticosRef=useRef(null);
+  const dormantesRef=useRef(null);
 
-  // Aplicar color-scheme al date input cuando cambia el modo
   useEffect(()=>{ applyDateColorScheme(darkMode); },[darkMode]);
 
   const t=getT(darkMode); const S=makeS(t); const btn=makeBtn(t); const navBtn=makeNavBtn(t);
+
+  // Ctrl+K para búsqueda global
+  useEffect(()=>{
+    function onKey(e){if((e.ctrlKey||e.metaKey)&&e.key==="k"){e.preventDefault();setGlobalSearch(true);}}
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[]);
 
   function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar"}={}) {
     setConfirm({title,message,onConfirm,danger,label});
@@ -802,9 +891,10 @@ export default function App() {
     const {data:listener}=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null));
     return ()=>listener.subscription.unsubscribe();
   },[]);
+
   async function login() {
     const {error}=await supabase.auth.signInWithPassword({email:emailLogin,password});
-    if (error) toast.error(error.message);
+    if (error) toast.error(traducirError(error.message));
   }
   async function logout() { await supabase.auth.signOut(); }
 
@@ -821,7 +911,12 @@ export default function App() {
     setIngresos(data||[]);
   }
   async function refetch(){await Promise.all([fetchClientes(),fetchIngresos()]);}
-  useEffect(()=>{fetchClientes();fetchIngresos();},[]);
+  useEffect(()=>{
+    fetchClientes();
+    fetchIngresos();
+    // Limpiar historial viejo al cargar la app
+    limpiarHistorialViejo();
+  },[]);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f) {
@@ -835,6 +930,7 @@ export default function App() {
   function buildPayload(f,nombre,emailVal) {
     const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
     return {...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),
+      telefono:f.telefono||"",
       fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
   function buildIngreso(cid,nombre,emailVal,servicio,monto,fecha,notas) {
@@ -872,9 +968,9 @@ export default function App() {
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
     let fb=toISODate(today);
-    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"||cliente.estadoSistema==="por_vencer"))fb=va;
+    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
     const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(fb,dur));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",fecha_vencimiento:nv};
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
     const {error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIngreso(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
@@ -908,6 +1004,8 @@ export default function App() {
   async function actualizarEmail(id,nuevoEmail) {
     const {error}=await supabase.from("clientes").update({email:nuevoEmail}).eq("id",id);
     if(error){toast.error("No se pudo actualizar el email");return;}
+    setEmailGuardado(id);
+    setTimeout(()=>setEmailGuardado(null),2000);
     fetchClientes();
   }
 
@@ -923,8 +1021,8 @@ export default function App() {
   function abrirRenovar(cliente) {
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
     let fb=toISODate(getToday());
-    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"||cliente.estadoSistema==="por_vencer"))fb=va;
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
+    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -933,7 +1031,7 @@ export default function App() {
   const computed=useMemo(()=>clientes.map(computeClient),[clientes]);
 
   const filtered=useMemo(()=>computed.filter(c=>{
-    const txt=`${c.nombre||""} ${c.email||""}`.toLowerCase();
+    const txt=`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase();
     const okB=txt.includes(busqueda.toLowerCase());
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
@@ -943,19 +1041,30 @@ export default function App() {
   const clasesList=useMemo(()=>computed.filter(c=>c.servicio==="clases"),[computed]);
   const vencimientos=useMemo(()=>computed.filter(c=>c.servicio!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
 
-  // FIX: "Por vencer" = activo con 0, 1 o 2 días restantes (antes del vencimiento)
   const vencimientosCriticos=useMemo(()=>{
     const porVencer=[],gracia=[],vencidos=[];
     computed.forEach(c=>{
       if(!c.vencimiento)return;
-      if(c.estadoSistema==="activo"&&c.dias>=0&&c.dias<=WARN_DAYS) porVencer.push(c);
-      else if(c.estadoSistema==="gracia") gracia.push(c);
-      else if(c.estadoSistema==="vencido") vencidos.push(c);
+      if(c.estadoSistema==="activo"&&c.dias>=0&&c.dias<=WARN_DAYS)porVencer.push(c);
+      else if(c.estadoSistema==="gracia")gracia.push(c);
+      else if(c.estadoSistema==="vencido")vencidos.push(c);
     });
     return {hoy:porVencer,gracia,vencidos};
   },[computed]);
 
   const totalCriticos=vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
+
+  // Clientes dormantes: activos pero sin ingreso en los últimos 60 días
+  const dormantes=useMemo(()=>{
+    const cutoff=new Date(Date.now()-60*24*60*60*1000);
+    return computed.filter(c=>{
+      if(c.estadoSistema!=="activo")return false;
+      const ultimoIngreso=ingresos.filter(i=>i.cliente_id===c.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))[0];
+      if(!ultimoIngreso)return false;
+      const fechaUltimo=parseISODate(ultimoIngreso.fecha_pago);
+      return fechaUltimo&&fechaUltimo<cutoff;
+    });
+  },[computed,ingresos]);
 
   const resumen=useMemo(()=>{
     const b={activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
@@ -970,6 +1079,8 @@ export default function App() {
     return b;
   },[computed]);
 
+  const totalDeuda=useMemo(()=>deudores.reduce((a,c)=>a+safeNum(c.deuda_restante),0),[deudores]);
+
   const today=getToday();
   const currentMonthKey=monthKey(toISODate(today));
   const prevMonthDate=new Date(today.getFullYear(),today.getMonth()-1,1);
@@ -979,6 +1090,7 @@ export default function App() {
   const ingresosMesAnt=prevMonthIngresos.reduce((a,i)=>a+safeNum(i.monto),0);
   const trendMes=ingresosMesAnt>0?Math.round(((ingresosMes-ingresosMesAnt)/ingresosMesAnt)*100):null;
   const dashboardStats=useMemo(()=>({ingresosMes,ventasMes:currentMonthIngresos.length,breakdownMes:buildBreakdown(currentMonthIngresos),breakdownTotal:buildBreakdown(ingresos)}),[ingresos,currentMonthIngresos,ingresosMes]);
+
   const resumenMensual=useMemo(()=>{
     const map=new Map();
     ingresos.forEach(i=>{
@@ -993,28 +1105,50 @@ export default function App() {
     });
     return Array.from(map.values()).sort((a,b)=>a.key.localeCompare(b.key));
   },[ingresos]);
+
+  // Agregar tendencia vs mes anterior en resumen mensual
+  const resumenMensualConTrend=useMemo(()=>{
+    return resumenMensual.map((r,i)=>{
+      const prev=resumenMensual[i-1];
+      const trend=prev&&prev.total>0?Math.round(((r.total-prev.total)/prev.total)*100):null;
+      return {...r,trend};
+    });
+  },[resumenMensual]);
+
   const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
 
-  // Tasa de renovación: de los que vencieron el mes pasado, cuántos tienen ingreso este mes
   const tasaRenovacion=useMemo(()=>{
-    const vencieronMesAnt=computed.filter(c=>{
-      if(!c.vencimiento)return false;
-      const vk=monthKey(c.vencimiento);
-      return vk===monthKey(toISODate(prevMonthDate));
-    });
+    const vencieronMesAnt=computed.filter(c=>{if(!c.vencimiento)return false;return monthKey(c.vencimiento)===monthKey(toISODate(prevMonthDate));});
     if(vencieronMesAnt.length===0)return null;
     const renovaron=vencieronMesAnt.filter(c=>currentMonthIngresos.some(i=>i.cliente_id===c.id));
     return Math.round((renovaron.length/vencieronMesAnt.length)*100);
   },[computed,currentMonthIngresos]);
 
+  // Ingresos filtrados por fecha
+  const ingresosFiltrados=useMemo(()=>{
+    return ingresos.filter(i=>{
+      if(!i.fecha_pago)return true;
+      if(ingresosFechaDesde&&i.fecha_pago<ingresosFechaDesde)return false;
+      if(ingresosFechaHasta&&i.fecha_pago>ingresosFechaHasta)return false;
+      return true;
+    });
+  },[ingresos,ingresosFechaDesde,ingresosFechaHasta]);
+
+  // Nuevos este mes
+  const nuevosEsteMes=useMemo(()=>{
+    const mk=monthKey(toISODate(today));
+    return new Set(ingresos.filter(i=>i.fecha_pago&&monthKey(i.fecha_pago)===mk&&ingresos.filter(j=>j.cliente_id===i.cliente_id).length===1).map(i=>i.cliente_id));
+  },[ingresos]);
+
   const basePag=usePagination(filtered,PAGE_SIZES.base);
   const vencimientosPag=usePagination(vencimientos,PAGE_SIZES.vencimientos);
   const deudoresPag=usePagination(deudores,PAGE_SIZES.deudores);
   const clasesPag=usePagination(clasesList,PAGE_SIZES.clases);
-  const ingresosPag=usePagination(ingresos,PAGE_SIZES.ingresos);
+  const ingresosPag=usePagination(ingresosFiltrados,PAGE_SIZES.ingresos);
   const criticosHoyPag=usePagination(vencimientosCriticos.hoy,PAGE_SIZES.criticos);
   const criticosGraciaPag=usePagination(vencimientosCriticos.gracia,PAGE_SIZES.criticos);
   const criticosVencidosPag=usePagination(vencimientosCriticos.vencidos,PAGE_SIZES.criticos);
+  const dormantesPag=usePagination(dormantes,PAGE_SIZES.base);
   useEffect(()=>{basePag.setPage(1);},[busqueda,filtro]);
 
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -1034,7 +1168,7 @@ export default function App() {
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
               <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff",colorScheme:"dark"}}/>
+                style={{width:"100%",padding:"11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff"}}/>
             </div>
             <div style={{position:"relative",marginBottom:22}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
@@ -1043,14 +1177,11 @@ export default function App() {
               <span onClick={()=>setShowPassword(!showPassword)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#8899bb",display:"flex",alignItems:"center"}}>
                 {showPassword?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>
                   </svg>
                 ):(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                   </svg>
                 )}
               </span>
@@ -1068,17 +1199,17 @@ export default function App() {
   return (
     <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-      {confirm&&(
-        <ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
-          onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>
-      )}
+      {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
+      {globalSearch&&<GlobalSearch clientes={computed} onSelect={c=>{setClienteDetalle(c);}} onClose={()=>setGlobalSearch(false)} t={t}/>}
       {clienteDetalle&&(
         <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} onClose={()=>setClienteDetalle(null)}
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
+          onNotaGuardada={(id,nota)=>{setClientes(prev=>prev.map(c=>c.id===id?{...c,notas:nota}:c));toast.success("Nota guardada");}}
           t={t}/>
       )}
-      {pagoCliente&&(<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>)}
+      {pagoCliente&&<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>}
+      {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
       <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}}>
 
@@ -1092,6 +1223,11 @@ export default function App() {
             </div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            {/* Ctrl+K shortcut hint */}
+            <button onClick={()=>setGlobalSearch(true)}
+              style={{...btn(false),padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+              🔍 <span style={{fontSize:11,opacity:0.7}}>Ctrl+K</span>
+            </button>
             <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
               Operativa
               {totalCriticos>0&&<span style={{marginLeft:7,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"2px 7px",verticalAlign:"middle"}}>{totalCriticos}</span>}
@@ -1112,9 +1248,6 @@ export default function App() {
           <div style={{marginBottom:24}}>
             <ClienteForm title="Alta de cliente" form={form} setForm={setForm} onGuardar={guardarCliente} onCancelar={()=>setShowForm(false)} guardando={guardando} t={t}/>
           </div>
-        )}
-        {showRenovar&&(
-          <ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>
         )}
 
         {/* ── HISTORIAL ────────────────────────────────────────────── */}
@@ -1139,16 +1272,19 @@ export default function App() {
             </div>
             <div style={S.card}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Evolución mensual</h3>
-              {resumenMensual.length===0?<div style={{color:t.textMuted}}>Sin datos históricos.</div>:(
+              {resumenMensualConTrend.length===0?<div style={{color:t.textMuted}}>Sin datos históricos.</div>:(
                 <div style={{display:"grid",gap:14}}>
-                  {resumenMensual.map(r=>{
+                  {resumenMensualConTrend.map(r=>{
                     const pct=Math.max((r.total/maxTotal)*100,4);
                     const isCurrent=r.key===currentMonthKey;
                     return (
                       <div key={r.key}>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
                           <span style={{fontWeight:isCurrent?800:600}}>{monthLabel(r.key)}{isCurrent?" ★":""}</span>
-                          <strong style={{color:t.accent}}>USD {r.total}</strong>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            {r.trend!=null&&<span style={{fontSize:12,fontWeight:700,color:r.trend>0?"#22c55e":r.trend<0?"#ef4444":t.textMuted}}>{r.trend>0?"↑":r.trend<0?"↓":"→"} {Math.abs(r.trend)}%</span>}
+                            <strong style={{color:t.accent}}>USD {r.total}</strong>
+                          </div>
                         </div>
                         <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
                           <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
@@ -1174,17 +1310,27 @@ export default function App() {
             <SimpleBarChart title="Ventas por día (mes actual)" data={buildDailySeriesForMonth(ingresos,today.getFullYear(),today.getMonth())} valueKey="total" t={t}/>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashboardStats.breakdownMes} t={t}/>
             <BreakdownCard title="Ingresos totales por tipo" breakdown={dashboardStats.breakdownTotal} t={t}/>
+            {/* Detalle de ingresos con filtro de fecha */}
             <div ref={ingresosRef} style={S.card}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
                 <h3 style={{margin:0,color:t.text,fontWeight:700,fontSize:16}}>Detalle de ingresos</h3>
-                <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
-                  onClick={()=>exportXLSX(ingresos,[
-                    {key:"fecha_pago",label:"Fecha"},{key:"cliente_nombre",label:"Nombre"},
-                    {key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
-                    {key:"monto",label:"Monto"},{key:"notas",label:"Notas"},
-                  ],"ingresos_seminario_cripto.xlsx")}>
-                  Exportar Excel
-                </button>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <label style={{...S.label,marginBottom:0}}>Desde</label>
+                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13}} value={ingresosFechaDesde} onChange={e=>setIngresosFechaDesde(e.target.value)}/>
+                    <label style={{...S.label,marginBottom:0}}>Hasta</label>
+                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13}} value={ingresosFechaHasta} onChange={e=>setIngresosFechaHasta(e.target.value)}/>
+                    {(ingresosFechaDesde||ingresosFechaHasta)&&<button style={{...btn(false),padding:"7px 12px",fontSize:12}} onClick={()=>{setIngresosFechaDesde("");setIngresosFechaHasta("");}}>Limpiar</button>}
+                  </div>
+                  <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
+                    onClick={()=>exportXLSX(ingresosFiltrados,[
+                      {key:"fecha_pago",label:"Fecha"},{key:"cliente_nombre",label:"Nombre"},
+                      {key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
+                      {key:"monto",label:"Monto"},{key:"notas",label:"Notas"},
+                    ],"ingresos_seminario_cripto.xlsx")}>
+                    Exportar Excel
+                  </button>
+                </div>
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
@@ -1203,7 +1349,7 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
-                {!ingresos.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>No hay ingresos cargados.</div>}
+                {!ingresosFiltrados.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>No hay ingresos para el período seleccionado.</div>}
               </div>
               <Pagination page={ingresosPag.page} totalPages={ingresosPag.totalPages} setPage={ingresosPag.setPage} sectionRef={ingresosRef} t={t}/>
             </div>
@@ -1265,14 +1411,14 @@ export default function App() {
                 </div>
                 <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
                   onClick={()=>exportXLSX(filtered,[
-                    {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
+                    {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"telefono",label:"Teléfono"},{key:"servicio",label:"Servicio"},
                     {key:"vencimiento",label:"Vencimiento"},{key:"estadoSistema",label:"Estado"},{key:"monto",label:"Monto"},{key:"deuda_restante",label:"Deuda"},
                   ],"clientes_seminario_cripto.xlsx")}>
                   Exportar Excel
                 </button>
               </div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
-                <input style={{...S.input,maxWidth:340}} placeholder="Buscar cliente o email" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
+                <input style={{...S.input,maxWidth:340}} placeholder="Buscar cliente, email o teléfono" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
                 <select style={{...S.input,maxWidth:220}} value={filtro} onChange={e=>setFiltro(e.target.value)}>
                   <option value="todos">Todos</option>
                   <option value="mensual">Mensual</option>
@@ -1286,12 +1432,20 @@ export default function App() {
                 <table style={S.table}>
                   <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Estado manual","Acciones"]} t={t}/></thead>
                   <tbody>
-                    {basePag.rows.map(c=>(
+                    {loading?null:basePag.rows.map(c=>(
                       <tr key={c.id}>
-                        <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                        <td style={{...S.td,fontWeight:700}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <span style={{cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</span>
+                            {nuevosEsteMes.has(c.id)&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:999,background:"linear-gradient(135deg,#e8b84b,#c8972a)",color:"#0f172a"}}>NUEVO</span>}
+                          </div>
+                        </td>
                         <td style={S.td}>
-                          <input value={c.email||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value)}
-                            style={{width:"100%",padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,boxSizing:"border-box",background:t.inputBg,color:t.inputText}}/>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <input value={c.email||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value)}
+                              style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,boxSizing:"border-box",background:t.inputBg,color:t.inputText}}/>
+                            {emailGuardado===c.id&&<span style={{fontSize:11,color:"#22c55e",fontWeight:700}}>✓</span>}
+                          </div>
                         </td>
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
@@ -1314,6 +1468,7 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
+                {loading&&<Skeleton rows={5} cols={8} t={t}/>}
                 {!filtered.length&&!loading&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>No hay resultados.</div>}
               </div>
               <Pagination page={basePag.page} totalPages={basePag.totalPages} setPage={basePag.setPage} sectionRef={baseRef} t={t}/>
@@ -1343,8 +1498,11 @@ export default function App() {
 
             {/* Deudores */}
             <div ref={deudoresRef} style={{...S.card,marginBottom:24}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Deudores</h3>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+                <div>
+                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Deudores</h3>
+                  {deudores.length>0&&<div style={{color:"#ef4444",fontSize:13,fontWeight:700,marginTop:4}}>Deuda total acumulada: USD {totalDeuda}</div>}
+                </div>
                 <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
                   onClick={()=>exportXLSX(deudores,[
                     {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
@@ -1385,7 +1543,7 @@ export default function App() {
                       <tr key={c.id}>
                         <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
                         <td style={S.td}>{formatDate(c.fecha_inicio)}</td>
-                        <td style={{...S.td}}>{monthLabel(monthKey(c.fecha_inicio))}</td>
+                        <td style={S.td}>{monthLabel(monthKey(c.fecha_inicio))}</td>
                         <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {c.monto}</td>
                         <td style={S.td}>{c.notas||"-"}</td>
                       </tr>
@@ -1397,21 +1555,51 @@ export default function App() {
               <Pagination page={clasesPag.page} totalPages={clasesPag.totalPages} setPage={clasesPag.setPage} sectionRef={clasesRef} t={t}/>
             </div>
 
+            {/* Clientes dormantes */}
+            {dormantes.length>0&&(
+              <div ref={dormantesRef} style={{...S.card,marginBottom:24}}>
+                <div style={{marginBottom:16}}>
+                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Clientes dormantes</h3>
+                  <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Activos pero sin ingreso registrado en los últimos 60 días. Pueden necesitar seguimiento.</div>
+                </div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={S.table}>
+                    <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Estado"]} t={t}/></thead>
+                    <tbody>
+                      {dormantesPag.rows.map(c=>(
+                        <tr key={c.id}>
+                          <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
+                          <td style={S.td}>{c.email||"-"}</td>
+                          <td style={S.td}>{svcLabel(c.servicio)}</td>
+                          <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
+                          <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination page={dormantesPag.page} totalPages={dormantesPag.totalPages} setPage={dormantesPag.setPage} sectionRef={dormantesRef} t={t}/>
+              </div>
+            )}
+
             {/* Resumen mensual */}
             <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.2fr) minmax(0,0.8fr)",gap:24}}>
               <div style={S.card}>
                 <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Resumen mensual</h3>
                 <div style={{overflowX:"auto"}}>
                   <table style={S.table}>
-                    <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total"]} t={t}/></thead>
+                    <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total","Tendencia"]} t={t}/></thead>
                     <tbody>
-                      {resumenMensual.map(r=>(
+                      {resumenMensualConTrend.map(r=>(
                         <tr key={r.key}>
                           <td style={{...S.td,fontWeight:700}}>{monthLabel(r.key)}</td>
                           <td style={S.td}>USD {r.mensual}</td>
                           <td style={S.td}>USD {r.anual}</td>
                           <td style={S.td}>USD {r.clases}</td>
                           <td style={{...S.td,fontWeight:800,color:t.accent}}>USD {r.total}</td>
+                          <td style={S.td}>
+                            {r.trend!=null&&<span style={{fontSize:12,fontWeight:700,color:r.trend>0?"#22c55e":r.trend<0?"#ef4444":t.textMuted}}>{r.trend>0?"↑":r.trend<0?"↓":"→"} {Math.abs(r.trend)}%</span>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1421,13 +1609,16 @@ export default function App() {
               <div style={S.card}>
                 <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Vista rápida</h3>
                 <div style={{display:"grid",gap:16}}>
-                  {resumenMensual.map(r=>{
+                  {resumenMensualConTrend.map(r=>{
                     const pct=Math.max((r.total/maxTotal)*100,4);
                     return (
                       <div key={r.key}>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
                           <span style={{fontWeight:600}}>{monthLabel(r.key)}</span>
-                          <strong style={{color:t.accent}}>USD {r.total}</strong>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            {r.trend!=null&&<span style={{fontSize:11,fontWeight:700,color:r.trend>0?"#22c55e":r.trend<0?"#ef4444":t.textMuted}}>{r.trend>0?"↑":r.trend<0?"↓":"→"}{Math.abs(r.trend)}%</span>}
+                            <strong style={{color:t.accent}}>USD {r.total}</strong>
+                          </div>
                         </div>
                         <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
                           <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
