@@ -297,6 +297,12 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
   const [q,setQ]=useState("");
   const ref=useRef(null);
   useEffect(()=>{ref.current?.focus();},[]);
+  // Escape key closes the modal
+  useEffect(()=>{
+    function onKey(e){if(e.key==="Escape")onClose();}
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[onClose]);
   const results=useMemo(()=>{
     if(!q.trim())return[];
     const lo=q.toLowerCase();
@@ -310,7 +316,8 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
           <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
             placeholder="Nombre, email o teléfono..."
             style={{flex:1,border:"none",outline:"none",background:"transparent",color:t.text,fontSize:15}}/>
-          <kbd style={{fontSize:11,color:t.textMuted,background:t.dark?"#1a2540":"#ede9e4",padding:"3px 8px",borderRadius:6,fontFamily:"monospace"}}>Esc</kbd>
+          {/* × button instead of Esc label */}
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.textMuted,fontSize:20,lineHeight:1,padding:"0 2px",display:"flex",alignItems:"center"}}>×</button>
         </div>
         {results.length>0?(
           <div style={{maxHeight:380,overflowY:"auto"}}>
@@ -645,14 +652,15 @@ function PieChart({breakdown,title,t}){
 }
 
 // ─── ClienteCard (paneles críticos) ──────────────────────────────────────────
-function ClienteCard({cliente,accentBorder,accentBg,accentText,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
+// nameColor: color fijo para el nombre — oscuro sobre fondos claros (gracia/vencidos), claro sobre oscuros (por vencer dark mode)
+function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
   const btn=makeBtn(t);
   return(
     <div style={{border:`1px solid ${accentBorder}`,background:accentBg,borderRadius:12,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s"}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 2px 12px rgba(0,0,0,0.15)`}
       onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
       <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
-        <div style={{fontWeight:700,color:t.text,fontSize:14}}>{cliente.nombre}</div>
+        <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14}}>{cliente.nombre}</div>
         <div style={{fontSize:12,color:accentText,marginTop:2}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
       </div>
       <div style={{display:"flex",gap:6}}>
@@ -664,7 +672,7 @@ function ClienteCard({cliente,accentBorder,accentBg,accentText,dateLabel,onRenov
   );
 }
 
-function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t}){
+function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t}){
   const S=makeS(t);
   return(
     <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280}}>
@@ -675,7 +683,7 @@ function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,
       <div style={{flex:1}}>
         {clientes.length?(
           <div style={{display:"grid",gap:8}}>
-            {rows.map(c=>(<ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>))}
+            {rows.map(c=>(<ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} nameColor={nameColor} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>))}
           </div>
         ):(
           <div style={{color:t.textMuted,fontSize:13}}>Sin clientes en esta categoría.</div>
@@ -753,7 +761,6 @@ function HistorialView({t}){
     <div ref={ref} style={S.card}>
       <div style={{marginBottom:20}}>
         <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:20}}>Historial de cambios</h3>
-        <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Registro de las últimas 24 horas. Se limpia automáticamente al cargar la app.</div>
       </div>
       {loading?<Skeleton rows={6} cols={5} t={t}/>:hist.length===0?(
         <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros en las últimas 24 horas.</div>
@@ -1135,9 +1142,8 @@ export default function App(){
             </div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            {/* Búsqueda rápida — nombre amigable */}
-            <button onClick={()=>setBusquedaRapida(true)}
-              style={{...btn(false),padding:"10px 16px",display:"flex",alignItems:"center",gap:8,fontSize:13}}>
+            {/* Búsqueda rápida — mismo estilo que botones de navegación */}
+            <button onClick={()=>setBusquedaRapida(true)} style={navBtn(false)}>
               🔍 Búsqueda rápida
             </button>
             <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
@@ -1290,23 +1296,32 @@ export default function App(){
                 <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Clic en el nombre del cliente para ver su ficha completa.</div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
+                {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
                 <CriticosPanel titulo="Por vencer" badgeBg="#fff7ed" badgeColor="#9a3412"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
-                  accentBorder={dark?"#3a2000":"#fdba74"} accentBg={dark?"#1a1000":"#fff7ed"} accentText={dark?"#fdba74":"#9a3412"} dateLabel="vence"
+                  accentBorder={dark?"#3a2000":"#fdba74"} accentBg={dark?"#1a1000":"#fff7ed"} accentText={dark?"#fdba74":"#9a3412"}
+                  nameColor={dark?t.text:"#1a0a00"}
+                  dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
+                {/* En gracia: fondo siempre claro (amarillo) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="En gracia" badgeBg="#fef3c7" badgeColor="#92400e"
                   clientes={vencimientosCriticos.gracia} {...cGrPag}
-                  accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e" dateLabel="venció"
+                  accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e"
+                  nameColor="#1a0e00"
+                  dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
+                {/* Vencidos: fondo siempre claro (rosa) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="Vencidos" badgeBg="#fee2e2" badgeColor="#991b1b"
                   clientes={vencimientosCriticos.vencidos} {...cVePag}
-                  accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b" dateLabel="venció"
+                  accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b"
+                  nameColor="#1a0000"
+                  dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
