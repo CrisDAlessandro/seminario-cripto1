@@ -150,6 +150,19 @@ async function limpiarHistorial(){
   try{const c=new Date(Date.now()-24*3600000).toISOString();await supabase.from("historial_cambios").delete().lt("created_at",c);}catch(_){}
 }
 
+// ─── notas_cliente helper ─────────────────────────────────────────────────────
+async function logNC(clienteId, userEmail, tipo, contenido, detalle){
+  try{
+    await supabase.from("notas_cliente").insert([{
+      cliente_id: clienteId,
+      usuario_email: userEmail||"—",
+      tipo,
+      contenido: contenido||"",
+      detalle: detalle||null,
+    }]);
+  }catch(_){}
+}
+
 // ─── usePagination ────────────────────────────────────────────────────────────
 function usePagination(items,pageSize){
   const [page,setPage]=useState(1);
@@ -349,30 +362,63 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
   );
 }
 
-// ─── Panel detalle cliente ────────────────────────────────────────────────────
-function ClienteDetailModal({cliente,ingresos,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,t}){
+// ─── Panel detalle cliente — con historial completo desde notas_cliente ────────
+function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
-  const [nota,setNota]=useState(cliente.notas||"");
-  const [saving,setSaving]=useState(false);
-  const [saved,setSaved]=useState(false);
+  const [nuevaNota,setNuevaNota]=useState("");
+  const [sending,setSending]=useState(false);
   const [copiado,setCopiado]=useState(false);
-  const historial=ingresos.filter(i=>i.cliente_id===cliente.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""));
-  const totalPagado=historial.reduce((a,i)=>a+safeNum(i.monto),0);
+  const [timeline,setTimeline]=useState([]);
+  const [loadingTL,setLoadingTL]=useState(true);
 
-  async function guardarNota(){
-    setSaving(true);
-    await supabase.from("clientes").update({notas:nota}).eq("id",cliente.id);
-    setSaving(false);setSaved(true);setTimeout(()=>setSaved(false),2500);
-    onNotaGuardada&&onNotaGuardada(cliente.id,nota);
+  const pagosTotales=ingresos.filter(i=>i.cliente_id===cliente.id);
+  const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
+
+  // Cargar historial del cliente desde notas_cliente
+  useEffect(()=>{
+    supabase.from("notas_cliente")
+      .select("*")
+      .eq("cliente_id",cliente.id)
+      .order("created_at",{ascending:false})
+      .then(({data})=>{setTimeline(data||[]);setLoadingTL(false);});
+  },[cliente.id]);
+
+  async function enviarNota(){
+    if(!nuevaNota.trim())return;
+    setSending(true);
+    const{error}=await supabase.from("notas_cliente").insert([{
+      cliente_id:cliente.id,
+      usuario_email:userEmail||"—",
+      tipo:"nota",
+      contenido:nuevaNota.trim(),
+      detalle:null,
+    }]);
+    if(!error){
+      setTimeline(prev=>[{id:Date.now(),created_at:new Date().toISOString(),usuario_email:userEmail||"—",tipo:"nota",contenido:nuevaNota.trim(),detalle:null},...prev]);
+      setNuevaNota("");
+      onNotaGuardada&&onNotaGuardada(cliente.id,nuevaNota.trim());
+    }
+    setSending(false);
   }
+
   function copiarEmail(){
     navigator.clipboard?.writeText(cliente.email).then(()=>{setCopiado(true);setTimeout(()=>setCopiado(false),2000);});
   }
 
+  // Ícono y color por tipo de evento
+  function tipoStyle(tipo){
+    if(tipo==="nota")     return{icon:"📝",color:"#5b8dee",bg:"rgba(91,141,238,0.12)"};
+    if(tipo==="renovación"||tipo==="renovacion") return{icon:"🔄",color:"#22c55e",bg:"rgba(34,197,94,0.12)"};
+    if(tipo==="pago")     return{icon:"💰",color:t.accent,bg:"rgba(200,151,42,0.12)"};
+    if(tipo==="estado")   return{icon:"🔖",color:"#a78bfa",bg:"rgba(167,139,250,0.12)"};
+    return{icon:"📌",color:t.textMuted,bg:t.dark?"#1a2540":"#f1f5f9"};
+  }
+
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1500,overflowY:"auto"}}>
-      <div style={{background:t.cardBg,borderRadius:20,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:640,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+      <div style={{background:t.cardBg,borderRadius:20,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
           <div>
@@ -395,7 +441,7 @@ function ClienteDetailModal({cliente,ingresos,onClose,onAbrirRenovar,onEliminar,
 
         {/* KPIs */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
-          {[["Renovaciones",historial.length],["Total pagado",`USD ${totalPagado}`],["Deuda",cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"]].map(([l,v])=>(
+          {[["Pagos registrados",pagosTotales.length],["Total pagado",`USD ${totalPagado}`],["Deuda",cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"]].map(([l,v])=>(
             <div key={l} style={{background:t.dark?"#0d1526":"#f8f6f3",borderRadius:12,padding:"14px 16px",border:`1px solid ${t.cardBorder}`}}>
               <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>{l}</div>
               <div style={{fontSize:20,fontWeight:800,color:t.text}}>{v}</div>
@@ -403,8 +449,8 @@ function ClienteDetailModal({cliente,ingresos,onClose,onAbrirRenovar,onEliminar,
           ))}
         </div>
 
-        {/* Datos */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+        {/* Datos del cliente */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
           {[
             ["Servicio",svcLabel(cliente.servicio)],
             ["Estado",<span style={badgeStyle(cliente.estadoSistema)}>{cliente.estadoSistema?.toUpperCase()}</span>],
@@ -420,41 +466,81 @@ function ClienteDetailModal({cliente,ingresos,onClose,onAbrirRenovar,onEliminar,
           ))}
         </div>
 
-        {/* Notas editables */}
-        <div style={{marginBottom:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <label style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Notas del cliente</label>
-            <button onClick={guardarNota} disabled={saving}
-              style={{...btn(false,!saved),padding:"5px 12px",fontSize:12,...(saved?{background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"none",cursor:"pointer",borderRadius:8}:{})}}>
-              {saving?"Guardando...":saved?"✓ Guardado":"Guardar"}
+        {/* ── Escribir nueva nota ── */}
+        <div style={{marginBottom:20,borderTop:`1px solid ${t.tdBorder}`,paddingTop:20}}>
+          <label style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:8}}>
+            Agregar nota
+          </label>
+          <div style={{display:"flex",gap:10}}>
+            <textarea value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey))enviarNota();}}
+              placeholder="Escribí una observación, seguimiento o acción sobre este cliente..."
+              rows={2}
+              style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:13,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,resize:"none",fontFamily:"inherit",lineHeight:1.5}}/>
+            <button onClick={enviarNota} disabled={sending||!nuevaNota.trim()}
+              style={{...btn(false,true),padding:"10px 18px",alignSelf:"flex-end",opacity:(!nuevaNota.trim()||sending)?0.5:1}}>
+              {sending?"...":"Guardar"}
             </button>
           </div>
-          <textarea value={nota} onChange={e=>setNota(e.target.value)} rows={3}
-            placeholder="Observaciones sobre este cliente..."
-            style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,resize:"vertical",fontFamily:"inherit",lineHeight:1.6}}/>
+          <div style={{color:t.textMuted,fontSize:11,marginTop:5}}>Ctrl+Enter para guardar rápido</div>
         </div>
 
-        {/* Historial pagos */}
-        <h4 style={{margin:"0 0 12px",color:t.text,fontSize:15,fontWeight:700}}>Historial de pagos</h4>
-        {historial.length===0?(
-          <div style={{color:t.textMuted,fontSize:13,padding:"12px 0"}}>Sin registros de pago.</div>
-        ):(
-          <div style={{maxHeight:200,overflowY:"auto",borderRadius:10,border:`1px solid ${t.cardBorder}`}}>
-            <table style={S.table}>
-              <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
-                <th key={h} style={{...S.td,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
-              ))}</tr></thead>
-              <tbody>{historial.map(i=>(
-                <tr key={i.id}>
-                  <td style={S.td}>{formatDate(i.fecha_pago)}</td>
-                  <td style={S.td}>{svcLabel(i.servicio)}</td>
-                  <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
-                  <td style={S.td}>{i.notas||"—"}</td>
-                </tr>
-              ))}</tbody>
-            </table>
+        {/* ── Timeline del cliente ── */}
+        <div>
+          <h4 style={{margin:"0 0 14px",color:t.text,fontSize:15,fontWeight:700}}>Historial del cliente</h4>
+          {loadingTL?(
+            <div style={{color:t.textMuted,fontSize:13}}>Cargando historial...</div>
+          ):timeline.length===0?(
+            <div style={{color:t.textMuted,fontSize:13,padding:"12px 0"}}>Sin registros todavía. Las notas, renovaciones y pagos que registres van a aparecer acá.</div>
+          ):(
+            <div style={{maxHeight:280,overflowY:"auto",display:"grid",gap:8}}>
+              {timeline.map(item=>{
+                const{icon,color,bg}=tipoStyle(item.tipo);
+                return(
+                  <div key={item.id} style={{display:"flex",gap:12,padding:"12px 14px",borderRadius:12,background:bg,border:`1px solid ${t.cardBorder}`}}>
+                    <div style={{fontSize:18,flexShrink:0,lineHeight:1.4}}>{icon}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+                        <div style={{fontSize:13,fontWeight:700,color}}>
+                          {item.tipo==="nota"?"Nota":item.tipo==="renovacion"||item.tipo==="renovación"?"Renovación":item.tipo==="pago"?"Pago registrado":item.tipo==="estado"?"Cambio de estado":item.tipo}
+                        </div>
+                        <div style={{fontSize:11,color:t.textMuted,whiteSpace:"nowrap"}}>{formatDateTime(item.created_at)}</div>
+                      </div>
+                      {item.contenido&&<div style={{fontSize:13,color:t.text,marginTop:4,lineHeight:1.5}}>{item.contenido}</div>}
+                      {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>
+                        {Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}
+                      </div>}
+                      <div style={{fontSize:11,color:t.textMuted,marginTop:4}}>por {item.usuario_email}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Historial de pagos (ingresos) ── */}
+        {pagosTotales.length>0&&(
+          <div style={{marginTop:20,borderTop:`1px solid ${t.tdBorder}`,paddingTop:16}}>
+            <h4 style={{margin:"0 0 12px",color:t.text,fontSize:14,fontWeight:700}}>Pagos registrados en ingresos</h4>
+            <div style={{maxHeight:160,overflowY:"auto",borderRadius:10,border:`1px solid ${t.cardBorder}`}}>
+              <table style={S.table}>
+                <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
+                  <th key={h} style={{...S.td,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
+                ))}</tr></thead>
+                <tbody>{pagosTotales.sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||"")).map(i=>(
+                  <tr key={i.id}>
+                    <td style={S.td}>{formatDate(i.fecha_pago)}</td>
+                    <td style={S.td}>{svcLabel(i.servicio)}</td>
+                    <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
+                    <td style={S.td}>{i.notas||"—"}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
           </div>
         )}
+
         <div style={{marginTop:20,display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
           <button style={{...btn(false),background:"rgba(239,68,68,0.1)",color:"#ef4444"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
@@ -894,6 +980,7 @@ export default function App(){
     if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
+    await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
     toast.success(`${v.nombre} agregado correctamente`);refetch();
   }
@@ -905,6 +992,7 @@ export default function App(){
     if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
+    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
   }
@@ -920,6 +1008,7 @@ export default function App(){
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto}`,{servicio:cliente.servicio,monto:cliente.monto});
     toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
   }
   async function eliminarClienteConfirmado(cliente){
@@ -940,6 +1029,7 @@ export default function App(){
     if(error){toast.error("No se pudo actualizar");return;}
     const c=clientes.find(cl=>cl.id===id);
     await logH(user?.email,"cambió estado manual","cliente",id,{nombre:c?.nombre,estado:value});
+    await logNC(id,user?.email,"estado",`Estado cambiado a: ${value}`,{estado:value});
     fetchClientes();
   }
   async function actualizarEmail(id,nuevoEmail){
@@ -954,6 +1044,7 @@ export default function App(){
     const{error}=await supabase.from("clientes").update({deuda_restante:nuevaDeuda}).eq("id",cliente.id);
     if(error){toast.error("No se pudo registrar el pago");return;}
     await logH(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
+    await logNC(cliente.id,user?.email,"pago",`Pago parcial registrado: USD ${monto}. Deuda restante: USD ${nuevaDeuda}`,{monto_abonado:monto,deuda_restante:nuevaDeuda});
     setPagoCliente(null);toast.success(`Pago USD ${monto} registrado. Deuda restante: USD ${nuevaDeuda}`);fetchClientes();
   }
   function abrirRenovar(cliente){
@@ -1121,10 +1212,10 @@ export default function App(){
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
-        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} onClose={()=>setClienteDetalle(null)}
+        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
-          onNotaGuardada={(id,nota)=>{setClientes(prev=>prev.map(c=>c.id===id?{...c,notas:nota}:c));toast.success("Nota guardada");}}
+          onNotaGuardada={()=>toast.success("Nota guardada")}
           t={t}/>
       )}
       {pagoCliente&&<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>}
