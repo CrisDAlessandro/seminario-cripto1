@@ -164,7 +164,7 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
 }
 
 // ─── Drive helper ─────────────────────────────────────────────────────────────
-async function llamarDrive(accion, email) {
+async function llamarDrive(accion: "compartir" | "revocar", email: string) {
   try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drive-access`;
     const res = await fetch(url, {
@@ -883,21 +883,44 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
-        <Field label="Nombre y apellido" t={t}><input style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/></Field>
-        <Field label="Email" t={t}><input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></Field>
-        <Field label="Teléfono / WhatsApp" t={t}><input style={S.input} placeholder="Ej: 5491112345678" value={form.telefono||""} onChange={e=>setForm({...form,telefono:e.target.value})}/></Field>
+        {/* Nombre siempre primero */}
+        <Field label="Nombre y apellido" t={t}>
+          <input style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
+        </Field>
+        {/* Servicio al lado del nombre — así el usuario elige clases antes de ver el campo email */}
         <Field label="Servicio" t={t}>
-          <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s)});}}>
+          <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s),email:s==="clases"?"":form.email});}}>
             <option value="mensual">Plan inversor mensual</option>
             <option value="anual">Plan inversor anual</option>
             <option value="clases">Clases</option>
           </select>
         </Field>
-        <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}><input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/></Field>
-        <Field label="Monto (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/></Field>
-        {!isClases&&<Field label="Duración (días)" t={t}><input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/></Field>}
-        <Field label="Deuda restante (USD)" t={t}><input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/></Field>
-        <Field label="Notas" spanAll t={t}><input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/></Field>
+        {/* Email solo para planes — clases no lo necesita */}
+        {!isClases&&(
+          <Field label="Email" t={t}>
+            <input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
+          </Field>
+        )}
+        <Field label="Teléfono / WhatsApp" t={t}>
+          <input style={S.input} placeholder="Ej: 5491112345678" value={form.telefono||""} onChange={e=>setForm({...form,telefono:e.target.value})}/>
+        </Field>
+        <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}>
+          <input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/>
+        </Field>
+        <Field label="Monto (USD)" t={t}>
+          <input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/>
+        </Field>
+        {!isClases&&(
+          <Field label="Duración (días)" t={t}>
+            <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
+          </Field>
+        )}
+        <Field label="Deuda restante (USD)" t={t}>
+          <input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/>
+        </Field>
+        <Field label="Notas" spanAll t={t}>
+          <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
+        </Field>
       </div>
       <div style={{marginTop:20,display:"flex",justifyContent:"flex-end",gap:10}}>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
@@ -906,7 +929,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
     </div>
   );
   if(!isModal)return inner;
-  return(<div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}>{inner}</div>);
+  return(<div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}} onClick={onCancelar}><div onClick={e=>e.stopPropagation()}>{inner}</div></div>);
 }
 function Field({label,children,spanAll=false,t}){
   const S=makeS(t);
@@ -1045,8 +1068,11 @@ export default function App(){
   function validateForm(f){
     const nombre=f.nombre.trim();const emailVal=f.email.trim().toLowerCase();
     if(!nombre){toast.error("Falta el nombre y apellido");return null;}
-    if(!emailVal){toast.error("Falta el email");return null;}
-    if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
+    // Email solo requerido para planes — clases no lo necesita
+    if(f.servicio!=="clases"){
+      if(!emailVal){toast.error("Falta el email");return null;}
+      if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
+    }
     if(f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
     return{nombre,email:emailVal};
   }
@@ -1104,11 +1130,15 @@ export default function App(){
     toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
   }
   async function eliminarClienteConfirmado(cliente){
+    // Quitar de pantalla inmediatamente sin destello
+    setClientes(prev=>prev.filter(c=>c.id!==cliente.id));
+    setIngresos(prev=>prev.filter(i=>i.cliente_id!==cliente.id));
+    setClienteDetalle(null);
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
-    if(error){toast.error("No se pudo eliminar");return;}
+    if(error){toast.error("No se pudo eliminar");refetch();return;}
     await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email});
-    llamarDrive("revocar", (cliente.email||"").trim().toLowerCase()); // revocar acceso Drive
-    setClienteDetalle(null);toast.success(`${cliente.nombre} eliminado`);refetch();
+    llamarDrive("revocar",(cliente.email||"").trim().toLowerCase());
+    toast.success(`${cliente.nombre} eliminado`);
   }
   async function eliminarIngreso(id){
     const ing=ingresos.find(i=>i.id===id);
@@ -1118,12 +1148,17 @@ export default function App(){
     toast.success("Ingreso eliminado");fetchIngresos();
   }
   async function cambiarEstado(id,value){
+    // Actualización optimista — cambia en pantalla de inmediato sin destello
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,estado_manual:value}:c));
     const{error}=await supabase.from("clientes").update({estado_manual:value}).eq("id",id);
-    if(error){toast.error("No se pudo actualizar");return;}
+    if(error){
+      toast.error("No se pudo actualizar");
+      // Revertir si falló
+      fetchClientes();return;
+    }
     const c=clientes.find(cl=>cl.id===id);
     await logH(user?.email,"cambió estado manual","cliente",id,{nombre:c?.nombre,estado:value});
     await logNC(id,user?.email,"estado",`Estado cambiado a: ${value}`,{estado:value});
-    fetchClientes();
   }
   async function actualizarEmail(id,nuevoEmail){
     const{error}=await supabase.from("clientes").update({email:nuevoEmail}).eq("id",id);
