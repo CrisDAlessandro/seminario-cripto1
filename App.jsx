@@ -165,20 +165,31 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
 
 // ─── Drive helper ─────────────────────────────────────────────────────────────
 async function llamarDrive(accion, email) {
+  if(!email||!email.includes("@")) return; // no llamar para clases sin email
   try {
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drive-access`;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if(!supabaseUrl||!supabaseKey){
+      console.warn("Drive: faltan variables de entorno VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY");
+      return;
+    }
+    const url = `${supabaseUrl}/functions/v1/drive-access`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        "Authorization": `Bearer ${supabaseKey}`,
       },
       body: JSON.stringify({ accion, email }),
     });
     const data = await res.json();
-    if (!data.ok) console.warn("Drive:", data.error || data);
+    if(data.ok){
+      console.log(`Drive ✓ ${accion}: ${email}`);
+    } else {
+      console.warn(`Drive error ${accion}:`, data.error||data);
+    }
   } catch (err) {
-    console.warn("Drive error:", err);
+    console.warn("Drive fetch error:", err);
   }
 }
 
@@ -1096,7 +1107,7 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
     await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
-    llamarDrive("compartir", ins.email); // compartir carpeta Cursos
+    await llamarDrive("compartir", ins.email);
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
     toast.success(`${v.nombre} agregado correctamente`);refetch();
   }
@@ -1109,7 +1120,7 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
     await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
-    llamarDrive("compartir", v.email); // mantener/renovar acceso Drive
+    await llamarDrive("compartir", v.email);
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
   }
@@ -1126,7 +1137,7 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto}`,{servicio:cliente.servicio,monto:cliente.monto});
-    llamarDrive("compartir", (cliente.email||"").trim().toLowerCase()); // mantener acceso Drive
+    await llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
     toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
   }
   async function eliminarClienteConfirmado(cliente){
@@ -1137,7 +1148,7 @@ export default function App(){
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
     if(error){toast.error("No se pudo eliminar");refetch();return;}
     await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email});
-    llamarDrive("revocar",(cliente.email||"").trim().toLowerCase());
+    await llamarDrive("revocar",(cliente.email||"").trim().toLowerCase());
     toast.success(`${cliente.nombre} eliminado`);
   }
   async function eliminarIngreso(id){
