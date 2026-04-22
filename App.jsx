@@ -1135,7 +1135,7 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto}`,{servicio:cliente.servicio,monto:cliente.monto});
-    toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
+    toast.success(`✓ ${cliente.nombre} renovado${nv?` — nuevo vencimiento: ${formatDate(nv)}`:""}`);refetch();
     llamarDrive("compartir", (cliente.email||"").trim().toLowerCase()); // en paralelo
   }
   async function eliminarClienteConfirmado(cliente){
@@ -1187,6 +1187,14 @@ export default function App(){
     const {error} = await supabase.from("clientes").update({nombre: nuevoNombre.trim()}).eq("id", id);
     if (error) { toast.error("No se pudo actualizar el nombre"); return; }
     setClientes(prev => prev.map(c => c.id === id ? {...c, nombre: nuevoNombre.trim()} : c));
+  }
+  async function actualizarVencimiento(id, nuevaFecha) {
+    if (!nuevaFecha) return;
+    const {error} = await supabase.from("clientes").update({fecha_vencimiento: nuevaFecha}).eq("id", id);
+    if (error) { toast.error("No se pudo actualizar el vencimiento"); return; }
+    // Actualizar local — se refleja en dashboard/gráficos porque computed depende de clientes
+    setClientes(prev => prev.map(c => c.id === id ? {...c, fecha_vencimiento: nuevaFecha} : c));
+    toast.success("Vencimiento actualizado");
   }
   async function registrarPagoParcial(cliente,monto){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
@@ -1243,6 +1251,7 @@ export default function App(){
     return{hoy:pv,gracia:g,vencidos:v};
   },[computed]);
   const totalCriticos=vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
+  const vencenEstaSemana=useMemo(()=>computed.filter(c=>c.dias!=null&&c.dias>=0&&c.dias<=7&&c.estadoSistema==="activo").length,[computed]);
 
   // Deudores con alerta — calcular meses gracia según monto pagado
   // 100 = 4 meses, 150 = 5 meses, 200 = 7 meses, resto = 1 mes
@@ -1546,12 +1555,41 @@ export default function App(){
         {activeView==="operativa"&&(
           <>
             {/* Métricas */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14,marginBottom:28}}>
-              {[["Activos",resumen.activos,false],["En gracia",resumen.gracia,false],["Para sacar",resumen.sacar,false],["Deudores",resumen.deudores,false],["Clases",resumen.clases,false],["Ingresos totales",`USD ${resumen.ingresos}`,true]].map(([l,v,a])=>(
-                <div key={l} style={{...S.card,borderTop:a?`3px solid ${t.accent}`:undefined}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
+              {[
+                ["Activos",resumen.activos,false,()=>setFiltro("todos")],
+                ["En gracia",resumen.gracia,false,()=>setFiltro("gracia")],
+                ["Vencen esta semana",vencenEstaSemana,false,null],
+                ["Deudores",resumen.deudores,false,()=>setFiltro("todos")],
+                ["Clases",resumen.clases,false,()=>setFiltro("clases")],
+                ["Ingresos totales",`USD ${resumen.ingresos}`,true,null],
+              ].map(([l,v,a,onClick])=>(
+                <div key={l} onClick={onClick||undefined}
+                  style={{...S.card,borderTop:a?`3px solid ${t.accent}`:l==="Vencen esta semana"&&vencenEstaSemana>0?`3px solid #f59e0b`:undefined,cursor:onClick?"pointer":undefined,transition:"box-shadow 0.15s"}}
+                  onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 20px rgba(0,0,0,0.15)";}}
+                  onMouseLeave={e=>{if(onClick)e.currentTarget.style.boxShadow=S.card.boxShadow;}}>
                   <div style={{fontSize:11,color:t.textMuted,marginBottom:6,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
-                  <div style={{fontSize:24,fontWeight:800,color:a?t.accent:t.text,letterSpacing:"-0.02em"}}>{v}</div>
+                  <div style={{fontSize:24,fontWeight:800,color:a?t.accent:l==="Vencen esta semana"&&vencenEstaSemana>0?"#f59e0b":t.text,letterSpacing:"-0.02em"}}>{v}</div>
+                  {onClick&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>Clic para filtrar</div>}
                 </div>
+              ))}
+            </div>
+
+            {/* Filtros rápidos por estado */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+              {[
+                ["Todos","todos","#6b7280"],
+                ["Activos","activo","#22c55e"],
+                ["En gracia","gracia","#f59e0b"],
+                ["Vencidos","vencido","#ef4444"],
+                ["Mensuales","mensual",t.accent],
+                ["Anuales","anual","#5b8dee"],
+                ["Clases","clases","#a78bfa"],
+              ].map(([label,val,color])=>(
+                <button key={val} onClick={()=>setFiltro(val)}
+                  style={{padding:"7px 16px",borderRadius:999,border:`2px solid ${filtro===val?color:t.cardBorder}`,background:filtro===val?color:"transparent",color:filtro===val?"#fff":t.textMuted,fontWeight:700,fontSize:13,cursor:"pointer",transition:"all 0.15s"}}>
+                  {label}
+                </button>
               ))}
             </div>
 
@@ -1615,51 +1653,62 @@ export default function App(){
               </div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
                 <input style={{...S.input,maxWidth:340}} placeholder="Buscar por nombre, email o teléfono" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
-                <select style={{...S.input,maxWidth:220}} value={filtro} onChange={e=>setFiltro(e.target.value)}>
-                  <option value="todos">Todos</option>
-                  <option value="mensual">Mensual</option>
-                  <option value="anual">Anual</option>
-                  <option value="clases">Clases</option>
-                  <option value="gracia">En gracia</option>
-                  <option value="sacar">Sacar</option>
-                </select>
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Estado manual","Acciones"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Acciones"]} t={t}/></thead>
                   <tbody>
                     {!loading&&basePag.rows.map(c=>(
                       <tr key={c.id}>
+                        {/* Nombre editable — Enter guarda, Esc cancela, clic en ícono abre ficha */}
                         <td style={{...S.td,fontWeight:700}}>
-                          <div style={{display:"flex",alignItems:"center",gap:7}}>
-                            <input value={c.nombre||""} 
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <input value={c.nombre||""}
                               onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,nombre:e.target.value}:cl))}
                               onBlur={e=>actualizarNombre(c.id,e.target.value)}
-                              style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,fontWeight:700,boxSizing:"border-box",background:t.inputBg,color:t.accent,cursor:"text"}}/>
+                              onKeyDown={e=>{
+                                if(e.key==="Enter"){e.target.blur();}
+                                if(e.key==="Escape"){setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,nombre:c.nombre}:cl));e.target.blur();}
+                              }}
+                              style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,fontWeight:700,boxSizing:"border-box",background:t.inputBg,color:t.accent}}/>
+                            {/* Ícono para abrir ficha */}
+                            <span title="Ver ficha" onClick={()=>setClienteDetalle(c)} style={{cursor:"pointer",color:t.textMuted,fontSize:14,flexShrink:0,padding:"2px 4px",borderRadius:6}} onMouseEnter={e=>e.currentTarget.style.color=t.accent} onMouseLeave={e=>e.currentTarget.style.color=t.textMuted}>↗</span>
                             {nuevosEsteMes.has(c.id)&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:999,background:t.accentGrad,color:"#0f172a",whiteSpace:"nowrap"}}>NUEVO</span>}
                           </div>
                         </td>
+                        {/* Email editable */}
                         <td style={S.td}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <input value={c.email||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value)}
                               style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,boxSizing:"border-box",background:t.inputBg,color:t.inputText}}/>
-                            {emailSaved===c.id&&<span style={{fontSize:11,color:"#22c55e",fontWeight:700,whiteSpace:"nowrap"}}>✓ guardado</span>}
+                            {emailSaved===c.id&&<span style={{fontSize:11,color:"#22c55e",fontWeight:700,whiteSpace:"nowrap"}}>✓</span>}
                           </div>
                         </td>
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
-                        <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
-                        <td style={S.td}>{c.vencimiento!=null?c.dias:"-"}</td>
+                        {/* Vencimiento editable */}
+                        <td style={S.td}>
+                          {c.servicio==="clases"?"-":(
+                            <input type="date" value={c.vencimiento||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,fecha_vencimiento:e.target.value,vencimiento:e.target.value}:cl))} onBlur={e=>actualizarVencimiento(c.id,e.target.value)}
+                              style={{padding:"5px 8px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:12,background:t.inputBg,color:t.inputText,width:130}}/>
+                          )}
+                        </td>
+                        {/* Días con color */}
+                        <td style={S.td}>
+                          {c.vencimiento!=null?(
+                            <span style={{fontWeight:700,color:c.dias<0?"#ef4444":c.dias<=5?"#f59e0b":"#22c55e"}}>
+                              {c.dias}
+                            </span>
+                          ):"-"}
+                        </td>
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
-                          <select style={{...S.input,padding:"8px 12px"}} value={c.estado_manual} onChange={e=>cambiarEstado(c.id,e.target.value)}>
-                            <option value="activo">Activo</option>
-                            <option value="sacar">Sacar</option>
-                          </select>
-                        </td>
-                        <td style={S.td}>
-                          <div style={{display:"flex",gap:6}}>
+                          <div style={{display:"flex",gap:5,alignItems:"center"}}>
                             <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}>✔</button>
                             <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
+                            {c.telefono&&(
+                              <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                                style={{...btn(false),padding:"7px 11px",fontSize:13,textDecoration:"none",color:"#22c55e",background:"rgba(34,197,94,0.12)"}} title="WhatsApp">💬</a>
+                            )}
                             <button title="Eliminar" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
                         </td>
