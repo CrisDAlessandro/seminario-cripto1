@@ -71,8 +71,8 @@ const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10};
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
 function money(v){return `USD ${safeNum(v)}`;}
 function svcLabel(v){
-  if(v==="mensual") return "Plan inversor mensual";
-  if(v==="anual")   return "Plan inversor anual";
+  if(v==="mensual") return "Plan trader";
+  if(v==="anual")   return "Plan inversor";
   return "Clases";
 }
 function svcAmount(v){return v==="mensual"?30:250;}
@@ -1575,24 +1575,6 @@ export default function App(){
               ))}
             </div>
 
-            {/* Filtros rápidos por estado */}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
-              {[
-                ["Todos","todos","#6b7280"],
-                ["Activos","activo","#22c55e"],
-                ["En gracia","gracia","#f59e0b"],
-                ["Vencidos","vencido","#ef4444"],
-                ["Mensuales","mensual",t.accent],
-                ["Anuales","anual","#5b8dee"],
-                ["Clases","clases","#a78bfa"],
-              ].map(([label,val,color])=>(
-                <button key={val} onClick={()=>setFiltro(val)}
-                  style={{padding:"7px 16px",borderRadius:999,border:`2px solid ${filtro===val?color:t.cardBorder}`,background:filtro===val?color:"transparent",color:filtro===val?"#fff":t.textMuted,fontWeight:700,fontSize:13,cursor:"pointer",transition:"all 0.15s"}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
             {/* Críticos */}
             <div ref={critRef} style={{...S.card,marginBottom:24,padding:24}}>
               <div style={{marginBottom:20}}>
@@ -1650,6 +1632,22 @@ export default function App(){
                   ],"clientes_seminario_cripto.xlsx")}>
                   Exportar Excel
                 </button>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+                {[
+                  ["Todos","todos","#6b7280"],
+                  ["Activos","activo","#22c55e"],
+                  ["En gracia","gracia","#f59e0b"],
+                  ["Vencidos","vencido","#ef4444"],
+                  ["Plan trader","mensual",t.accent],
+                  ["Plan inversor","anual","#5b8dee"],
+                  ["Clases","clases","#a78bfa"],
+                ].map(([label,val,color])=>(
+                  <button key={val} onClick={()=>setFiltro(val)}
+                    style={{padding:"6px 14px",borderRadius:999,border:`2px solid ${filtro===val?color:t.cardBorder}`,background:filtro===val?color:"transparent",color:filtro===val?"#fff":t.textMuted,fontWeight:700,fontSize:12,cursor:"pointer",transition:"all 0.15s"}}>
+                    {label}
+                  </button>
+                ))}
               </div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
                 <input style={{...S.input,maxWidth:340}} placeholder="Buscar por nombre, email o teléfono" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
