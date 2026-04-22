@@ -1560,10 +1560,10 @@ export default function App(){
             {/* Métricas */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
               {[
-                ["Activos",resumen.activos,false,()=>setFiltro("todos")],
+                ["Activos",resumen.activos,false,()=>setFiltro("activo")],
                 ["En gracia",resumen.gracia,false,()=>setFiltro("gracia")],
                 ["Vencen esta semana",vencenEstaSemana,false,null],
-                ["Deudores",resumen.deudores,false,()=>setFiltro("todos")],
+                ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
                 ["Clases",resumen.clases,false,()=>setFiltro("clases")],
                 ["Ingresos totales",`USD ${resumen.ingresos}`,true,null],
               ].map(([l,v,a,onClick])=>(
@@ -1573,7 +1573,7 @@ export default function App(){
                   onMouseLeave={e=>{if(onClick)e.currentTarget.style.boxShadow=S.card.boxShadow;}}>
                   <div style={{fontSize:11,color:t.textMuted,marginBottom:6,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
                   <div style={{fontSize:24,fontWeight:800,color:a?t.accent:l==="Vencen esta semana"&&vencenEstaSemana>0?"#f59e0b":t.text,letterSpacing:"-0.02em"}}>{v}</div>
-                  {onClick&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>Clic para filtrar</div>}
+                  {onClick&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>{l==="Deudores"?"Clic para ir":"Clic para filtrar"}</div>}
                 </div>
               ))}
             </div>
