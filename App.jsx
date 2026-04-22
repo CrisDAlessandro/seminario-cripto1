@@ -1105,9 +1105,9 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
     await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
-    await llamarDrive("compartir", ins.email);
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
     toast.success(`${v.nombre} agregado correctamente`);refetch();
+    llamarDrive("compartir", ins.email); // en paralelo, no bloquea
   }
   async function guardarRenovacion(){
     const v=validateForm(renovarForm);if(!v)return;
@@ -1118,9 +1118,9 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
     await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
-    await llamarDrive("compartir", v.email);
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
+    llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
   async function renovarRapido(cliente){
     const today=getToday();
@@ -1135,8 +1135,8 @@ export default function App(){
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto}`,{servicio:cliente.servicio,monto:cliente.monto});
-    await llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
     toast.success(`${cliente.nombre} renovado con el mismo plan`);refetch();
+    llamarDrive("compartir", (cliente.email||"").trim().toLowerCase()); // en paralelo
   }
   async function eliminarClienteConfirmado(cliente){
     // Quitar de pantalla inmediatamente sin destello
@@ -1146,8 +1146,8 @@ export default function App(){
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
     if(error){toast.error("No se pudo eliminar");refetch();return;}
     await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email});
-    await llamarDrive("revocar",(cliente.email||"").trim().toLowerCase());
     toast.success(`${cliente.nombre} eliminado`);
+    llamarDrive("revocar",(cliente.email||"").trim().toLowerCase()); // en paralelo
   }
   async function eliminarIngreso(id){
     const ing=ingresos.find(i=>i.id===id);
