@@ -165,20 +165,18 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
 
 // ─── Drive helper ─────────────────────────────────────────────────────────────
 async function llamarDrive(accion, email) {
-  if(!email||!email.includes("@")) return; // no llamar para clases sin email
+  if(!email||!email.includes("@")) return;
   try {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if(!supabaseUrl||!supabaseKey){
-      console.warn("Drive: faltan variables de entorno VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY");
-      return;
-    }
+    // Obtener el JWT de la sesión activa del usuario
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
     const url = `${supabaseUrl}/functions/v1/drive-access`;
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${supabaseKey}`,
+        "Authorization": `Bearer ${token}`,
       },
       body: JSON.stringify({ accion, email }),
     });
