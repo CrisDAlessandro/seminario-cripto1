@@ -894,7 +894,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
         <Field label="Nombre y apellido" t={t}>
-          <input style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
+          <input autoFocus style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
         </Field>
         {/* Servicio al lado del nombre — así el usuario elige clases antes de ver el campo email */}
         <Field label="Servicio" t={t}>
@@ -1029,7 +1029,7 @@ export default function App(){
 
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
-  const ingRef=useRef(null);const critRef=useRef(null);const dormRef=useRef(null);
+  const ingRef=useRef(null);const critRef=useRef(null);
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -1237,16 +1237,29 @@ export default function App(){
     return{hoy:pv,gracia:g,vencidos:v};
   },[computed]);
   const totalCriticos=vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
-  const dormantes=useMemo(()=>{
-    const cutoff=new Date(Date.now()-60*86400000);
-    return computed.filter(c=>{
-      if(c.estadoSistema!=="activo")return false;
-      const ui=ingresos.filter(i=>i.cliente_id===c.id).sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))[0];
-      if(!ui)return false;
-      const fd=parseISODate(ui.fecha_pago);
-      return fd&&fd<cutoff;
+
+  // Deudores con alerta — calcular meses gracia según monto pagado
+  // 100 = 4 meses, 150 = 5 meses, 200 = 7 meses, resto = 1 mes
+  function mesesGracia(montoDeuda) {
+    const m = safeNum(montoDeuda);
+    if (m >= 200) return 7;
+    if (m >= 150) return 5;
+    if (m >= 100) return 4;
+    return 1;
+  }
+  const deudoresConAlerta = useMemo(() => {
+    return computed.filter(c => {
+      if (safeNum(c.deuda_restante) <= 0) return false;
+      if (!c.fecha_inicio) return false;
+      const inicio = parseISODate(c.fecha_inicio);
+      if (!inicio) return false;
+      const meses = mesesGracia(c.monto);
+      // Alertar a partir de los 33 días (1 mes + 3 gracia)
+      const diasLimite = meses * 30 + 3;
+      const diasDesdeInicio = diffDays(inicio, getToday());
+      return diasDesdeInicio >= diasLimite;
     });
-  },[computed,ingresos]);
+  }, [computed]);
   const resumen=useMemo(()=>{
     const b={activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
     computed.forEach(c=>{
@@ -1314,7 +1327,6 @@ export default function App(){
   const cHoyPag=usePagination(vencimientosCriticos.hoy,PAGE.crit);
   const cGrPag=usePagination(vencimientosCriticos.gracia,PAGE.crit);
   const cVePag=usePagination(vencimientosCriticos.vencidos,PAGE.crit);
-  const dormPag=usePagination(dormantes,PAGE.dorm);
   useEffect(()=>{basePag.setPage(1);},[busqueda,filtro]);
 
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -1732,35 +1744,36 @@ export default function App(){
               <Pagination page={clasPag.page} totalPages={clasPag.totalPages} setPage={clasPag.setPage} sectionRef={clasesRef} t={t}/>
             </div>
 
-            {/* Dormantes */}
-            {dormantes.length>0&&(
-              <div ref={dormRef} style={{...S.card,marginBottom:24,border:`1px solid ${dark?"#3a2000":"#fdba74"}`}}>
-                <div style={{marginBottom:16}}>
-                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>⚠ Clientes dormantes</h3>
-                  <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Activos pero sin ingreso registrado en los últimos 60 días. Pueden necesitar seguimiento.</div>
+            {/* Alerta deudores vencidos */}
+            {deudoresConAlerta.length>0&&(
+              <div style={{...S.card,marginBottom:24,border:`2px solid #ef4444`,background:dark?"#1a0a0a":"#fff5f5"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                  <span style={{fontSize:20}}>🚨</span>
+                  <div>
+                    <h3 style={{margin:0,color:"#ef4444",fontWeight:800,fontSize:17}}>Deudas vencidas — requieren atención</h3>
+                    <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
+                      Estos clientes superaron el período de gracia según el monto que abonaron. Considerá pasarlos a plan mensual o gestionar el cobro.
+                    </div>
+                  </div>
                 </div>
-                <div style={{overflowX:"auto"}}>
-                  <table style={S.table}>
-                    <thead><TableHeader cols={["Cliente","Email","Teléfono","Servicio","Vencimiento","Estado"]} t={t}/></thead>
-                    <tbody>
-                      {dormPag.rows.map(c=>(
-                        <tr key={c.id}>
-                          <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
-                          <td style={S.td}>{c.email||"-"}</td>
-                          <td style={S.td}>
-                            {c.telefono?(
-                              <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{color:"#22c55e",fontWeight:600,textDecoration:"none"}}>{c.telefono} ↗</a>
-                            ):"-"}
-                          </td>
-                          <td style={S.td}>{svcLabel(c.servicio)}</td>
-                          <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
-                          <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div style={{display:"grid",gap:8}}>
+                  {deudoresConAlerta.map(c=>{
+                    const meses=mesesGracia(c.monto);
+                    const diasDesde=diffDays(parseISODate(c.fecha_inicio),getToday());
+                    return(
+                      <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a0a0a":"#fff",border:"1px solid #fca5a5",gap:10,flexWrap:"wrap"}}>
+                        <div style={{cursor:"pointer"}} onClick={()=>setClienteDetalle(c)}>
+                          <span style={{fontWeight:700,color:t.accent,fontSize:14}}>{c.nombre}</span>
+                          <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · Pagó USD {c.monto} · Debe USD {c.deuda_restante}</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:12,color:"#ef4444",fontWeight:600}}>{diasDesde} días desde el inicio ({meses} meses de gracia ya vencidos)</span>
+                          <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <Pagination page={dormPag.page} totalPages={dormPag.totalPages} setPage={dormPag.setPage} sectionRef={dormRef} t={t}/>
               </div>
             )}
 
