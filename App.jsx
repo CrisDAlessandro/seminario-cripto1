@@ -1560,11 +1560,11 @@ export default function App(){
             {/* Métricas */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
               {[
-                ["Activos",resumen.activos,false,()=>setFiltro("activo")],
-                ["En gracia",resumen.gracia,false,()=>setFiltro("gracia")],
+                ["Activos",resumen.activos,false,null],
+                ["En gracia",resumen.gracia,false,null],
                 ["Vencen esta semana",vencenEstaSemana,false,null],
                 ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
-                ["Clases",resumen.clases,false,()=>setFiltro("clases")],
+                ["Clases",resumen.clases,false,()=>clasesRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
                 ["Ingresos totales",`USD ${resumen.ingresos}`,true,null],
               ].map(([l,v,a,onClick])=>(
                 <div key={l} onClick={onClick||undefined}
