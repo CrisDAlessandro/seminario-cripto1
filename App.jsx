@@ -1169,11 +1169,18 @@ export default function App(){
     await logH(user?.email,"cambió estado manual","cliente",id,{nombre:c?.nombre,estado:value});
     await logNC(id,user?.email,"estado",`Estado cambiado a: ${value}`,{estado:value});
   }
-  async function actualizarEmail(id,nuevoEmail){
-    const{error}=await supabase.from("clientes").update({email:nuevoEmail}).eq("id",id);
-    if(error){toast.error("No se pudo actualizar el email");return;}
-    setEmailSaved(id);setTimeout(()=>setEmailSaved(null),2000);
+  async function actualizarEmail(id, nuevoEmail) {
+    const clienteActual = clientes.find(c => c.id === id);
+    const emailAnterior = (clienteActual?.email || "").trim().toLowerCase();
+    const emailNuevo = nuevoEmail.trim().toLowerCase();
+    if (emailAnterior === emailNuevo) return; // no cambió nada
+    const {error} = await supabase.from("clientes").update({email: emailNuevo}).eq("id", id);
+    if (error) { toast.error("No se pudo actualizar el email"); return; }
+    setEmailSaved(id); setTimeout(() => setEmailSaved(null), 2000);
     fetchClientes();
+    // Revocar acceso al email anterior y dar acceso al nuevo
+    if (emailAnterior && emailAnterior.includes("@")) llamarDrive("revocar", emailAnterior);
+    if (emailNuevo && emailNuevo.includes("@")) llamarDrive("compartir", emailNuevo);
   }
   async function registrarPagoParcial(cliente,monto){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
