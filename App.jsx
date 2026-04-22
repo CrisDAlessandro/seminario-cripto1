@@ -1182,6 +1182,12 @@ export default function App(){
     if (emailAnterior && emailAnterior.includes("@")) llamarDrive("revocar", emailAnterior);
     if (emailNuevo && emailNuevo.includes("@")) llamarDrive("compartir", emailNuevo);
   }
+  async function actualizarNombre(id, nuevoNombre) {
+    if (!nuevoNombre.trim()) return;
+    const {error} = await supabase.from("clientes").update({nombre: nuevoNombre.trim()}).eq("id", id);
+    if (error) { toast.error("No se pudo actualizar el nombre"); return; }
+    setClientes(prev => prev.map(c => c.id === id ? {...c, nombre: nuevoNombre.trim()} : c));
+  }
   async function registrarPagoParcial(cliente,monto){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
     if(monto>safeNum(cliente.deuda_restante)){toast.error(`El monto supera la deuda actual (USD ${cliente.deuda_restante})`);return;}
@@ -1287,6 +1293,7 @@ export default function App(){
     ingresos.forEach(i=>{
       if(!i.fecha_pago)return;
       const key=monthKey(i.fecha_pago);
+      if(key<"2026-03")return; // solo desde marzo 2026 en adelante
       if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,total:0,vM:0,vA:0,vC:0});
       const r=map.get(key);const m=Number(i.monto||0);
       if(i.servicio==="mensual"){r.mensual+=m;r.vM++;}
@@ -1625,8 +1632,11 @@ export default function App(){
                       <tr key={c.id}>
                         <td style={{...S.td,fontWeight:700}}>
                           <div style={{display:"flex",alignItems:"center",gap:7}}>
-                            <span style={{cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</span>
-                            {nuevosEsteMes.has(c.id)&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:999,background:t.accentGrad,color:"#0f172a"}}>NUEVO</span>}
+                            <input value={c.nombre||""} 
+                              onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,nombre:e.target.value}:cl))}
+                              onBlur={e=>actualizarNombre(c.id,e.target.value)}
+                              style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,fontWeight:700,boxSizing:"border-box",background:t.inputBg,color:t.accent,cursor:"text"}}/>
+                            {nuevosEsteMes.has(c.id)&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:999,background:t.accentGrad,color:"#0f172a",whiteSpace:"nowrap"}}>NUEVO</span>}
                           </div>
                         </td>
                         <td style={S.td}>
