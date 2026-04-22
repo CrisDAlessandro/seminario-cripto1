@@ -164,7 +164,7 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
 }
 
 // ─── Drive helper ─────────────────────────────────────────────────────────────
-async function llamarDrive(accion: "compartir" | "revocar", email: string) {
+async function llamarDrive(accion, email) {
   try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drive-access`;
     const res = await fetch(url, {
