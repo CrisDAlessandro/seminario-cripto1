@@ -738,7 +738,7 @@ function BarList({items,t}){
 
 function BreakdownCard({title,breakdown,t}){
   const S=makeS(t);
-  const items=[{key:"mensual",label:"Plan inversor mensual"},{key:"anual",label:"Plan inversor anual"},{key:"clases",label:"Clases"}];
+  const items=[{key:"mensual",label:"Plan trader"},{key:"anual",label:"Plan inversor"},{key:"clases",label:"Clases"}];
   return(
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
@@ -802,7 +802,7 @@ function LineChart({ingresos,t}){
 function PieChart({breakdown,title,t}){
   const S=makeS(t);
   const[hov,setHov]=useState(null);
-  const slices=[{key:"mensual",label:"Plan inversor mensual",color:t.accent},{key:"anual",label:"Plan inversor anual",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"}];
+  const slices=[{key:"mensual",label:"Plan trader",color:t.accent},{key:"anual",label:"Plan inversor",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"}];
   const total=slices.reduce((a,s)=>a+safeNum(breakdown[s.key]),0);
   if(total===0)return(<div style={S.card}><h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:12}}>{title}</h3><div style={{color:t.textMuted}}>Sin datos disponibles.</div></div>);
   const CX=90,CY=90,R=72,RI=40;let angle=-Math.PI/2;
@@ -899,8 +899,8 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         {/* Servicio al lado del nombre — así el usuario elige clases antes de ver el campo email */}
         <Field label="Servicio" t={t}>
           <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s),email:s==="clases"?"":form.email});}}>
-            <option value="mensual">Plan inversor mensual</option>
-            <option value="anual">Plan inversor anual</option>
+            <option value="mensual">Plan trader</option>
+            <option value="anual">Plan inversor</option>
             <option value="clases">Clases</option>
           </select>
         </Field>
@@ -1096,8 +1096,11 @@ export default function App(){
 
   async function guardarCliente(){
     const v=validateForm(form);if(!v)return;
-    const dup=clientes.find(c=>c.email?.toLowerCase()===v.email);
-    if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
+    // Solo validar duplicado de email si hay email y no es clases
+    if(form.servicio!=="clases"&&v.email){
+      const dup=clientes.find(c=>c.email?.toLowerCase()===v.email);
+      if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
+    }
     setGuardando(true);
     const payload=buildPayload(form,v.nombre,v.email);
     const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
