@@ -983,8 +983,8 @@ function HistorialView({t}){
                     <td style={{...S.td,fontSize:13}}>{h.usuario_email||"-"}</td>
                     <td style={S.td}><span style={badge(h.accion)}>{h.accion||"-"}</span></td>
                     <td style={{...S.td,fontWeight:600}}>{h.detalle?.nombre||h.entidad||"-"}</td>
-                    <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      {h.detalle?Object.entries(h.detalle).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · ").slice(0,90):"—"}
+                    <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:320,wordBreak:"break-word",whiteSpace:"normal",lineHeight:1.5}}>
+                      {h.detalle?Object.entries(h.detalle).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · "):"—"}
                     </td>
                   </tr>
                 ))}
