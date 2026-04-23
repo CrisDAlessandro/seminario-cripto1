@@ -22,7 +22,36 @@ function traducirError(msg) {
   return msg;
 }
 
-// ─── Date input dark mode ─────────────────────────────────────────────────────
+// ─── CSS responsivo global ────────────────────────────────────────────────────
+const MOBILE_CSS = `
+  *{box-sizing:border-box;}
+  @media(max-width:640px){
+    .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
+    .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
+    .sc-nav button,.sc-nav a{font-size:12px!important;padding:8px 6px!important;text-align:center!important;}
+    .sc-pad{padding:16px!important;}
+    .sc-criticos{grid-template-columns:1fr!important;}
+    .sc-metrics{grid-template-columns:repeat(2,1fr)!important;}
+    .sc-table-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;}
+    .sc-card-row{flex-direction:column!important;}
+    .sc-hide-mobile{display:none!important;}
+    .sc-filters{gap:6px!important;}
+    .sc-filters button{font-size:11px!important;padding:5px 10px!important;}
+    .sc-form-grid{grid-template-columns:1fr!important;}
+    .sc-hist-table td,.sc-hist-table th{padding:8px!important;font-size:12px!important;}
+    .sc-tl-item{flex-direction:column!important;gap:4px!important;}
+  }
+  @keyframes pulse{0%,100%{opacity:.7}50%{opacity:.3}}
+`;
+
+function injectCSS() {
+  if (document.getElementById("sc-mobile-css")) return;
+  const el = document.createElement("style");
+  el.id = "sc-mobile-css";
+  el.textContent = MOBILE_CSS;
+  document.head.appendChild(el);
+}
+injectCSS();
 function applyDateColorScheme(dark) {
   let el = document.getElementById("sc-date-scheme");
   if (!el) { el = document.createElement("style"); el.id = "sc-date-scheme"; document.head.appendChild(el); }
@@ -562,7 +591,7 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
                   {tlRows.map(item=>{
                     const{icon,color,bg}=tipoStyle(item.tipo);
                     return(
-                      <div key={item.id} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:bg,border:`1px solid ${t.cardBorder}`}}>
+                      <div key={item.id} className="sc-tl-item" style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:bg,border:`1px solid ${t.cardBorder}`}}>
                         <div style={{fontSize:16,flexShrink:0,lineHeight:1.5}}>{icon}</div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -891,7 +920,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         </div>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
+      <div className="sc-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
         <Field label="Nombre y apellido" t={t}>
           <input autoFocus style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
@@ -973,8 +1002,8 @@ function HistorialView({t}){
         <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros en las últimas 24 horas.</div>
       ):(
         <>
-          <div style={{overflowX:"auto"}}>
-            <table style={S.table}>
+          <div className="sc-table-wrap" style={{overflowX:"auto"}}>
+            <table className="sc-hist-table" style={S.table}>
               <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente","Detalle"]} t={t}/></thead>
               <tbody>
                 {pag.rows.map(h=>(
@@ -1426,35 +1455,29 @@ export default function App(){
       {pagoCliente&&<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
-      <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}}>
+      <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap"}}>
+        <div className="sc-header" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <img src={LOGO_SRC} alt="Logo" style={{width:44,height:44,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
-              <h1 style={{margin:0,fontSize:24,fontWeight:900,color:t.text,letterSpacing:"-0.03em"}}>Seminario Cripto</h1>
-              <div style={{color:t.textMuted,fontSize:13,marginTop:2}}>Panel de gestión comercial y operativa</div>
+              <h1 style={{margin:0,fontSize:22,fontWeight:900,color:t.text,letterSpacing:"-0.03em"}}>Seminario Cripto</h1>
+              <div className="sc-hide-mobile" style={{color:t.textMuted,fontSize:13,marginTop:2}}>Panel de gestión comercial y operativa</div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            {/* Búsqueda rápida — mismo estilo que botones de navegación */}
-            <button onClick={()=>setBusquedaRapida(true)} style={navBtn(false)}>
-              🔍 Búsqueda rápida
-            </button>
+          <div className="sc-nav" style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <button onClick={()=>setBusquedaRapida(true)} style={navBtn(false)}>🔍 Buscar</button>
             <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
               Operativa
-              {totalCriticos>0&&<span style={{marginLeft:7,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"2px 7px",verticalAlign:"middle"}}>{totalCriticos}</span>}
+              {totalCriticos>0&&<span style={{marginLeft:5,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:10,fontWeight:800,padding:"1px 5px",verticalAlign:"middle"}}>{totalCriticos}</span>}
             </button>
             <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
-            <button style={{...btn(false,true),padding:"10px 18px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo cliente"}</button>
-            <button onClick={()=>setDark(!dark)} title={dark?"Modo claro":"Modo oscuro"}
-              style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:16}}>
-              {dark?"☀":"☾"}
-            </button>
-            <button onClick={logout} style={{padding:"10px 16px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:14}}>Salir</button>
+            <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
+            <button onClick={()=>setDark(!dark)} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15}}>{dark?"☀":"☾"}</button>
+            <button onClick={logout} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:13}}>Salir</button>
           </div>
         </div>
 
@@ -1525,7 +1548,7 @@ export default function App(){
             <BreakdownCard title="Ingresos totales por tipo" breakdown={dashStats.bkTotal} t={t}/>
             {/* Detalle ingresos con filtro fecha */}
             <div ref={ingRef} style={S.card}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+              <div className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
                 <h3 style={{margin:0,color:t.text,fontWeight:700,fontSize:16}}>Detalle de ingresos</h3>
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1573,7 +1596,7 @@ export default function App(){
         {activeView==="operativa"&&(
           <>
             {/* Métricas */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
+            <div className="sc-metrics" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
               {[
                 ["Activos",resumen.activos,false,null],
                 ["En gracia",resumen.gracia,false,null],
@@ -1602,7 +1625,7 @@ export default function App(){
                 </h3>
                 <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Clic en el nombre del cliente para ver su ficha completa.</div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
+              <div className="sc-criticos" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
                 {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
                 <CriticosPanel titulo="Por vencer" badgeBg="#fff7ed" badgeColor="#9a3412"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
@@ -1651,7 +1674,7 @@ export default function App(){
                   Exportar Excel
                 </button>
               </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+              <div className="sc-filters" style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
                 {[
                   ["Todos","todos","#6b7280"],
                   ["Activos","activo","#22c55e"],
@@ -1670,7 +1693,7 @@ export default function App(){
               <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
                 <input style={{...S.input,maxWidth:340}} placeholder="Buscar por nombre, email o teléfono" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
               </div>
-              <div style={{overflowX:"auto"}}>
+              <div className="sc-table-wrap" style={{overflowX:"auto"}}>
                 <table style={S.table}>
                   <thead><TableHeader cols={["Cliente","Email","Servicio","Vencimiento","Días","Estado","Acciones"]} t={t}/></thead>
                   <tbody>
@@ -1836,7 +1859,7 @@ export default function App(){
                     const meses=mesesGracia(c.monto);
                     const diasDesde=diffDays(parseISODate(c.fecha_inicio),getToday());
                     return(
-                      <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a0a0a":"#fff",border:"1px solid #fca5a5",gap:10,flexWrap:"wrap"}}>
+                      <div key={c.id} className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a0a0a":"#fff",border:"1px solid #fca5a5",gap:10,flexWrap:"wrap"}}>
                         <div style={{cursor:"pointer"}} onClick={()=>setClienteDetalle(c)}>
                           <span style={{fontWeight:700,color:t.accent,fontSize:14}}>{c.nombre}</span>
                           <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · Pagó USD {c.monto} · Debe USD {c.deuda_restante}</span>
@@ -1853,10 +1876,10 @@ export default function App(){
             )}
 
             {/* Resumen mensual */}
-            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1.2fr) minmax(0,0.8fr)",gap:24}}>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:24}}>
               <div style={S.card}>
                 <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Resumen mensual</h3>
-                <div style={{overflowX:"auto"}}>
+                <div className="sc-table-wrap" style={{overflowX:"auto"}}>
                   <table style={S.table}>
                     <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total","Tendencia"]} t={t}/></thead>
                     <tbody>
