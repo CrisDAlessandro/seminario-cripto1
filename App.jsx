@@ -1105,7 +1105,7 @@ export default function App(){
     const payload=buildPayload(form,v.nombre,v.email);
     const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
     if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,ins.fecha_inicio,ins.notas)]);
+    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
     await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
@@ -1129,17 +1129,32 @@ export default function App(){
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
-    let fb=toISODate(today);
-    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
-    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(fb,dur));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
+
+    // Calcular días restantes del plan
+    // Si está vencido: le quedan (dur - días_pasados_desde_vencimiento)
+    // Si está activo/por vencer: arranca desde el vencimiento
+    let diasRestantes = dur;
+    let fb = toISODate(today); // fecha_inicio = hoy (es cuando paga)
+
+    if (va && dur > 0) {
+      const due = parseISODate(va);
+      if (today > due) {
+        // Está vencido — calcular cuántos días pasaron desde el vencimiento
+        const diasVencido = diffDays(due, today);
+        diasRestantes = Math.max(1, dur - diasVencido);
+      }
+      // Si está activo o en gracia sin vencer aún, da los 30 días completos
+    }
+
+    const nv = cliente.servicio==="clases"||dur<=0 ? null : toISODate(addDays(toISODate(today), diasRestantes));
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto}`,{servicio:cliente.servicio,monto:cliente.monto});
-    toast.success(`✓ ${cliente.nombre} renovado${nv?` — nuevo vencimiento: ${formatDate(nv)}`:""}`);refetch();
-    llamarDrive("compartir", (cliente.email||"").trim().toLowerCase()); // en paralelo
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
+    toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
+    llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
   }
   async function eliminarClienteConfirmado(cliente){
     // Quitar de pantalla inmediatamente sin destello
