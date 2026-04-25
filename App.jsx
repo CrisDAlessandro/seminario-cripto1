@@ -192,32 +192,34 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
   }catch(_){}
 }
 
-// ─── Drive helper ─────────────────────────────────────────────────────────────
+// ─── Drive helper con reintentos ─────────────────────────────────────────────
 async function llamarDrive(accion, email) {
   if(!email||!email.includes("@")) return;
-  try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    // Obtener el JWT de la sesión activa del usuario
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const url = `${supabaseUrl}/functions/v1/drive-access`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-      body: JSON.stringify({ accion, email }),
-    });
-    const data = await res.json();
-    if(data.ok){
-      console.log(`Drive ✓ ${accion}: ${email}`);
-    } else {
-      console.warn(`Drive error ${accion}:`, data.error||data);
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const url = `${supabaseUrl}/functions/v1/drive-access`;
+  
+  for(let intento = 1; intento <= 3; intento++) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ accion, email }),
+      });
+      const data = await res.json();
+      if(data.ok) {
+        console.log(`Drive ✓ ${accion}: ${email}`);
+        return; // éxito, salir
+      }
+      console.warn(`Drive intento ${intento} falló:`, data.error||data);
+    } catch(err) {
+      console.warn(`Drive intento ${intento} error:`, err);
     }
-  } catch (err) {
-    console.warn("Drive fetch error:", err);
+    // Esperar antes de reintentar (500ms, 1500ms)
+    if(intento < 3) await new Promise(r => setTimeout(r, intento * 500));
   }
+  console.warn(`Drive: falló después de 3 intentos para ${email}`);
 }
 
 // ─── usePagination ────────────────────────────────────────────────────────────
