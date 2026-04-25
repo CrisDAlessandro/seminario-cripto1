@@ -421,9 +421,9 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
   );
 }
 
-// ─── Panel detalle cliente ────────────────────────────────────────────────────
-const TL_PAGE = 5; // ítems por página en el timeline
-function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,t}){
+// ─── Panel detalle cliente — historial unificado por nombre ───────────────────
+const TL_PAGE = 5;
+function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
   const [nuevaNota,setNuevaNota]=useState("");
@@ -433,24 +433,33 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
   const [loadingTL,setLoadingTL]=useState(true);
   const [tlPage,setTlPage]=useState(1);
 
-  const pagosTotales=useMemo(()=>
-    ingresos.filter(i=>i.cliente_id===cliente.id)
-      .sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))
-  ,[ingresos,cliente.id]);
-  const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
+  // Buscar TODOS los registros con el mismo nombre (mismo cliente, distintos servicios)
+  const mismoNombre = useMemo(()=>
+    (allClientes||[]).filter(c=>c.nombre?.trim().toLowerCase()===cliente.nombre?.trim().toLowerCase())
+  ,[allClientes,cliente.nombre]);
 
-  // Timeline pagination
+  const todosLosIds = useMemo(()=>mismoNombre.map(c=>c.id),[mismoNombre]);
+
+  // Todos los pagos de todos los registros con ese nombre
+  const pagosTotales=useMemo(()=>
+    ingresos.filter(i=>todosLosIds.includes(i.cliente_id))
+      .sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))
+  ,[ingresos,todosLosIds]);
+
+  const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
+  const totalDeuda=mismoNombre.reduce((a,c)=>a+safeNum(c.deuda_restante),0);
+
   const tlTotal=Math.max(1,Math.ceil(timeline.length/TL_PAGE));
-  const tlRows=useMemo(()=>{
-    const s=(tlPage-1)*TL_PAGE;
-    return timeline.slice(s,s+TL_PAGE);
-  },[timeline,tlPage]);
+  const tlRows=useMemo(()=>{const s=(tlPage-1)*TL_PAGE;return timeline.slice(s,s+TL_PAGE);},[timeline,tlPage]);
 
   useEffect(()=>{
-    supabase.from("notas_cliente").select("*").eq("cliente_id",cliente.id)
+    // Cargar timeline de todos los IDs del mismo cliente
+    if(todosLosIds.length===0){setLoadingTL(false);return;}
+    supabase.from("notas_cliente").select("*")
+      .in("cliente_id", todosLosIds)
       .order("created_at",{ascending:false})
       .then(({data})=>{setTimeline(data||[]);setLoadingTL(false);});
-  },[cliente.id]);
+  },[todosLosIds.join(",")]);
 
   async function enviarNota(){
     if(!nuevaNota.trim())return;
@@ -462,8 +471,7 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
     if(!error){
       const nuevo={id:Date.now(),created_at:new Date().toISOString(),usuario_email:userEmail||"—",tipo:"nota",contenido:nuevaNota.trim(),detalle:null};
       setTimeline(prev=>[nuevo,...prev]);
-      setTlPage(1);
-      setNuevaNota("");
+      setTlPage(1);setNuevaNota("");
       onNotaGuardada&&onNotaGuardada();
     }
     setSending(false);
@@ -489,23 +497,11 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
     return tipo;
   }
 
-  // Overlay cierra al tocar fuera del card
   return(
-    <div
-      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.82)",zIndex:1500,
-        display:"flex",alignItems:"flex-start",justifyContent:"center",
-        padding:"24px 16px",overflowY:"auto"}}
-      onClick={onClose}
-    >
-      {/* Card — stopPropagation evita que el click interno cierre el modal */}
-      <div
-        onClick={e=>e.stopPropagation()}
-        style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,
-          maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",
-          marginTop:8,marginBottom:24,
-          display:"flex",flexDirection:"column"}}
-      >
-        {/* ── Header fijo ── */}
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.82)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
+
+        {/* Header */}
         <div style={{padding:"24px 28px 0",flexShrink:0}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
             <div>
@@ -523,13 +519,12 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
                 )}
               </div>
             </div>
-            {/* Cerrar siempre visible en top-right */}
             <button onClick={onClose} style={{...btn(false),padding:"8px 14px",flexShrink:0,marginLeft:12}}>Cerrar</button>
           </div>
 
-          {/* KPIs */}
+          {/* KPIs unificados */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
-            {[["Pagos registrados",pagosTotales.length],["Total pagado",`USD ${totalPagado}`],["Deuda",cliente.deuda_restante>0?`USD ${cliente.deuda_restante}`:"—"]].map(([l,v])=>(
+            {[["Pagos totales",pagosTotales.length],["Total cobrado",`USD ${totalPagado}`],["Deuda",totalDeuda>0?`USD ${totalDeuda}`:"—"]].map(([l,v])=>(
               <div key={l} style={{background:t.dark?"#0d1526":"#f8f6f3",borderRadius:12,padding:"12px 14px",border:`1px solid ${t.cardBorder}`}}>
                 <div style={{fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:5}}>{l}</div>
                 <div style={{fontSize:18,fontWeight:800,color:t.text}}>{v}</div>
@@ -537,32 +532,27 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
             ))}
           </div>
 
-          {/* Datos */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
-            {[
-              ["Servicio",svcLabel(cliente.servicio)],
-              ["Estado",<span style={badgeStyle(cliente.estadoSistema)}>{cliente.estadoSistema?.toUpperCase()}</span>],
-              ["Vencimiento",formatDate(cliente.vencimiento)],
-              ["Días restantes",cliente.dias!=null?String(cliente.dias):"—"],
-              ["Inicio",formatDate(cliente.fecha_inicio)],
-              ["Teléfono",cliente.telefono||"—"],
-            ].map(([l,v])=>(
-              <div key={l}>
-                <div style={{fontSize:10,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:3}}>{l}</div>
-                <div style={{fontSize:13,color:t.text,fontWeight:500}}>{v}</div>
-              </div>
-            ))}
+          {/* Servicios activos — uno por cada registro con ese nombre */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Servicios activos</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {mismoNombre.map(c=>(
+                <div key={c.id} style={{padding:"8px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`,fontSize:13}}>
+                  <span style={{fontWeight:700,color:t.accent}}>{svcLabel(c.servicio)}</span>
+                  <span style={{color:t.textMuted,marginLeft:8}}>{c.vencimiento?`vence ${formatDate(c.vencimiento)}`:c.servicio==="clases"?"activo":""}</span>
+                  {safeNum(c.deuda_restante)>0&&<span style={{color:"#ef4444",marginLeft:8,fontWeight:700}}>debe USD {c.deuda_restante}</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* ── Contenido scrollable ── */}
+        {/* Contenido scrollable */}
         <div style={{padding:"0 28px 28px",flexShrink:0}}>
 
           {/* Nueva nota */}
           <div style={{borderTop:`1px solid ${t.tdBorder}`,paddingTop:18,marginBottom:18}}>
-            <label style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:8}}>
-              Agregar nota
-            </label>
+            <label style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:8}}>Agregar nota</label>
             <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
               <textarea value={nuevaNota} onChange={e=>setNuevaNota(e.target.value)}
                 onKeyDown={e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey))enviarNota();}}
@@ -580,13 +570,13 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
           {/* Timeline paginado */}
           <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <h4 style={{margin:0,color:t.text,fontSize:14,fontWeight:700}}>Historial del cliente</h4>
+              <h4 style={{margin:0,color:t.text,fontSize:14,fontWeight:700}}>Historial completo</h4>
               {timeline.length>0&&<span style={{color:t.textMuted,fontSize:12}}>{timeline.length} registro{timeline.length!==1?"s":""}</span>}
             </div>
             {loadingTL?(
-              <div style={{color:t.textMuted,fontSize:13,padding:"8px 0"}}>Cargando...</div>
+              <div style={{color:t.textMuted,fontSize:13}}>Cargando...</div>
             ):timeline.length===0?(
-              <div style={{color:t.textMuted,fontSize:13,padding:"8px 0"}}>Sin registros todavía.</div>
+              <div style={{color:t.textMuted,fontSize:13}}>Sin registros todavía.</div>
             ):(
               <>
                 <div style={{display:"grid",gap:8}}>
@@ -601,16 +591,13 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
                             <span style={{fontSize:11,color:t.textMuted,whiteSpace:"nowrap"}}>{formatDateTime(item.created_at)}</span>
                           </div>
                           {item.contenido&&<div style={{fontSize:12,color:t.text,marginTop:3,lineHeight:1.5}}>{item.contenido}</div>}
-                          {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:2}}>
-                            {Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}
-                          </div>}
+                          {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:2}}>{Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}</div>}
                           <div style={{fontSize:11,color:t.textMuted,marginTop:2}}>por {item.usuario_email}</div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                {/* Paginación inline del timeline */}
                 {tlTotal>1&&(
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
                     <span style={{fontSize:12,color:t.textMuted}}>Página {tlPage} de {tlTotal}</span>
@@ -627,11 +614,11 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
             )}
           </div>
 
-          {/* Pagos en ingresos */}
+          {/* Todos los pagos unificados */}
           {pagosTotales.length>0&&(
             <div style={{borderTop:`1px solid ${t.tdBorder}`,paddingTop:16,marginBottom:18}}>
-              <h4 style={{margin:"0 0 10px",color:t.text,fontSize:14,fontWeight:700}}>Pagos en tabla de ingresos</h4>
-              <div style={{borderRadius:10,border:`1px solid ${t.cardBorder}`,overflow:"hidden"}}>
+              <h4 style={{margin:"0 0 10px",color:t.text,fontSize:14,fontWeight:700}}>Pagos registrados</h4>
+              <div style={{borderRadius:10,border:`1px solid ${t.cardBorder}`,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
                 <table style={S.table}>
                   <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
                     <th key={h} style={{...S.td,fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
@@ -659,7 +646,6 @@ function ClienteDetailModal({cliente,ingresos,userEmail,onClose,onAbrirRenovar,o
     </div>
   );
 }
-
 // ─── PagoModal ────────────────────────────────────────────────────────────────
 function PagoModal({cliente,onClose,onConfirm,t}){
   const S=makeS(t);const btn=makeBtn(t);
@@ -1448,7 +1434,7 @@ export default function App(){
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
-        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
+        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
           onNotaGuardada={()=>toast.success("Nota guardada")}
