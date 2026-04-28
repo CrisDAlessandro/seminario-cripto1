@@ -1484,7 +1484,7 @@ export default function App(){
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
-              <MetricCard title="Clientes activos" value={resumen.activos} t={t}/>
+              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
@@ -1530,6 +1530,7 @@ export default function App(){
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
+              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
