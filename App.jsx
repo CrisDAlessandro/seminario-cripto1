@@ -1587,7 +1587,7 @@ export default function App(){
             {/* Métricas */}
             <div className="sc-metrics" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
               {[
-                ["Activos",resumen.activos,false,null],
+                ["Clientes",resumen.activos+resumen.gracia+resumen.sacar,false,null],
                 ["En gracia",resumen.gracia,false,null],
                 ["Vencen esta semana",vencenEstaSemana,false,null],
                 ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
