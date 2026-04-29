@@ -1362,22 +1362,19 @@ export default function App(){
   const trendMes=ingMesAnt>0?Math.round(((ingMes-ingMesAnt)/ingMesAnt)*100):null;
   const dashStats=useMemo(()=>({ingMes,ventasMes:curMI.length,bkMes:buildBreakdown(curMI),bkTotal:buildBreakdown(ingresos)}),[ingresos,curMI,ingMes]);
 
-  // Venta promedio por día — solo nuevos clientes (primer pago) de plan trader e inversor
-  // Se divide por la cantidad de días del mes que tuvieron al menos una venta nueva
+  // Promedio de ventas nuevas por día del mes actual
+  // = total nuevos clientes (planes) este mes / días transcurridos del mes
   const ventaPromedioDia=useMemo(()=>{
-    // Buscar clientes cuyo PRIMER ingreso fue este mes (nuevos clientes del mes)
     const nuevosDelMes=curMI.filter(i=>{
       if(i.servicio!=="mensual"&&i.servicio!=="anual")return false;
-      // Es nuevo si no tiene ingresos anteriores al mes actual
-      const ingresosAnteriores=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
-      return ingresosAnteriores.length===0;
+      const anteriores=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
+      return anteriores.length===0;
     });
-    if(nuevosDelMes.length===0)return 0;
-    // Días únicos con ventas nuevas
-    const diasConVentas=new Set(nuevosDelMes.map(i=>i.fecha_pago?.slice(0,10)).filter(Boolean));
-    const totalNuevos=nuevosDelMes.reduce((a,i)=>a+safeNum(i.monto),0);
-    return Math.round((totalNuevos/diasConVentas.size)*10)/10;
-  },[curMI,ingresos]);
+    const diasTranscurridos=today.getDate(); // día actual del mes
+    if(diasTranscurridos===0)return 0;
+    const promedio=nuevosDelMes.length/diasTranscurridos;
+    return Math.round(promedio*100)/100;
+  },[curMI,ingresos,today]);
   const resumenMensual=useMemo(()=>{
     const map=new Map();
     ingresos.forEach(i=>{
@@ -1531,7 +1528,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="nuevos clientes ÷ días con ventas" t={t}/>
+              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="nuevos planes ÷ días con ventas" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
@@ -1542,7 +1539,64 @@ export default function App(){
               <PieChart breakdown={dashStats.bkMes} title="Ingresos por tipo — mes actual" t={t}/>
               <PieChart breakdown={dashStats.bkTotal} title="Ingresos totales por tipo" t={t}/>
             </div>
-            {/* Breakdown por vendedor */}
+            {/* Ventas por día — histórico mensual */}
+            {(()=>{
+              const hoy=getToday();
+              const data=resumenConTrend.map(r=>{
+                const ingMesR=ingresos.filter(i=>
+                  i.fecha_pago&&monthKey(i.fecha_pago)===r.key&&
+                  (i.servicio==="mensual"||i.servicio==="anual")
+                );
+                const nuevos=ingMesR.filter(i=>{
+                  const ant=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
+                  return ant.length===0;
+                });
+                // Para el mes actual usar días transcurridos, para meses pasados usar días del mes
+                const [y,m]=r.key.split("-");
+                const esMesActual=r.key===curMK;
+                const dias=esMesActual?hoy.getDate():new Date(Number(y),Number(m),0).getDate();
+                const vpd=dias>0?Math.round((nuevos.length/dias)*100)/100:0;
+                return{key:r.key,nuevos:nuevos.length,dias,vpd,esMesActual};
+              });
+              const maxVpd=Math.max(...data.map(d=>d.vpd),0.01);
+              return(
+                <div style={S.card}>
+                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Ventas por día — histórico</h3>
+                  <div style={{color:t.textMuted,fontSize:13,marginBottom:18}}>Nuevos clientes (planes) ÷ días transcurridos del mes</div>
+                  <div style={{display:"grid",gap:12}}>
+                    {data.map(d=>{
+                      const pct=Math.max((d.vpd/maxVpd)*100,d.vpd>0?4:0);
+                      return(
+                        <div key={d.key}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:13,color:t.text}}>
+                            <span style={{fontWeight:d.esMesActual?800:500}}>
+                              {monthLabel(d.key)}{d.esMesActual?" ★":""}
+                            </span>
+                            <div style={{display:"flex",alignItems:"center",gap:12}}>
+                              <span style={{color:t.textMuted,fontSize:12}}>{d.nuevos} ventas en {d.dias} días</span>
+                              <strong style={{color:d.vpd>=1.5?"#22c55e":d.vpd>=1?"#f59e0b":"#ef4444",fontSize:15}}>
+                                {d.vpd} v/día
+                              </strong>
+                            </div>
+                          </div>
+                          <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
+                            <div style={{width:`${pct}%`,height:"100%",borderRadius:999,
+                              background:d.vpd>=1.5?"#22c55e":d.vpd>=1?"#f59e0b":"#ef4444"}}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{marginTop:16,display:"flex",gap:16,fontSize:12,color:t.textMuted,flexWrap:"wrap"}}>
+                    <span style={{color:"#22c55e",fontWeight:700}}>● ≥ 1.5 ventas/día — excelente</span>
+                    <span style={{color:"#f59e0b",fontWeight:700}}>● ≥ 1 venta/día — bueno</span>
+                    <span style={{color:"#ef4444",fontWeight:700}}>● &lt; 1 venta/día — a mejorar</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Ventas por canal */}
             {(() => {
               const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
               computed.forEach(c=>{
@@ -1615,7 +1669,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="nuevos clientes ÷ días con ventas" t={t}/>
+              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="nuevos planes ÷ días con ventas" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
@@ -1997,7 +2051,7 @@ export default function App(){
                 <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Resumen mensual</h3>
                 <div className="sc-table-wrap" style={{overflowX:"auto"}}>
                   <table style={S.table}>
-                    <thead><TableHeader cols={["Mes","Mensual","Anual","Clases","Total","Tendencia"]} t={t}/></thead>
+                    <thead><TableHeader cols={["Mes","Plan trader","Plan inversor","Clases","Total","Tendencia"]} t={t}/></thead>
                     <tbody>
                       {resumenConTrend.map(r=>(
                         <tr key={r.key}>
