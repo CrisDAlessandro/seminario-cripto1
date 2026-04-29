@@ -943,17 +943,17 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
           </Field>
         )}
-        <Field label="Deuda restante (USD)" t={t}>
-          <input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/>
-        </Field>
-        <Field label="Notas" spanAll t={t}>
-          <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
-        </Field>
         <Field label="Recibe la venta" t={t}>
           <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
             <option value="">Cristian (directo)</option>
             {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
           </select>
+        </Field>
+        <Field label="Deuda restante (USD)" t={t}>
+          <input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/>
+        </Field>
+        <Field label="Notas" spanAll t={t}>
+          <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
         </Field>
       </div>
       <div style={{marginTop:20,display:"flex",justifyContent:"flex-end",gap:10}}>
@@ -1362,14 +1362,22 @@ export default function App(){
   const trendMes=ingMesAnt>0?Math.round(((ingMes-ingMesAnt)/ingMesAnt)*100):null;
   const dashStats=useMemo(()=>({ingMes,ventasMes:curMI.length,bkMes:buildBreakdown(curMI),bkTotal:buildBreakdown(ingresos)}),[ingresos,curMI,ingMes]);
 
-  // Venta promedio por día — solo planes (mensual + anual), excluye clases
+  // Venta promedio por día — solo nuevos clientes (primer pago) de plan trader e inversor
+  // Se divide por la cantidad de días del mes que tuvieron al menos una venta nueva
   const ventaPromedioDia=useMemo(()=>{
-    const planesDelMes=curMI.filter(i=>i.servicio==="mensual"||i.servicio==="anual");
-    if(planesDelMes.length===0)return 0;
-    const diasDelMes=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
-    const totalPlanes=planesDelMes.reduce((a,i)=>a+safeNum(i.monto),0);
-    return Math.round((totalPlanes/diasDelMes)*10)/10;
-  },[curMI]);
+    // Buscar clientes cuyo PRIMER ingreso fue este mes (nuevos clientes del mes)
+    const nuevosDelMes=curMI.filter(i=>{
+      if(i.servicio!=="mensual"&&i.servicio!=="anual")return false;
+      // Es nuevo si no tiene ingresos anteriores al mes actual
+      const ingresosAnteriores=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
+      return ingresosAnteriores.length===0;
+    });
+    if(nuevosDelMes.length===0)return 0;
+    // Días únicos con ventas nuevas
+    const diasConVentas=new Set(nuevosDelMes.map(i=>i.fecha_pago?.slice(0,10)).filter(Boolean));
+    const totalNuevos=nuevosDelMes.reduce((a,i)=>a+safeNum(i.monto),0);
+    return Math.round((totalNuevos/diasConVentas.size)*10)/10;
+  },[curMI,ingresos]);
   const resumenMensual=useMemo(()=>{
     const map=new Map();
     ingresos.forEach(i=>{
@@ -1523,7 +1531,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="planes del mes ÷ días" t={t}/>
+              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="nuevos clientes ÷ días con ventas" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
@@ -1607,7 +1615,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="planes del mes ÷ días" t={t}/>
+              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="nuevos clientes ÷ días con ventas" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
