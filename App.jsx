@@ -1613,7 +1613,7 @@ export default function App(){
               if(!hasData)return null;
               return(
                 <div style={S.card}>
-                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción por canal</h3>
+                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción</h3>
                   <div style={{display:"grid",gap:16}}>
                     {VENDEDORES.map(v=>{
                       const st=vendedorStats[v];
@@ -1626,7 +1626,7 @@ export default function App(){
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
                             <span>{st.count} cliente{st.count!==1?"s":""}</span>
-                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>💸 USD {st.pendiente} pendiente</span>}
+                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
                             {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
                           </div>
                         </div>
@@ -2012,7 +2012,6 @@ export default function App(){
             {pendientesTransferencia.length>0&&(
               <div ref={pendRef} style={{...S.card,marginBottom:24,border:`2px solid #f59e0b`,background:dark?"#1a1200":"#fffbeb"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                  <span style={{fontSize:20}}>💸</span>
                   <div>
                     <h3 style={{margin:0,color:"#92400e",fontWeight:800,fontSize:17}}>
                       Ventas pendientes de recepción
