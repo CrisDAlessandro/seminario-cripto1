@@ -1574,23 +1574,23 @@ export default function App(){
                             </span>
                             <div style={{display:"flex",alignItems:"center",gap:12}}>
                               <span style={{color:t.textMuted,fontSize:12}}>{d.nuevos} ventas en {d.dias} días</span>
-                              <strong style={{color:d.vpd>=1.5?"#22c55e":d.vpd>=1?"#f59e0b":"#ef4444",fontSize:15}}>
+                              <strong style={{color:d.vpd>=2.5?"#22c55e":d.vpd>=1.5?"#f59e0b":"#ef4444",fontSize:15}}>
                                 {d.vpd} v/día
                               </strong>
                             </div>
                           </div>
                           <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
                             <div style={{width:`${pct}%`,height:"100%",borderRadius:999,
-                              background:d.vpd>=1.5?"#22c55e":d.vpd>=1?"#f59e0b":"#ef4444"}}/>
+                              background:d.vpd>=2.5?"#22c55e":d.vpd>=1.5?"#f59e0b":"#ef4444"}}/>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                   <div style={{marginTop:16,display:"flex",gap:16,fontSize:12,color:t.textMuted,flexWrap:"wrap"}}>
-                    <span style={{color:"#22c55e",fontWeight:700}}>● ≥ 1.5 ventas/día — excelente</span>
-                    <span style={{color:"#f59e0b",fontWeight:700}}>● ≥ 1 venta/día — bueno</span>
-                    <span style={{color:"#ef4444",fontWeight:700}}>● &lt; 1 venta/día — a mejorar</span>
+                    <span style={{color:"#22c55e",fontWeight:700}}>● ≥ 2.5 ventas/día — excelente</span>
+                    <span style={{color:"#f59e0b",fontWeight:700}}>● ≥ 1.5 ventas/día — bueno</span>
+                    <span style={{color:"#ef4444",fontWeight:700}}>● &lt; 1.5 ventas/día — a mejorar</span>
                   </div>
                 </div>
               );
