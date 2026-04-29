@@ -231,7 +231,8 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:""};
+const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg"];
+const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -718,7 +719,7 @@ function TableHeader({cols,t}){
   );
 }
 
-function MetricCard({title,value,sub,accent,trend,t}){
+function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
     <div style={{...S.card,borderTop:accent?`3px solid ${t.accent}`:undefined}}>
@@ -727,6 +728,7 @@ function MetricCard({title,value,sub,accent,trend,t}){
         {value}
         {trend!=null&&<span style={{fontSize:13,fontWeight:700,color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
+      {subValue!=null&&<div style={{marginTop:4,fontSize:13,color:t.textMuted,fontWeight:600}}>{subValue}</div>}
       {sub&&<div style={{marginTop:5,fontSize:12,color:t.textMuted}}>{sub}</div>}
     </div>
   );
@@ -947,6 +949,12 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         <Field label="Notas" spanAll t={t}>
           <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
         </Field>
+        <Field label="Recibe la venta" t={t}>
+          <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
+            <option value="">Cristian (directo)</option>
+            {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+          </select>
+        </Field>
       </div>
       <div style={{marginTop:20,display:"flex",justifyContent:"flex-end",gap:10}}>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
@@ -1104,7 +1112,9 @@ export default function App(){
   }
   function buildPayload(f,nombre,emailVal){
     const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
+    const vendedor=f.vendedor||"";
     return{...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
+      vendedor,transferido:vendedor===""?true:false,
       fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
   function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
@@ -1323,6 +1333,25 @@ export default function App(){
     return b;
   },[computed]);
   const totalDeuda=useMemo(()=>deudores.reduce((a,c)=>a+safeNum(c.deuda_restante),0),[deudores]);
+
+  // Ventas pendientes de transferencia a Cristian
+  const pendientesTransferencia=useMemo(()=>
+    computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido===false)
+  ,[computed]);
+
+  async function marcarTransferido(id){
+    const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
+    if(error){toast.error("No se pudo actualizar");return;}
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
+    toast.success("✓ Marcado como recibido");
+  }
+
+  async function actualizarVendedor(id,vendedor){
+    const transferido=vendedor===""?true:false;
+    const{error}=await supabase.from("clientes").update({vendedor,transferido}).eq("id",id);
+    if(error){toast.error("No se pudo actualizar");return;}
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor,transferido}:c));
+  }
   const today=getToday();
   const curMK=monthKey(toISODate(today));
   const prevMD=new Date(today.getFullYear(),today.getMonth()-1,1);
@@ -1332,6 +1361,15 @@ export default function App(){
   const ingMesAnt=prevMI.reduce((a,i)=>a+safeNum(i.monto),0);
   const trendMes=ingMesAnt>0?Math.round(((ingMes-ingMesAnt)/ingMesAnt)*100):null;
   const dashStats=useMemo(()=>({ingMes,ventasMes:curMI.length,bkMes:buildBreakdown(curMI),bkTotal:buildBreakdown(ingresos)}),[ingresos,curMI,ingMes]);
+
+  // Venta promedio por día — solo planes (mensual + anual), excluye clases
+  const ventaPromedioDia=useMemo(()=>{
+    const planesDelMes=curMI.filter(i=>i.servicio==="mensual"||i.servicio==="anual");
+    if(planesDelMes.length===0)return 0;
+    const diasDelMes=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const totalPlanes=planesDelMes.reduce((a,i)=>a+safeNum(i.monto),0);
+    return Math.round((totalPlanes/diasDelMes)*10)/10;
+  },[curMI]);
   const resumenMensual=useMemo(()=>{
     const map=new Map();
     ingresos.forEach(i=>{
@@ -1484,7 +1522,8 @@ export default function App(){
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
-              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} t={t}/>
+              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
+              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="planes del mes ÷ días" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
@@ -1495,6 +1534,43 @@ export default function App(){
               <PieChart breakdown={dashStats.bkMes} title="Ingresos por tipo — mes actual" t={t}/>
               <PieChart breakdown={dashStats.bkTotal} title="Ingresos totales por tipo" t={t}/>
             </div>
+            {/* Breakdown por vendedor */}
+            {(() => {
+              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
+              computed.forEach(c=>{
+                if(c.vendedor&&vendedorStats[c.vendedor]){
+                  vendedorStats[c.vendedor].total+=safeNum(c.monto);
+                  vendedorStats[c.vendedor].count+=1;
+                  if(!c.transferido)vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
+                }
+              });
+              const hasData=Object.values(vendedorStats).some(v=>v.count>0);
+              if(!hasData)return null;
+              return(
+                <div style={S.card}>
+                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas por canal</h3>
+                  <div style={{display:"grid",gap:16}}>
+                    {VENDEDORES.map(v=>{
+                      const st=vendedorStats[v];
+                      if(st.count===0)return null;
+                      return(
+                        <div key={v} style={{padding:"14px 16px",borderRadius:12,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                            <span style={{fontWeight:700,color:t.text,fontSize:15}}>{v}</span>
+                            <span style={{fontWeight:800,color:t.accent,fontSize:15}}>USD {st.total}</span>
+                          </div>
+                          <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
+                            <span>{st.count} cliente{st.count!==1?"s":""}</span>
+                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>💸 USD {st.pendiente} pendiente</span>}
+                            {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={S.card}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Evolución mensual</h3>
               {resumenConTrend.length===0?<div style={{color:t.textMuted}}>Sin datos históricos.</div>:(
@@ -1530,7 +1606,8 @@ export default function App(){
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
-              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} t={t}/>
+              <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
+              <MetricCard title="Promedio diario" value={`USD ${ventaPromedioDia}`} sub="planes del mes ÷ días" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
@@ -1587,20 +1664,21 @@ export default function App(){
             {/* Métricas */}
             <div className="sc-metrics" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:20}}>
               {[
-                ["Clientes",resumen.activos+resumen.gracia+resumen.sacar,false,null],
-                ["En gracia",resumen.gracia,false,null],
-                ["Vencen esta semana",vencenEstaSemana,false,null],
-                ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
-                ["Clases",resumen.clases,false,()=>clasesRef.current?.scrollIntoView({behavior:"smooth",block:"start"})],
-                ["Ingresos totales",`USD ${resumen.ingresos}`,true,null],
-              ].map(([l,v,a,onClick])=>(
+                ["Clientes",resumen.activos+resumen.gracia+resumen.sacar,false,null,`${resumen.activos} activos`],
+                ["En gracia",resumen.gracia,false,null,null],
+                ["Vencen esta semana",vencenEstaSemana,false,null,null],
+                ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),null],
+                ["Clases",resumen.clases,false,()=>clasesRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),null],
+                ["Ingresos totales",`USD ${resumen.ingresos}`,true,null,null],
+              ].map(([l,v,a,onClick,subVal])=>(
                 <div key={l} onClick={onClick||undefined}
                   style={{...S.card,borderTop:a?`3px solid ${t.accent}`:l==="Vencen esta semana"&&vencenEstaSemana>0?`3px solid #f59e0b`:undefined,cursor:onClick?"pointer":undefined,transition:"box-shadow 0.15s"}}
                   onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 20px rgba(0,0,0,0.15)";}}
                   onMouseLeave={e=>{if(onClick)e.currentTarget.style.boxShadow=S.card.boxShadow;}}>
                   <div style={{fontSize:11,color:t.textMuted,marginBottom:6,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
                   <div style={{fontSize:24,fontWeight:800,color:a?t.accent:l==="Vencen esta semana"&&vencenEstaSemana>0?"#f59e0b":t.text,letterSpacing:"-0.02em"}}>{v}</div>
-                  {onClick&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>{l==="Deudores"?"Clic para ir":"Clic para filtrar"}</div>}
+                  {subVal&&<div style={{fontSize:13,color:t.textMuted,fontWeight:600,marginTop:4}}>{subVal}</div>}
+                  {onClick&&<div style={{fontSize:11,color:t.textMuted,marginTop:4}}>{l==="Deudores"||l==="Clases"?"Clic para ir":"Clic para filtrar"}</div>}
                 </div>
               ))}
             </div>
@@ -1860,6 +1938,47 @@ export default function App(){
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Pendientes de transferencia */}
+            {pendientesTransferencia.length>0&&(
+              <div style={{...S.card,marginBottom:24,border:`2px solid #f59e0b`,background:dark?"#1a1200":"#fffbeb"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+                  <span style={{fontSize:20}}>💸</span>
+                  <div>
+                    <h3 style={{margin:0,color:"#92400e",fontWeight:800,fontSize:17}}>
+                      Pendientes de transferencia
+                      <span style={{marginLeft:10,background:"#f59e0b",color:"#fff",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px"}}>{pendientesTransferencia.length}</span>
+                    </h3>
+                    <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
+                      Ventas recibidas por Bahiano o los Leonardo — pendientes de enviarte a vos. Total: <strong style={{color:"#92400e"}}>USD {pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0)}</strong>
+                    </div>
+                  </div>
+                </div>
+                <div style={{display:"grid",gap:8}}>
+                  {pendientesTransferencia.map(c=>(
+                    <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
+                      <div>
+                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
+                        <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · USD {c.monto}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                        <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
+                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
+                        {/* Selector vendedor editable */}
+                        <select value={c.vendedor||""} onChange={e=>actualizarVendedor(c.id,e.target.value)}
+                          style={{...S.input,padding:"5px 10px",fontSize:12,width:"auto"}}>
+                          <option value="">Cristian (directo)</option>
+                          {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+                        </select>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió USD ${c.monto} de ${c.nombre}?`,()=>marcarTransferido(c.id),{label:"Recibido ✓"})}>
+                          Marcar recibido
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
