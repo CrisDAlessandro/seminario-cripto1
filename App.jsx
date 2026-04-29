@@ -1054,7 +1054,7 @@ export default function App(){
 
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
-  const ingRef=useRef(null);const critRef=useRef(null);
+  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -1339,11 +1339,14 @@ export default function App(){
     computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido===false)
   ,[computed]);
 
-  async function marcarTransferido(id){
+  async function marcarTransferido(id, cliente){
     const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
     setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
-    toast.success("✓ Marcado como recibido");
+    // Registrar en historial
+    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,monto:cliente?.monto});
+    await logNC(id,user?.email,"pago",`Transferencia recibida de ${cliente?.vendedor}. Monto: ${cliente?.monto} USD`,{vendedor:cliente?.vendedor,monto:cliente?.monto});
+    toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
   }
 
   async function actualizarVendedor(id,vendedor){
@@ -1610,7 +1613,7 @@ export default function App(){
               if(!hasData)return null;
               return(
                 <div style={S.card}>
-                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas por canal</h3>
+                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción por canal</h3>
                   <div style={{display:"grid",gap:16}}>
                     {VENDEDORES.map(v=>{
                       const st=vendedorStats[v];
@@ -1731,6 +1734,7 @@ export default function App(){
                 ["Vencen esta semana",vencenEstaSemana,false,null,null],
                 ["Deudores",resumen.deudores,false,()=>deudRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),null],
                 ["Clases",resumen.clases,false,()=>clasesRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),null],
+                ...(pendientesTransferencia.length>0?[["Pendientes",`${pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0)} USD`,false,()=>pendRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),"por recibir"]]:[]),
                 ["Ingresos totales",`USD ${resumen.ingresos}`,true,null,null],
               ].map(([l,v,a,onClick,subVal])=>(
                 <div key={l} onClick={onClick||undefined}
@@ -2006,16 +2010,16 @@ export default function App(){
 
             {/* Pendientes de transferencia */}
             {pendientesTransferencia.length>0&&(
-              <div style={{...S.card,marginBottom:24,border:`2px solid #f59e0b`,background:dark?"#1a1200":"#fffbeb"}}>
+              <div ref={pendRef} style={{...S.card,marginBottom:24,border:`2px solid #f59e0b`,background:dark?"#1a1200":"#fffbeb"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                   <span style={{fontSize:20}}>💸</span>
                   <div>
                     <h3 style={{margin:0,color:"#92400e",fontWeight:800,fontSize:17}}>
-                      Pendientes de transferencia
+                      Ventas pendientes de recepción
                       <span style={{marginLeft:10,background:"#f59e0b",color:"#fff",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px"}}>{pendientesTransferencia.length}</span>
                     </h3>
                     <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
-                      Ventas recibidas por Bahiano o los Leonardo — pendientes de enviarte a vos. Total: <strong style={{color:"#92400e"}}>USD {pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0)}</strong>
+                      Recibidas por Bahiano, Leonardo Bejarano o Leonardo Steimberg — pendientes de enviar a Cristian. Total: <strong style={{color:"#92400e"}}>{pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0)} USD</strong>
                     </div>
                   </div>
                 </div>
@@ -2024,18 +2028,12 @@ export default function App(){
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
                       <div>
                         <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
-                        <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · USD {c.monto}</span>
+                        <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
                         <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
-                        {/* Selector vendedor editable */}
-                        <select value={c.vendedor||""} onChange={e=>actualizarVendedor(c.id,e.target.value)}
-                          style={{...S.input,padding:"5px 10px",fontSize:12,width:"auto"}}>
-                          <option value="">Cristian (directo)</option>
-                          {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
-                        </select>
-                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió USD ${c.monto} de ${c.nombre}?`,()=>marcarTransferido(c.id),{label:"Recibido ✓"})}>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
                           Marcar recibido
                         </button>
                       </div>
