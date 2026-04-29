@@ -2017,9 +2017,6 @@ export default function App(){
                       Ventas pendientes de recepción
                       <span style={{marginLeft:10,background:"#f59e0b",color:"#fff",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px"}}>{pendientesTransferencia.length}</span>
                     </h3>
-                    <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
-                      Recibidas por Bahiano, Leonardo Bejarano o Leonardo Steimberg — pendientes de enviar a Cristian. Total: <strong style={{color:"#92400e"}}>{pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0)} USD</strong>
-                    </div>
                   </div>
                 </div>
                 <div style={{display:"grid",gap:8}}>
