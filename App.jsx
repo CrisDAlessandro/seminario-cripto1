@@ -1692,18 +1692,16 @@ export default function App(){
               );
             })()}
 
-            {/* Ventas por canal */}
+            {/* Ventas pendientes de recepción */}
             {(() => {
-              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
-              ingresos.forEach(i=>{
+              if(pendientesTransferencia.length===0)return null;
+              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0}}),...[{}]);
+              pendientesTransferencia.forEach(i=>{
                 if(i.vendedor&&vendedorStats[i.vendedor]){
                   vendedorStats[i.vendedor].total+=safeNum(i.monto);
                   vendedorStats[i.vendedor].count+=1;
-                  if(!i.transferido)vendedorStats[i.vendedor].pendiente+=safeNum(i.monto);
                 }
               });
-              const hasData=Object.values(vendedorStats).some(v=>v.count>0);
-              if(!hasData)return null;
               return(
                 <div ref={pendGrafRef} style={S.card}>
                   <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción</h3>
@@ -1719,39 +1717,36 @@ export default function App(){
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
                             <span>{st.count} venta{st.count!==1?"s":""}</span>
-                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
-                            {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
+                            <span style={{color:"#f59e0b",fontWeight:700}}>pendiente de recepción</span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  {pendientesTransferencia.length>0&&(
-                    <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${t.tdBorder}`}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-                        <div style={{fontSize:13,fontWeight:800,color:t.text}}>Detalle de ventas pendientes</div>
-                        <div style={{fontSize:12,color:t.textMuted}}>Mostrando de 5 en 5</div>
-                      </div>
-                      <div style={{display:"grid",gap:8}}>
-                        {pendientesGrafPag.rows.map(c=>(
-                          <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`,gap:10,flexWrap:"wrap"}}>
-                            <div>
-                              <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
-                              <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
-                            </div>
-                            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                              <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
-                              <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
-                              <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
-                                Marcar recibido
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <Pagination page={pendientesGrafPag.page} totalPages={pendientesGrafPag.totalPages} setPage={pendientesGrafPag.setPage} sectionRef={pendGrafRef} t={t}/>
+                  <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${t.tdBorder}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+                      <div style={{fontSize:13,fontWeight:800,color:t.text}}>Detalle de ventas pendientes</div>
+                      <div style={{fontSize:12,color:t.textMuted}}>Mostrando de 5 en 5</div>
                     </div>
-                  )}
+                    <div style={{display:"grid",gap:8}}>
+                      {pendientesGrafPag.rows.map(c=>(
+                        <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`,gap:10,flexWrap:"wrap"}}>
+                          <div>
+                            <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
+                            <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                            <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
+                            <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
+                            <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
+                              Marcar recibido
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Pagination page={pendientesGrafPag.page} totalPages={pendientesGrafPag.totalPages} setPage={pendientesGrafPag.setPage} sectionRef={pendGrafRef} t={t}/>
+                  </div>
                 </div>
               );
             })()}
