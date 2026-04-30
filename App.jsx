@@ -233,8 +233,15 @@ function usePagination(items,pageSize){
 
 const RECEPTOR_DIRECTO = "Cristian";
 const VENDEDORES = ["Leonardo Bejarano", "Leonardo Steimberg", "Bahiano"];
+const RECEPTORES_VENTA = [RECEPTOR_DIRECTO, ...VENDEDORES];
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
-function vendedorEsDirecto(vendedor){return !vendedor||vendedor===RECEPTOR_DIRECTO;}
+function ventaYaRecibida(vendedor){return !vendedor||vendedor===RECEPTOR_DIRECTO;}
+function normalizarReceptorVenta(vendedor){
+  const raw=(vendedor||"").trim();
+  if(!raw)return"";
+  const found=RECEPTORES_VENTA.find(v=>v.toLowerCase()===raw.toLowerCase());
+  return found||raw;
+}
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -367,6 +374,70 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
 }
 
 // ─── Búsqueda rápida (antes Ctrl+K) ──────────────────────────────────────────
+function ReceptorVentaModal({open,valorInicial="",onConfirm,onCancel,t}){
+  const btn=makeBtn(t);
+  const [seleccion,setSeleccion]=useState(valorInicial||"");
+  useEffect(()=>{ if(open) setSeleccion(valorInicial||""); },[open,valorInicial]);
+  useEffect(()=>{
+    if(!open) return;
+    function onKey(e){
+      if(e.key==="Escape") onCancel();
+      if(e.key==="Enter" && seleccion) onConfirm(seleccion);
+    }
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[open,seleccion,onConfirm,onCancel]);
+  if(!open) return null;
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onClick={onCancel}>
+      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:28,border:`1px solid ${t.cardBorder}`,maxWidth:520,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:18}}>
+          <div>
+            <h3 style={{margin:"0 0 6px",color:t.text,fontSize:20,fontWeight:900}}>¿Quién recibió la plata?</h3>
+            <p style={{margin:0,color:t.textMuted,fontSize:13,lineHeight:1.6}}>Elegí el receptor de esta renovación. Si no fue Cristian, se suma automáticamente a ventas pendientes de recepción.</p>
+          </div>
+          <button onClick={onCancel} style={{background:"none",border:"none",color:t.textMuted,cursor:"pointer",fontSize:22,lineHeight:1,padding:0}}>×</button>
+        </div>
+
+        <div style={{display:"grid",gap:10,marginBottom:20}}>
+          {RECEPTORES_VENTA.map(v=>{
+            const active=seleccion===v;
+            const esDirecto=v===RECEPTOR_DIRECTO;
+            return(
+              <button
+                key={v}
+                type="button"
+                onClick={()=>setSeleccion(v)}
+                style={{
+                  width:"100%",textAlign:"left",padding:"14px 16px",borderRadius:12,cursor:"pointer",
+                  border:active?`1px solid ${t.accent}`:`1px solid ${t.cardBorder}`,
+                  background:active?(t.dark?"rgba(200,151,42,0.16)":"rgba(232,184,75,0.14)"):(t.dark?"#0d1526":"#f8f6f3"),
+                  boxShadow:active?"0 0 0 1px rgba(200,151,42,0.18) inset":"none"
+                }}
+              >
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:800,color:t.text}}>{v}</div>
+                    <div style={{fontSize:12,color:t.textMuted,marginTop:3}}>{esDirecto?"Ingreso recibido directamente":"Queda pendiente hasta que se marque como recibido"}</div>
+                  </div>
+                  <div style={{padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:800,background:esDirecto?"#d1fae5":"#fef3c7",color:esDirecto?"#065f46":"#92400e",whiteSpace:"nowrap"}}>
+                    {esDirecto?"Directo":"Pendiente"}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+          <button style={btn(false)} onClick={onCancel}>Cancelar</button>
+          <button style={{...btn(false,true),opacity:seleccion?1:0.55}} onClick={()=>seleccion&&onConfirm(seleccion)} disabled={!seleccion}>Confirmar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BusquedaRapida({clientes,onSelect,onClose,t}){
   const S=makeS(t);
   const [q,setQ]=useState("");
@@ -904,13 +975,13 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
   const S=makeS(t);const btn=makeBtn(t);
   const isClases=form.servicio==="clases";
   const inner=(
-    <div style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+    <div style={{position:isModal?"relative":undefined,width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
+      {isModal&&<div style={{position:"absolute",top:28,right:28}}><button onClick={onCancelar} style={btn(false)}>Cerrar</button></div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22,paddingRight:isModal?110:0}}>
         <div>
           <h3 style={{margin:0,color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
           {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{subtitle}</div>}
         </div>
-        {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
       <div className="sc-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
@@ -945,10 +1016,10 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
           </Field>
         )}
-        <Field label={isModal?"Quién recibió la plata":"Recibe la venta"} t={t}>
-          <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:vendedorEsDirecto(e.target.value)})}>
-            <option value="">Cristian (directo)</option>
-            {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+        <Field label="Quién recibió la plata" t={t}>
+          <select style={S.input} value={form.vendedor||""} onChange={e=>{const vendedor=e.target.value;setForm({...form,vendedor,transferido:ventaYaRecibida(vendedor)});}}>
+            <option value="">Seleccionar...</option>
+            {RECEPTORES_VENTA.map(v=>(<option key={v} value={v}>{v}{v===RECEPTOR_DIRECTO?" (directo)":""}</option>))}
           </select>
         </Field>
         <Field label="Deuda restante (USD)" t={t}>
@@ -1047,6 +1118,7 @@ export default function App(){
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
   const[confirm,setConfirm]=useState(null);
+  const[receptorVentaModal,setReceptorVentaModal]=useState(null);
   const[busquedaRapida,setBusquedaRapida]=useState(false);
   const[ingDesde,setIngDesde]=useState("");
   const[ingHasta,setIngHasta]=useState("");
@@ -1110,29 +1182,29 @@ export default function App(){
       if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
     }
     if(f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
+    if(!normalizarReceptorVenta(f.vendedor)){toast.error("Indicá quién recibió la plata");return null;}
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
     const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
-    const vendedor=f.vendedor||"";
+    const vendedor=normalizarReceptorVenta(f.vendedor);
     return{...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
-      vendedor,transferido:vendedorEsDirecto(vendedor),
+      vendedor,transferido:ventaYaRecibida(vendedor),
       fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
-  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,vendedor=""){
-    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||"",vendedor:vendedor||"",transferido:vendedorEsDirecto(vendedor)};
+  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,vendedor){
+    const receptor=normalizarReceptorVenta(vendedor);
+    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||"",vendedor:receptor,transferido:ventaYaRecibida(receptor)};
   }
-  function pedirReceptorVenta(){
-    const msg = "¿Quién recibió la plata?\n\n1 = Cristian\n2 = Leonardo Bejarano\n3 = Leonardo Steimberg\n4 = Bahiano\n\nEscribí el número o el nombre exacto.";
-    const r = window.prompt(msg, "1");
-    if(r===null)return null;
-    const v = String(r).trim().toLowerCase();
-    if(v==="1"||v==="cristian")return "";
-    if(v==="2"||v==="leonardo bejarano")return "Leonardo Bejarano";
-    if(v==="3"||v==="leonardo steimberg")return "Leonardo Steimberg";
-    if(v==="4"||v==="bahiano")return "Bahiano";
-    toast.error("Tenés que indicar quién recibió la plata");
-    return null;
+  function pedirReceptorVenta(valorInicial=""){
+    return new Promise(resolve=>{
+      setReceptorVentaModal({
+        open:true,
+        valorInicial:normalizarReceptorVenta(valorInicial)||"",
+        onCancel:()=>{setReceptorVentaModal(null);resolve(null);},
+        onConfirm:(receptor)=>{setReceptorVentaModal(null);resolve(normalizarReceptorVenta(receptor));},
+      });
+    });
   }
 
   async function guardarCliente(){
@@ -1161,14 +1233,14 @@ export default function App(){
     if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas,renovarForm.vendedor)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
-    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibió: ${renovarForm.vendedor||RECEPTOR_DIRECTO}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,vendedor:renovarForm.vendedor||RECEPTOR_DIRECTO});
+    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibió: ${renovarForm.vendedor}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
     llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
   async function renovarRapido(cliente){
-    const vendedor = pedirReceptorVenta();
-    if(vendedor===null)return;
+    const vendedor=await pedirReceptorVenta("");
+    if(!vendedor)return;
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
@@ -1190,12 +1262,12 @@ export default function App(){
     }
 
     const nv = cliente.servicio==="clases"||dur<=0 ? null : toISODate(addDays(toISODate(today), diasRestantes));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",vendedor,transferido:vendedorEsDirecto(vendedor),fecha_vencimiento:nv};
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",vendedor,transferido:ventaYaRecibida(vendedor),fecha_vencimiento:nv};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas,vendedor)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibió: ${vendedor||RECEPTOR_DIRECTO}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes,vendedor:vendedor||RECEPTOR_DIRECTO});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibió: ${vendedor}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
   }
@@ -1274,6 +1346,8 @@ export default function App(){
       monto:Number(monto),
       fecha_pago:fechaHoy,
       notas:`Pago parcial de deuda. Deuda restante: USD ${nuevaDeuda}`,
+      vendedor:RECEPTOR_DIRECTO,
+      transferido:true,
     }]);
     await logH(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
     await logNC(cliente.id,user?.email,"pago",`Pago de USD ${monto} aplicado a deuda. Deuda restante: USD ${nuevaDeuda}`,{monto_abonado:monto,deuda_restante:nuevaDeuda});
@@ -1285,7 +1359,7 @@ export default function App(){
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
     let fb=toISODate(getToday());
     if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -1352,7 +1426,7 @@ export default function App(){
 
   // Ventas pendientes de transferencia a Cristian
   const pendientesTransferencia=useMemo(()=>
-    ingresos.filter(i=>i.vendedor&&i.vendedor!==""&&i.transferido===false)
+    ingresos.filter(i=>i.vendedor&&i.vendedor!==RECEPTOR_DIRECTO&&i.transferido===false)
   ,[ingresos]);
 
   async function marcarTransferido(id, ingreso){
@@ -1366,10 +1440,11 @@ export default function App(){
   }
 
   async function actualizarVendedor(id,vendedor){
-    const transferido=vendedorEsDirecto(vendedor);
-    const{error}=await supabase.from("clientes").update({vendedor,transferido}).eq("id",id);
+    const receptor=normalizarReceptorVenta(vendedor);
+    const transferido=ventaYaRecibida(receptor);
+    const{error}=await supabase.from("clientes").update({vendedor:receptor,transferido}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
-    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor,transferido}:c));
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor:receptor,transferido}:c));
   }
   const today=getToday();
   const curMK=monthKey(toISODate(today));
@@ -1494,6 +1569,7 @@ export default function App(){
     <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
+      {receptorVentaModal&&<ReceptorVentaModal open={!!receptorVentaModal} valorInicial={receptorVentaModal.valorInicial} onConfirm={receptorVentaModal.onConfirm} onCancel={receptorVentaModal.onCancel} t={t}/>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
         <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
@@ -2039,13 +2115,13 @@ export default function App(){
                   {pendientesTransferencia.map(c=>(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
                       <div>
-                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre||c.nombre}</span>
+                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
                         <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
-                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago||c.fecha_inicio)}</span>
-                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre||c.nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
+                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
                           Marcar recibido
                         </button>
                       </div>
