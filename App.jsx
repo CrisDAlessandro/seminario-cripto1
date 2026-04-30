@@ -231,8 +231,17 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg"];
+const RECEPTOR_DIRECTO = "Cristian";
+const VENDEDORES = ["Leonardo Bejarano", "Leonardo Steimberg", "Bahiano"];
+const RECEPTORES_VENTA = [RECEPTOR_DIRECTO, ...VENDEDORES];
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
+function ventaYaRecibida(vendedor){return !vendedor||vendedor===RECEPTOR_DIRECTO;}
+function normalizarReceptorVenta(vendedor){
+  const raw=(vendedor||"").trim();
+  if(!raw)return"";
+  const found=RECEPTORES_VENTA.find(v=>v.toLowerCase()===raw.toLowerCase());
+  return found||raw;
+}
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -943,10 +952,10 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
           </Field>
         )}
-        <Field label="Recibe la venta" t={t}>
-          <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
-            <option value="">Cristian (directo)</option>
-            {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+        <Field label="Quién recibió la plata" t={t}>
+          <select style={S.input} value={form.vendedor||""} onChange={e=>{const vendedor=e.target.value;setForm({...form,vendedor,transferido:ventaYaRecibida(vendedor)});}}>
+            <option value="">Seleccionar...</option>
+            {RECEPTORES_VENTA.map(v=>(<option key={v} value={v}>{v}{v===RECEPTOR_DIRECTO?" (directo)":""}</option>))}
           </select>
         </Field>
         <Field label="Deuda restante (USD)" t={t}>
@@ -1108,17 +1117,29 @@ export default function App(){
       if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
     }
     if(f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
+    if(!normalizarReceptorVenta(f.vendedor)){toast.error("Indicá quién recibió la plata");return null;}
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
     const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
-    const vendedor=f.vendedor||"";
+    const vendedor=normalizarReceptorVenta(f.vendedor);
     return{...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
-      vendedor,transferido:vendedor===""?true:false,
+      vendedor,transferido:ventaYaRecibida(vendedor),
       fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
-  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
-    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
+  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,vendedor){
+    const receptor=normalizarReceptorVenta(vendedor);
+    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||"",vendedor:receptor,transferido:ventaYaRecibida(receptor)};
+  }
+  function pedirReceptorVenta(valorInicial=""){
+    const elegido=window.prompt(`¿Quién recibió la plata? Opciones: ${RECEPTORES_VENTA.join(", ")}`, valorInicial||"");
+    if(elegido===null)return null;
+    const receptor=normalizarReceptorVenta(elegido);
+    if(!RECEPTORES_VENTA.includes(receptor)){
+      toast.error("Elegí una opción válida: Cristian, Leonardo Bejarano, Leonardo Steimberg o Bahiano");
+      return null;
+    }
+    return receptor;
   }
 
   async function guardarCliente(){
@@ -1132,7 +1153,7 @@ export default function App(){
     const payload=buildPayload(form,v.nombre,v.email);
     const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
     if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas)]);
+    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas,ins.vendedor)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
     await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
@@ -1145,14 +1166,16 @@ export default function App(){
     const payload=buildPayload(renovarForm,v.nombre,v.email);
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
     if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
+    await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas,renovarForm.vendedor)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
-    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
+    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibió: ${renovarForm.vendedor}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
     llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
   async function renovarRapido(cliente){
+    const vendedor=pedirReceptorVenta("");
+    if(!vendedor)return;
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
@@ -1174,12 +1197,12 @@ export default function App(){
     }
 
     const nv = cliente.servicio==="clases"||dur<=0 ? null : toISODate(addDays(toISODate(today), diasRestantes));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",vendedor,transferido:ventaYaRecibida(vendedor),fecha_vencimiento:nv};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
+    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas,vendedor)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibió: ${vendedor}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
   }
@@ -1258,6 +1281,8 @@ export default function App(){
       monto:Number(monto),
       fecha_pago:fechaHoy,
       notas:`Pago parcial de deuda. Deuda restante: USD ${nuevaDeuda}`,
+      vendedor:RECEPTOR_DIRECTO,
+      transferido:true,
     }]);
     await logH(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
     await logNC(cliente.id,user?.email,"pago",`Pago de USD ${monto} aplicado a deuda. Deuda restante: USD ${nuevaDeuda}`,{monto_abonado:monto,deuda_restante:nuevaDeuda});
@@ -1269,7 +1294,7 @@ export default function App(){
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
     let fb=toISODate(getToday());
     if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -1336,24 +1361,25 @@ export default function App(){
 
   // Ventas pendientes de transferencia a Cristian
   const pendientesTransferencia=useMemo(()=>
-    computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido===false)
-  ,[computed]);
+    ingresos.filter(i=>i.vendedor&&i.vendedor!==RECEPTOR_DIRECTO&&i.transferido===false)
+  ,[ingresos]);
 
-  async function marcarTransferido(id, cliente){
-    const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
+  async function marcarTransferido(id, ingreso){
+    const{error}=await supabase.from("ingresos").update({transferido:true}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
-    setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
+    setIngresos(prev=>prev.map(i=>i.id===id?{...i,transferido:true}:i));
     // Registrar en historial
-    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,monto:cliente?.monto});
-    await logNC(id,user?.email,"pago",`Transferencia recibida de ${cliente?.vendedor}. Monto: ${cliente?.monto} USD`,{vendedor:cliente?.vendedor,monto:cliente?.monto});
-    toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
+    await logH(user?.email,"recibió transferencia","ingreso",id,{nombre:ingreso?.cliente_nombre,vendedor:ingreso?.vendedor,monto:ingreso?.monto});
+    await logNC(ingreso?.cliente_id,user?.email,"pago",`Transferencia recibida de ${ingreso?.vendedor}. Monto: ${ingreso?.monto} USD`,{vendedor:ingreso?.vendedor,monto:ingreso?.monto});
+    toast.success(`✓ ${ingreso?.monto} USD recibidos de ${ingreso?.vendedor}`);
   }
 
   async function actualizarVendedor(id,vendedor){
-    const transferido=vendedor===""?true:false;
-    const{error}=await supabase.from("clientes").update({vendedor,transferido}).eq("id",id);
+    const receptor=normalizarReceptorVenta(vendedor);
+    const transferido=ventaYaRecibida(receptor);
+    const{error}=await supabase.from("clientes").update({vendedor:receptor,transferido}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
-    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor,transferido}:c));
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor:receptor,transferido}:c));
   }
   const today=getToday();
   const curMK=monthKey(toISODate(today));
@@ -1602,11 +1628,11 @@ export default function App(){
             {/* Ventas por canal */}
             {(() => {
               const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
-              computed.forEach(c=>{
-                if(c.vendedor&&vendedorStats[c.vendedor]){
-                  vendedorStats[c.vendedor].total+=safeNum(c.monto);
-                  vendedorStats[c.vendedor].count+=1;
-                  if(!c.transferido)vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
+              ingresos.forEach(i=>{
+                if(i.vendedor&&vendedorStats[i.vendedor]){
+                  vendedorStats[i.vendedor].total+=safeNum(i.monto);
+                  vendedorStats[i.vendedor].count+=1;
+                  if(!i.transferido)vendedorStats[i.vendedor].pendiente+=safeNum(i.monto);
                 }
               });
               const hasData=Object.values(vendedorStats).some(v=>v.count>0);
@@ -1625,7 +1651,7 @@ export default function App(){
                             <span style={{fontWeight:800,color:t.accent,fontSize:15}}>USD {st.total}</span>
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
-                            <span>{st.count} cliente{st.count!==1?"s":""}</span>
+                            <span>{st.count} venta{st.count!==1?"s":""}</span>
                             {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
                             {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
                           </div>
@@ -2023,13 +2049,13 @@ export default function App(){
                   {pendientesTransferencia.map(c=>(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
                       <div>
-                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
+                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
                         <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
-                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
-                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
+                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
                           Marcar recibido
                         </button>
                       </div>
