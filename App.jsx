@@ -1274,7 +1274,6 @@ export default function App(){
   async function eliminarClienteConfirmado(cliente){
     // Quitar de pantalla inmediatamente sin destello
     setClientes(prev=>prev.filter(c=>c.id!==cliente.id));
-    setIngresos(prev=>prev.filter(i=>i.cliente_id!==cliente.id));
     setClienteDetalle(null);
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
     if(error){toast.error("No se pudo eliminar");refetch();return;}
