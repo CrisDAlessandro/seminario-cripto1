@@ -7,6 +7,7 @@ const supabase = createClient(
 );
 
 const LOGO_SRC = "/logo.png";
+const EMAILS_CRM_URL = "https://seminariocriptoemails.vercel.app";
 
 // ─── Auth errors → español ────────────────────────────────────────────────────
 function traducirError(msg) {
@@ -1602,6 +1603,7 @@ export default function App(){
             <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
+            <a href={EMAILS_CRM_URL} style={{...navBtn(false),textDecoration:"none",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>Emails</a>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
             <button onClick={()=>setDark(!dark)} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15}}>{dark?"☀":"☾"}</button>
             <button onClick={logout} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:13}}>Salir</button>
