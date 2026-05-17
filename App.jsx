@@ -1128,7 +1128,7 @@ export default function App(){
 
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
-  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const pendGrafRef=useRef(null);
+  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -1427,8 +1427,6 @@ export default function App(){
   const pendientesTransferencia=useMemo(()=>
     ingresos.filter(i=>i.vendedor&&i.vendedor!==RECEPTOR_DIRECTO&&i.transferido===false)
   ,[ingresos]);
-  const pendientesGrafPag=usePagination(pendientesTransferencia,5);
-  const pendientesOperPag=usePagination(pendientesTransferencia,5);
 
   async function marcarTransferido(id, ingreso){
     const{error}=await supabase.from("ingresos").update({transferido:true}).eq("id",id);
@@ -1492,11 +1490,66 @@ export default function App(){
   }),[resumenMensual]);
   const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
   const tasaRenovacion=useMemo(()=>{
-    const vc=computed.filter(c=>{if(!c.vencimiento)return false;return monthKey(c.vencimiento)===monthKey(toISODate(prevMD));});
-    if(vc.length===0)return null;
-    const rn=vc.filter(c=>curMI.some(i=>i.cliente_id===c.id));
-    return Math.round((rn.length/vc.length)*100);
-  },[computed,curMI]);
+    // Tasa de renovación basada 100% en ingresos históricos.
+    // Usa como mes de análisis el último mes que tenga pagos de planes cargados,
+    // así no queda en 0 por cambio de mes si todavía no hay pagos en el mes calendario actual.
+    const esPlan=i=>i.servicio==="mensual"||i.servicio==="anual"||i.servicio==="Plan trader"||i.servicio==="Plan inversor";
+    const normalizar=s=>String(s||"")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g,"")
+      .replace(/\s+/g," ");
+    const keyOf=i=>{
+      const email=normalizar(i.email);
+      if(email)return `email:${email}`;
+      if(i.cliente_id!=null&&i.cliente_id!=="")return `id:${i.cliente_id}`;
+      const nombre=normalizar(i.cliente_nombre||i.nombre);
+      return nombre?`nombre:${nombre}`:"";
+    };
+    const monthShift=(key,delta)=>{
+      const [y,m]=key.split("-").map(Number);
+      const d=new Date(y,m-1+delta,1);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    };
+
+    const pagosPlan=ingresos.filter(i=>i.fecha_pago&&esPlan(i));
+    if(pagosPlan.length===0)return null;
+
+    const meses=Array.from(new Set(pagosPlan.map(i=>monthKey(i.fecha_pago)))).sort();
+    const mesAnalisis=meses[meses.length-1];
+    const mesAnterior=monthShift(mesAnalisis,-1);
+
+    const keysMesAnalisis=new Set();
+    const keysMesAnterior=new Set();
+
+    pagosPlan.forEach(i=>{
+      const k=keyOf(i);
+      if(!k)return;
+      const mk=monthKey(i.fecha_pago);
+      if(mk===mesAnalisis)keysMesAnalisis.add(k);
+      if(mk===mesAnterior)keysMesAnterior.add(k);
+    });
+
+    if(keysMesAnterior.size>0){
+      let renovaron=0;
+      keysMesAnterior.forEach(k=>{if(keysMesAnalisis.has(k))renovaron++;});
+      return Math.round((renovaron/keysMesAnterior.size)*100);
+    }
+
+    // Si no hay base del mes anterior, calcula cuántos pagos del último mes
+    // pertenecen a clientes/emails que ya tenían cualquier pago previo.
+    const inicioMesAnalisis=parseISODate(`${mesAnalisis}-01`);
+    const historicosPrevios=new Set();
+    pagosPlan.forEach(i=>{
+      const k=keyOf(i);const d=parseISODate(i.fecha_pago);
+      if(k&&d&&d<inicioMesAnalisis)historicosPrevios.add(k);
+    });
+    if(keysMesAnalisis.size===0)return null;
+    let renovaciones=0;
+    keysMesAnalisis.forEach(k=>{if(historicosPrevios.has(k))renovaciones++;});
+    return Math.round((renovaciones/keysMesAnalisis.size)*100);
+  },[ingresos]);
   const ingFiltrados=useMemo(()=>ingresos.filter(i=>{
     if(!i.fecha_pago)return true;
     if(ingDesde&&i.fecha_pago<ingDesde)return false;
@@ -1692,18 +1745,20 @@ export default function App(){
               );
             })()}
 
-            {/* Ventas pendientes de recepción */}
+            {/* Ventas por canal */}
             {(() => {
-              if(pendientesTransferencia.length===0)return null;
-              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0}}),...[{}]);
-              pendientesTransferencia.forEach(i=>{
+              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
+              ingresos.forEach(i=>{
                 if(i.vendedor&&vendedorStats[i.vendedor]){
                   vendedorStats[i.vendedor].total+=safeNum(i.monto);
                   vendedorStats[i.vendedor].count+=1;
+                  if(!i.transferido)vendedorStats[i.vendedor].pendiente+=safeNum(i.monto);
                 }
               });
+              const hasData=Object.values(vendedorStats).some(v=>v.count>0);
+              if(!hasData)return null;
               return(
-                <div ref={pendGrafRef} style={S.card}>
+                <div style={S.card}>
                   <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción</h3>
                   <div style={{display:"grid",gap:16}}>
                     {VENDEDORES.map(v=>{
@@ -1717,35 +1772,12 @@ export default function App(){
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
                             <span>{st.count} venta{st.count!==1?"s":""}</span>
-                            <span style={{color:"#f59e0b",fontWeight:700}}>pendiente de recepción</span>
+                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
+                            {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
                           </div>
                         </div>
                       );
                     })}
-                  </div>
-                  <div style={{marginTop:18,paddingTop:16,borderTop:`1px solid ${t.tdBorder}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-                      <div style={{fontSize:13,fontWeight:800,color:t.text}}>Detalle de ventas pendientes</div>
-                      <div style={{fontSize:12,color:t.textMuted}}>Mostrando de 5 en 5</div>
-                    </div>
-                    <div style={{display:"grid",gap:8}}>
-                      {pendientesGrafPag.rows.map(c=>(
-                        <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`,gap:10,flexWrap:"wrap"}}>
-                          <div>
-                            <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
-                            <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                            <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
-                            <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
-                            <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
-                              Marcar recibido
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <Pagination page={pendientesGrafPag.page} totalPages={pendientesGrafPag.totalPages} setPage={pendientesGrafPag.setPage} sectionRef={pendGrafRef} t={t}/>
                   </div>
                 </div>
               );
@@ -2134,7 +2166,7 @@ export default function App(){
                   </div>
                 </div>
                 <div style={{display:"grid",gap:8}}>
-                  {pendientesOperPag.rows.map(c=>(
+                  {pendientesTransferencia.map(c=>(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
                       <div>
                         <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
@@ -2150,7 +2182,6 @@ export default function App(){
                     </div>
                   ))}
                 </div>
-                <Pagination page={pendientesOperPag.page} totalPages={pendientesOperPag.totalPages} setPage={pendientesOperPag.setPage} sectionRef={pendRef} t={t}/>
               </div>
             )}
 
