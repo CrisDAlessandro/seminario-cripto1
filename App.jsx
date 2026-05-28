@@ -1400,11 +1400,20 @@ export default function App(){
   }),[resumenMensual]);
   const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
   const tasaRenovacion=useMemo(()=>{
-    const vc=computed.filter(c=>{if(!c.vencimiento)return false;return monthKey(c.vencimiento)===monthKey(toISODate(prevMD));});
-    if(vc.length===0)return null;
-    const rn=vc.filter(c=>curMI.some(i=>i.cliente_id===c.id));
-    return Math.round((rn.length/vc.length)*100);
-  },[computed,curMI]);
+    // Usar cliente_id si existe, sino email como identificador
+    const keyOf=i=>i.cliente_id?`id:${i.cliente_id}`:i.email?`email:${i.email.toLowerCase().trim()}`:null;
+    const planes=["mensual","anual"];
+    const pagaronMesAnt=new Set(
+      prevMI.filter(i=>planes.includes(i.servicio)).map(keyOf).filter(Boolean)
+    );
+    if(pagaronMesAnt.size===0)return null;
+    const pagaronEsteMes=new Set(
+      curMI.filter(i=>planes.includes(i.servicio)).map(keyOf).filter(Boolean)
+    );
+    let renovaron=0;
+    pagaronMesAnt.forEach(k=>{if(pagaronEsteMes.has(k))renovaron++;});
+    return Math.round((renovaron/pagaronMesAnt.size)*100);
+  },[prevMI,curMI]);
   const ingFiltrados=useMemo(()=>ingresos.filter(i=>{
     if(!i.fecha_pago)return true;
     if(ingDesde&&i.fecha_pago<ingDesde)return false;
@@ -1620,8 +1629,7 @@ export default function App(){
               const maxVpd=Math.max(...data.map(d=>d.vpd),0.01);
               return(
                 <div style={S.card}>
-                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Ventas por día — histórico</h3>
-                  <div style={{color:t.textMuted,fontSize:13,marginBottom:18}}>Nuevos clientes (planes) ÷ días transcurridos del mes</div>
+                  <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas por día — histórico</h3>
                   <div style={{display:"grid",gap:12}}>
                     {data.map(d=>{
                       const pct=Math.max((d.vpd/maxVpd)*100,d.vpd>0?4:0);
@@ -1654,35 +1662,6 @@ export default function App(){
                 </div>
               );
             })()}
-
-            {/* Métricas mensuales históricas — guardadas en Supabase */}
-            {metricasGuardadas.length>0&&(
-              <div style={S.card}>
-                <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Métricas históricas — datos permanentes</h3>
-                <div style={{color:t.textMuted,fontSize:13,marginBottom:18}}>Valores congelados al cierre de cada mes. No cambian aunque edites datos.</div>
-                <div style={{overflowX:"auto"}}>
-                  <table style={S.table}>
-                    <thead><TableHeader cols={["Mes","Ingresos","Nuevos clientes","Ventas/día","Tasa renovación","Total clientes"]} t={t}/></thead>
-                    <tbody>
-                      {[...metricasGuardadas].sort((a,b)=>a.mes.localeCompare(b.mes)).map(m=>(
-                        <tr key={m.mes}>
-                          <td style={{...S.td,fontWeight:700}}>{monthLabel(m.mes)}</td>
-                          <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {m.total_ingresos}</td>
-                          <td style={S.td}>{m.nuevos_clientes}</td>
-                          <td style={S.td}>
-                            <span style={{fontWeight:700,color:m.ventas_por_dia>=2.5?"#22c55e":m.ventas_por_dia>=1.5?"#f59e0b":"#ef4444"}}>
-                              {m.ventas_por_dia} v/día
-                            </span>
-                          </td>
-                          <td style={S.td}>{m.tasa_renovacion!=null?`${m.tasa_renovacion}%`:"—"}</td>
-                          <td style={S.td}>{m.total_clientes}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {/* Ventas por canal */}
             {(() => {
