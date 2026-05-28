@@ -231,17 +231,8 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const RECEPTOR_DIRECTO = "Cristian";
-const VENDEDORES = ["Leonardo Bejarano", "Leonardo Steimberg", "Bahiano"];
-const RECEPTORES_VENTA = [RECEPTOR_DIRECTO, ...VENDEDORES];
+const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg"];
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
-function ventaYaRecibida(vendedor){return !vendedor||vendedor===RECEPTOR_DIRECTO;}
-function normalizarReceptorVenta(vendedor){
-  const raw=(vendedor||"").trim();
-  if(!raw)return"";
-  const found=RECEPTORES_VENTA.find(v=>v.toLowerCase()===raw.toLowerCase());
-  return found||raw;
-}
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -374,70 +365,6 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
 }
 
 // ─── Búsqueda rápida (antes Ctrl+K) ──────────────────────────────────────────
-function ReceptorVentaModal({open,valorInicial="",onConfirm,onCancel,t}){
-  const btn=makeBtn(t);
-  const [seleccion,setSeleccion]=useState(valorInicial||"");
-  useEffect(()=>{ if(open) setSeleccion(valorInicial||""); },[open,valorInicial]);
-  useEffect(()=>{
-    if(!open) return;
-    function onKey(e){
-      if(e.key==="Escape") onCancel();
-      if(e.key==="Enter" && seleccion) onConfirm(seleccion);
-    }
-    window.addEventListener("keydown",onKey);
-    return ()=>window.removeEventListener("keydown",onKey);
-  },[open,seleccion,onConfirm,onCancel]);
-  if(!open) return null;
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onClick={onCancel}>
-      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:28,border:`1px solid ${t.cardBorder}`,maxWidth:520,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:18}}>
-          <div>
-            <h3 style={{margin:"0 0 6px",color:t.text,fontSize:20,fontWeight:900}}>¿Quién recibió la plata?</h3>
-            <p style={{margin:0,color:t.textMuted,fontSize:13,lineHeight:1.6}}>Elegí el receptor de esta renovación. Si no fue Cristian, se suma automáticamente a ventas pendientes de recepción.</p>
-          </div>
-          <button onClick={onCancel} style={{background:"none",border:"none",color:t.textMuted,cursor:"pointer",fontSize:22,lineHeight:1,padding:0}}>×</button>
-        </div>
-
-        <div style={{display:"grid",gap:10,marginBottom:20}}>
-          {RECEPTORES_VENTA.map(v=>{
-            const active=seleccion===v;
-            const esDirecto=v===RECEPTOR_DIRECTO;
-            return(
-              <button
-                key={v}
-                type="button"
-                onClick={()=>setSeleccion(v)}
-                style={{
-                  width:"100%",textAlign:"left",padding:"14px 16px",borderRadius:12,cursor:"pointer",
-                  border:active?`1px solid ${t.accent}`:`1px solid ${t.cardBorder}`,
-                  background:active?(t.dark?"rgba(200,151,42,0.16)":"rgba(232,184,75,0.14)"):(t.dark?"#0d1526":"#f8f6f3"),
-                  boxShadow:active?"0 0 0 1px rgba(200,151,42,0.18) inset":"none"
-                }}
-              >
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                  <div>
-                    <div style={{fontSize:14,fontWeight:800,color:t.text}}>{v}</div>
-                    <div style={{fontSize:12,color:t.textMuted,marginTop:3}}>{esDirecto?"Ingreso recibido directamente":"Queda pendiente hasta que se marque como recibido"}</div>
-                  </div>
-                  <div style={{padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:800,background:esDirecto?"#d1fae5":"#fef3c7",color:esDirecto?"#065f46":"#92400e",whiteSpace:"nowrap"}}>
-                    {esDirecto?"Directo":"Pendiente"}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
-          <button style={btn(false)} onClick={onCancel}>Cancelar</button>
-          <button style={{...btn(false,true),opacity:seleccion?1:0.55}} onClick={()=>seleccion&&onConfirm(seleccion)} disabled={!seleccion}>Confirmar</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function BusquedaRapida({clientes,onSelect,onClose,t}){
   const S=makeS(t);
   const [q,setQ]=useState("");
@@ -975,13 +902,13 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
   const S=makeS(t);const btn=makeBtn(t);
   const isClases=form.servicio==="clases";
   const inner=(
-    <div style={{position:isModal?"relative":undefined,width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
-      {isModal&&<div style={{position:"absolute",top:28,right:28}}><button onClick={onCancelar} style={btn(false)}>Cerrar</button></div>}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22,paddingRight:isModal?110:0}}>
+    <div style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div>
           <h3 style={{margin:0,color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
           {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{subtitle}</div>}
         </div>
+        {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
       </div>
       <div className="sc-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
@@ -1016,10 +943,10 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
           </Field>
         )}
-        <Field label="Quién recibió la plata" t={t}>
-          <select style={S.input} value={form.vendedor||""} onChange={e=>{const vendedor=e.target.value;setForm({...form,vendedor,transferido:ventaYaRecibida(vendedor)});}}>
-            <option value="">Seleccionar...</option>
-            {RECEPTORES_VENTA.map(v=>(<option key={v} value={v}>{v}{v===RECEPTOR_DIRECTO?" (directo)":""}</option>))}
+        <Field label="Recibe la venta" t={t}>
+          <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
+            <option value="">Cristian (directo)</option>
+            {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
           </select>
         </Field>
         <Field label="Deuda restante (USD)" t={t}>
@@ -1118,7 +1045,6 @@ export default function App(){
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
   const[confirm,setConfirm]=useState(null);
-  const[receptorVentaModal,setReceptorVentaModal]=useState(null);
   const[busquedaRapida,setBusquedaRapida]=useState(false);
   const[ingDesde,setIngDesde]=useState("");
   const[ingHasta,setIngHasta]=useState("");
@@ -1182,29 +1108,17 @@ export default function App(){
       if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
     }
     if(f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
-    if(!normalizarReceptorVenta(f.vendedor)){toast.error("Indicá quién recibió la plata");return null;}
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
     const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
-    const vendedor=normalizarReceptorVenta(f.vendedor);
+    const vendedor=f.vendedor||"";
     return{...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
-      vendedor,transferido:ventaYaRecibida(vendedor),
+      vendedor,transferido:vendedor===""?true:false,
       fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
-  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,vendedor){
-    const receptor=normalizarReceptorVenta(vendedor);
-    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||"",vendedor:receptor,transferido:ventaYaRecibida(receptor)};
-  }
-  function pedirReceptorVenta(valorInicial=""){
-    return new Promise(resolve=>{
-      setReceptorVentaModal({
-        open:true,
-        valorInicial:normalizarReceptorVenta(valorInicial)||"",
-        onCancel:()=>{setReceptorVentaModal(null);resolve(null);},
-        onConfirm:(receptor)=>{setReceptorVentaModal(null);resolve(normalizarReceptorVenta(receptor));},
-      });
-    });
+  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
+    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
   }
 
   async function guardarCliente(){
@@ -1218,7 +1132,7 @@ export default function App(){
     const payload=buildPayload(form,v.nombre,v.email);
     const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
     if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas,ins.vendedor)]);
+    await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas)]);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto});
     await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto}`,{servicio:ins.servicio,monto:ins.monto});
     setGuardando(false);setShowForm(false);setForm(FORM_DEF);
@@ -1231,16 +1145,14 @@ export default function App(){
     const payload=buildPayload(renovarForm,v.nombre,v.email);
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
     if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas,renovarForm.vendedor)]);
+    await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]);
     await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto});
-    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibió: ${renovarForm.vendedor}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
+    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto}`,{servicio:renovarForm.servicio,monto:renovarForm.monto});
     setRenovando(false);setShowRenovar(false);
     toast.success(`${v.nombre} renovado correctamente`);refetch();
     llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
   async function renovarRapido(cliente){
-    const vendedor=await pedirReceptorVenta("");
-    if(!vendedor)return;
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
@@ -1262,18 +1174,19 @@ export default function App(){
     }
 
     const nv = cliente.servicio==="clases"||dur<=0 ? null : toISODate(addDays(toISODate(today), diasRestantes));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",vendedor,transferido:ventaYaRecibida(vendedor),fecha_vencimiento:nv};
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas,vendedor)]);
+    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibió: ${vendedor}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
   }
   async function eliminarClienteConfirmado(cliente){
     // Quitar de pantalla inmediatamente sin destello
     setClientes(prev=>prev.filter(c=>c.id!==cliente.id));
+    setIngresos(prev=>prev.filter(i=>i.cliente_id!==cliente.id));
     setClienteDetalle(null);
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
     if(error){toast.error("No se pudo eliminar");refetch();return;}
@@ -1345,8 +1258,6 @@ export default function App(){
       monto:Number(monto),
       fecha_pago:fechaHoy,
       notas:`Pago parcial de deuda. Deuda restante: USD ${nuevaDeuda}`,
-      vendedor:RECEPTOR_DIRECTO,
-      transferido:true,
     }]);
     await logH(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
     await logNC(cliente.id,user?.email,"pago",`Pago de USD ${monto} aplicado a deuda. Deuda restante: USD ${nuevaDeuda}`,{monto_abonado:monto,deuda_restante:nuevaDeuda});
@@ -1358,7 +1269,7 @@ export default function App(){
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
     let fb=toISODate(getToday());
     if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -1425,25 +1336,24 @@ export default function App(){
 
   // Ventas pendientes de transferencia a Cristian
   const pendientesTransferencia=useMemo(()=>
-    ingresos.filter(i=>i.vendedor&&i.vendedor!==RECEPTOR_DIRECTO&&i.transferido===false)
-  ,[ingresos]);
+    computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido===false)
+  ,[computed]);
 
-  async function marcarTransferido(id, ingreso){
-    const{error}=await supabase.from("ingresos").update({transferido:true}).eq("id",id);
+  async function marcarTransferido(id, cliente){
+    const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
-    setIngresos(prev=>prev.map(i=>i.id===id?{...i,transferido:true}:i));
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
     // Registrar en historial
-    await logH(user?.email,"recibió transferencia","ingreso",id,{nombre:ingreso?.cliente_nombre,vendedor:ingreso?.vendedor,monto:ingreso?.monto});
-    await logNC(ingreso?.cliente_id,user?.email,"pago",`Transferencia recibida de ${ingreso?.vendedor}. Monto: ${ingreso?.monto} USD`,{vendedor:ingreso?.vendedor,monto:ingreso?.monto});
-    toast.success(`✓ ${ingreso?.monto} USD recibidos de ${ingreso?.vendedor}`);
+    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,monto:cliente?.monto});
+    await logNC(id,user?.email,"pago",`Transferencia recibida de ${cliente?.vendedor}. Monto: ${cliente?.monto} USD`,{vendedor:cliente?.vendedor,monto:cliente?.monto});
+    toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
   }
 
   async function actualizarVendedor(id,vendedor){
-    const receptor=normalizarReceptorVenta(vendedor);
-    const transferido=ventaYaRecibida(receptor);
-    const{error}=await supabase.from("clientes").update({vendedor:receptor,transferido}).eq("id",id);
+    const transferido=vendedor===""?true:false;
+    const{error}=await supabase.from("clientes").update({vendedor,transferido}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
-    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor:receptor,transferido}:c));
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,vendedor,transferido}:c));
   }
   const today=getToday();
   const curMK=monthKey(toISODate(today));
@@ -1490,66 +1400,11 @@ export default function App(){
   }),[resumenMensual]);
   const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
   const tasaRenovacion=useMemo(()=>{
-    // Tasa de renovación basada 100% en ingresos históricos.
-    // Usa como mes de análisis el último mes que tenga pagos de planes cargados,
-    // así no queda en 0 por cambio de mes si todavía no hay pagos en el mes calendario actual.
-    const esPlan=i=>i.servicio==="mensual"||i.servicio==="anual"||i.servicio==="Plan trader"||i.servicio==="Plan inversor";
-    const normalizar=s=>String(s||"")
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g,"")
-      .replace(/\s+/g," ");
-    const keyOf=i=>{
-      const email=normalizar(i.email);
-      if(email)return `email:${email}`;
-      if(i.cliente_id!=null&&i.cliente_id!=="")return `id:${i.cliente_id}`;
-      const nombre=normalizar(i.cliente_nombre||i.nombre);
-      return nombre?`nombre:${nombre}`:"";
-    };
-    const monthShift=(key,delta)=>{
-      const [y,m]=key.split("-").map(Number);
-      const d=new Date(y,m-1+delta,1);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    };
-
-    const pagosPlan=ingresos.filter(i=>i.fecha_pago&&esPlan(i));
-    if(pagosPlan.length===0)return null;
-
-    const meses=Array.from(new Set(pagosPlan.map(i=>monthKey(i.fecha_pago)))).sort();
-    const mesAnalisis=meses[meses.length-1];
-    const mesAnterior=monthShift(mesAnalisis,-1);
-
-    const keysMesAnalisis=new Set();
-    const keysMesAnterior=new Set();
-
-    pagosPlan.forEach(i=>{
-      const k=keyOf(i);
-      if(!k)return;
-      const mk=monthKey(i.fecha_pago);
-      if(mk===mesAnalisis)keysMesAnalisis.add(k);
-      if(mk===mesAnterior)keysMesAnterior.add(k);
-    });
-
-    if(keysMesAnterior.size>0){
-      let renovaron=0;
-      keysMesAnterior.forEach(k=>{if(keysMesAnalisis.has(k))renovaron++;});
-      return Math.round((renovaron/keysMesAnterior.size)*100);
-    }
-
-    // Si no hay base del mes anterior, calcula cuántos pagos del último mes
-    // pertenecen a clientes/emails que ya tenían cualquier pago previo.
-    const inicioMesAnalisis=parseISODate(`${mesAnalisis}-01`);
-    const historicosPrevios=new Set();
-    pagosPlan.forEach(i=>{
-      const k=keyOf(i);const d=parseISODate(i.fecha_pago);
-      if(k&&d&&d<inicioMesAnalisis)historicosPrevios.add(k);
-    });
-    if(keysMesAnalisis.size===0)return null;
-    let renovaciones=0;
-    keysMesAnalisis.forEach(k=>{if(historicosPrevios.has(k))renovaciones++;});
-    return Math.round((renovaciones/keysMesAnalisis.size)*100);
-  },[ingresos]);
+    const vc=computed.filter(c=>{if(!c.vencimiento)return false;return monthKey(c.vencimiento)===monthKey(toISODate(prevMD));});
+    if(vc.length===0)return null;
+    const rn=vc.filter(c=>curMI.some(i=>i.cliente_id===c.id));
+    return Math.round((rn.length/vc.length)*100);
+  },[computed,curMI]);
   const ingFiltrados=useMemo(()=>ingresos.filter(i=>{
     if(!i.fecha_pago)return true;
     if(ingDesde&&i.fecha_pago<ingDesde)return false;
@@ -1570,6 +1425,62 @@ export default function App(){
   const cGrPag=usePagination(vencimientosCriticos.gracia,PAGE.crit);
   const cVePag=usePagination(vencimientosCriticos.vencidos,PAGE.crit);
   useEffect(()=>{basePag.setPage(1);},[busqueda,filtro]);
+
+  // ── Métricas mensuales persistidas ───────────────────────────────────────
+  const [metricasGuardadas,setMetricasGuardadas]=useState([]);
+
+  useEffect(()=>{
+    supabase.from("metricas_mensuales").select("*").order("mes",{ascending:true})
+      .then(({data})=>{if(data)setMetricasGuardadas(data);});
+  },[]);
+
+  // Guardar métricas del mes anterior automáticamente si no están guardadas
+  useEffect(()=>{
+    if(!ingresos.length||!computed.length)return;
+    const mesAnteriorKey=monthKey(toISODate(prevMD));
+    const yaGuardado=metricasGuardadas.some(m=>m.mes===mesAnteriorKey);
+    if(yaGuardado)return;
+
+    // Calcular métricas del mes anterior
+    const ingMesAnt=ingresos.filter(i=>i.fecha_pago&&monthKey(i.fecha_pago)===mesAnteriorKey);
+    if(ingMesAnt.length===0)return; // sin datos, no guardar
+
+    const totalIngMesAnt=ingMesAnt.reduce((a,i)=>a+safeNum(i.monto),0);
+    const diasMesAnt=new Date(prevMD.getFullYear(),prevMD.getMonth()+1,0).getDate();
+
+    // Nuevos clientes mes anterior
+    const nuevosMesAnt=ingMesAnt.filter(i=>{
+      if(i.servicio!=="mensual"&&i.servicio!=="anual")return false;
+      const ant=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
+      return ant.length===0;
+    });
+    const vpdMesAnt=diasMesAnt>0?Math.round((nuevosMesAnt.length/diasMesAnt)*100)/100:0;
+
+    // Tasa de renovación mes anterior
+    const mesDosAtras=new Date(prevMD.getFullYear(),prevMD.getMonth()-1,1);
+    const mesDosAtrasKey=monthKey(toISODate(mesDosAtras));
+    const vcMesAnt=computed.filter(c=>c.vencimiento&&monthKey(c.vencimiento)===mesDosAtrasKey);
+    let tasaMesAnt=null;
+    if(vcMesAnt.length>0){
+      const rnMesAnt=vcMesAnt.filter(c=>ingMesAnt.some(i=>i.cliente_id===c.id));
+      tasaMesAnt=Math.round((rnMesAnt.length/vcMesAnt.length)*100);
+    }
+
+    const totalClientesMesAnt=computed.length;
+
+    supabase.from("metricas_mensuales").upsert([{
+      mes:mesAnteriorKey,
+      tasa_renovacion:tasaMesAnt,
+      nuevos_clientes:nuevosMesAnt.length,
+      total_ingresos:totalIngMesAnt,
+      total_clientes:totalClientesMesAnt,
+      ventas_por_dia:vpdMesAnt,
+    }],{onConflict:"mes"}).then(({error})=>{
+      if(!error){
+        setMetricasGuardadas(prev=>[...prev.filter(m=>m.mes!==mesAnteriorKey),{mes:mesAnteriorKey,tasa_renovacion:tasaMesAnt,nuevos_clientes:nuevosMesAnt.length,total_ingresos:totalIngMesAnt,total_clientes:totalClientesMesAnt,ventas_por_dia:vpdMesAnt}]);
+      }
+    });
+  },[ingresos,computed,metricasGuardadas]);
 
   // ── Login ─────────────────────────────────────────────────────────────────
   if(!user){
@@ -1623,7 +1534,6 @@ export default function App(){
     <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
-      {receptorVentaModal&&<ReceptorVentaModal open={!!receptorVentaModal} valorInicial={receptorVentaModal.valorInicial} onConfirm={receptorVentaModal.onConfirm} onCancel={receptorVentaModal.onCancel} t={t}/>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
         <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
@@ -1745,14 +1655,43 @@ export default function App(){
               );
             })()}
 
+            {/* Métricas mensuales históricas — guardadas en Supabase */}
+            {metricasGuardadas.length>0&&(
+              <div style={S.card}>
+                <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:6}}>Métricas históricas — datos permanentes</h3>
+                <div style={{color:t.textMuted,fontSize:13,marginBottom:18}}>Valores congelados al cierre de cada mes. No cambian aunque edites datos.</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={S.table}>
+                    <thead><TableHeader cols={["Mes","Ingresos","Nuevos clientes","Ventas/día","Tasa renovación","Total clientes"]} t={t}/></thead>
+                    <tbody>
+                      {[...metricasGuardadas].sort((a,b)=>a.mes.localeCompare(b.mes)).map(m=>(
+                        <tr key={m.mes}>
+                          <td style={{...S.td,fontWeight:700}}>{monthLabel(m.mes)}</td>
+                          <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {m.total_ingresos}</td>
+                          <td style={S.td}>{m.nuevos_clientes}</td>
+                          <td style={S.td}>
+                            <span style={{fontWeight:700,color:m.ventas_por_dia>=2.5?"#22c55e":m.ventas_por_dia>=1.5?"#f59e0b":"#ef4444"}}>
+                              {m.ventas_por_dia} v/día
+                            </span>
+                          </td>
+                          <td style={S.td}>{m.tasa_renovacion!=null?`${m.tasa_renovacion}%`:"—"}</td>
+                          <td style={S.td}>{m.total_clientes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Ventas por canal */}
             {(() => {
               const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
-              ingresos.forEach(i=>{
-                if(i.vendedor&&vendedorStats[i.vendedor]){
-                  vendedorStats[i.vendedor].total+=safeNum(i.monto);
-                  vendedorStats[i.vendedor].count+=1;
-                  if(!i.transferido)vendedorStats[i.vendedor].pendiente+=safeNum(i.monto);
+              computed.forEach(c=>{
+                if(c.vendedor&&vendedorStats[c.vendedor]){
+                  vendedorStats[c.vendedor].total+=safeNum(c.monto);
+                  vendedorStats[c.vendedor].count+=1;
+                  if(!c.transferido)vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
                 }
               });
               const hasData=Object.values(vendedorStats).some(v=>v.count>0);
@@ -1771,7 +1710,7 @@ export default function App(){
                             <span style={{fontWeight:800,color:t.accent,fontSize:15}}>USD {st.total}</span>
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
-                            <span>{st.count} venta{st.count!==1?"s":""}</span>
+                            <span>{st.count} cliente{st.count!==1?"s":""}</span>
                             {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
                             {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
                           </div>
@@ -2169,13 +2108,13 @@ export default function App(){
                   {pendientesTransferencia.map(c=>(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
                       <div>
-                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.cliente_nombre}</span>
+                        <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
                         <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
-                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_pago)}</span>
-                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.cliente_nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
+                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
                           Marcar recibido
                         </button>
                       </div>
