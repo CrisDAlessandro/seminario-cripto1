@@ -99,13 +99,21 @@ const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10};
 
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
 function money(v){return `USD ${safeNum(v)}`;}
+function normalizeServicio(v){
+  const raw=String(v||"").trim().toLowerCase();
+  if(raw==="mensual"||raw==="plan trader"||raw==="trader")return "mensual";
+  if(raw==="anual"||raw==="plan inversor"||raw==="inversor")return "anual";
+  if(raw==="clases"||raw==="clase")return "clases";
+  return raw||"mensual";
+}
 function svcLabel(v){
-  if(v==="mensual") return "Plan trader";
-  if(v==="anual")   return "Plan inversor";
+  const s=normalizeServicio(v);
+  if(s==="mensual") return "Plan trader";
+  if(s==="anual")   return "Plan inversor";
   return "Clases";
 }
-function svcAmount(v){return v==="mensual"?30:250;}
-function svcDuration(v){return v==="mensual"?30:v==="anual"?365:0;}
+function svcAmount(v){return normalizeServicio(v)==="mensual"?30:250;}
+function svcDuration(v){const s=normalizeServicio(v);return s==="mensual"?30:s==="anual"?365:0;}
 function isValidEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function classRangeLabel(fi){
   if(!fi)return"-";
@@ -121,19 +129,21 @@ function resolveDueDate(c){
 }
 function computeClient(c){
   const today=getToday();
-  const isClases=c.servicio==="clases";
+  const servicio=normalizeServicio(c.servicio);
+  const cNorm={...c,servicio};
+  const isClases=servicio==="clases";
   const vencimiento=resolveDueDate(c);
   let estadoSistema="activo",dias=null;
   if(isClases){estadoSistema="clases";}
-  else if(c.estado_manual==="sacar"){estadoSistema="sacar";}
+  else if(cNorm.estado_manual==="sacar"){estadoSistema="sacar";}
   else if(vencimiento){
     const due=parseISODate(vencimiento);
     dias=diffDays(today,due);
     if(today>due){const ov=diffDays(due,today);estadoSistema=ov<=GRACE_DAYS?"gracia":"vencido";}
   }
-  return{...c,isClases,vencimiento,dias,duracion_dias:safeNum(c.duracion_dias),estadoSistema,
-    class_range_label:isClases?classRangeLabel(c.fecha_inicio):null,
-    class_end_date:isClases&&c.fecha_inicio?toISODate(addDays(c.fecha_inicio,27)):null};
+  return{...cNorm,isClases,vencimiento,dias,duracion_dias:safeNum(cNorm.duracion_dias),estadoSistema,
+    class_range_label:isClases?classRangeLabel(cNorm.fecha_inicio):null,
+    class_end_date:isClases&&cNorm.fecha_inicio?toISODate(addDays(cNorm.fecha_inicio,27)):null};
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
@@ -147,13 +157,14 @@ function buildDailySeriesForMonth(ingresos,year,month){
     const row=rows[d.getDate()-1];
     const m=safeNum(i.monto);
     row.total+=m;row.ventas+=1;
-    if(row[i.servicio]!==undefined)row[i.servicio]+=m;
+    const servicio=normalizeServicio(i.servicio);
+    if(row[servicio]!==undefined)row[servicio]+=m;
   });
   return rows;
 }
 function buildBreakdown(arr){
   const b={mensual:0,anual:0,clases:0};
-  arr.forEach(i=>{if(b[i.servicio]!==undefined)b[i.servicio]+=safeNum(i.monto);});
+  arr.forEach(i=>{const servicio=normalizeServicio(i.servicio);if(b[servicio]!==undefined)b[servicio]+=safeNum(i.monto);});
   return b;
 }
 
@@ -1113,14 +1124,15 @@ export default function App(){
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
-    const dur=f.servicio==="clases"?0:Number(f.duracion_dias||0);
+    const servicio=normalizeServicio(f.servicio);
+    const dur=servicio==="clases"?0:Number(f.duracion_dias||svcDuration(servicio));
     const vendedor=f.vendedor||"";
-    return{...f,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
+    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
       vendedor,transferido:vendedor===""?true:false,
-      fecha_vencimiento:f.servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
+      fecha_vencimiento:servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
   function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
-    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio,monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
+    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
   }
 
   async function guardarCliente(){
@@ -1156,41 +1168,39 @@ export default function App(){
   }
   async function renovarRapido(cliente, vendedor="", montoCustom){
     const today=getToday();
-    const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
-    const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
-    // Si está activo (no vencido), extender desde el vencimiento actual
-    // Si está vencido, extender desde hoy
-    let baseDate=toISODate(today);
-    if(va&&dur>0){
-      const due=parseISODate(va);
-      if(today<=due){
-        // Activo o en gracia — extender desde el vencimiento actual
-        baseDate=va;
-      }
-      // Si ya venció — extender desde hoy
-    }
-    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(baseDate,dur));
+    const servicio=normalizeServicio(cliente.servicio);
+    const dur=servicio==="clases"?0:svcDuration(servicio);
+    const vencimientoActual=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
+    // Regla correcta: renovar suma la duración completa al vencimiento previo.
+    // Ejemplo: si estaba vencido hace 10 días y renueva 30, queda con 20 días.
+    const baseDate=vencimientoActual||toISODate(today);
+    const nv=servicio==="clases"||dur<=0?null:toISODate(addDays(baseDate,dur));
     const fb=toISODate(today);
     const transferido=!vendedor||vendedor===""?true:false;
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
+    const email=(cliente.email||"").trim().toLowerCase();
+    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,monto,toISODate(today),cliente.notas)]);
-    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto,vendedor:vendedor||"Cristian"});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${monto} · Recibe: ${vendedor||"Cristian"}`,{servicio:cliente.servicio,monto});
+    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,toISODate(today),cliente.notas);
+    const{error:eI}=await supabase.from("ingresos").insert([ingreso]);
+    if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
+    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,vendedor:vendedor||"Cristian"});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${vendedor||"Cristian"}`,{servicio,monto});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
-    llamarDrive("compartir",(cliente.email||"").trim().toLowerCase());
+    llamarDrive("compartir",email);
   }
   async function eliminarClienteConfirmado(cliente){
-    // Quitar de pantalla inmediatamente sin destello
+    // Baja operativa: elimina al cliente activo y revoca acceso, pero NO borra ingresos históricos.
+    // Antes de borrar el cliente, se desvinculan sus ingresos para evitar cascadas por clave foránea.
     setClientes(prev=>prev.filter(c=>c.id!==cliente.id));
-    setIngresos(prev=>prev.filter(i=>i.cliente_id!==cliente.id));
+    setIngresos(prev=>prev.map(i=>i.cliente_id===cliente.id?{...i,cliente_id:null}:i));
     setClienteDetalle(null);
+    await supabase.from("ingresos").update({cliente_id:null}).eq("cliente_id",cliente.id);
     const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
     if(error){toast.error("No se pudo eliminar");refetch();return;}
-    await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email});
-    toast.success(`${cliente.nombre} eliminado`);
+    await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin borrar ingresos"});
+    toast.success(`${cliente.nombre} eliminado. Los ingresos históricos se conservaron.`);
     llamarDrive("revocar",(cliente.email||"").trim().toLowerCase()); // en paralelo
   }
   async function eliminarIngreso(id){
@@ -1267,10 +1277,10 @@ export default function App(){
     refetch();
   }
   function abrirRenovar(cliente){
-    const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
-    let fb=toISODate(getToday());
-    if(va&&(cliente.estadoSistema==="activo"||cliente.estadoSistema==="gracia"))fb=va;
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio:cliente.servicio||"mensual",fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:cliente.servicio==="clases"?0:safeNum(cliente.duracion_dias||svcDuration(cliente.servicio)),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
+    const servicio=normalizeServicio(cliente.servicio);
+    const va=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
+    const fb=va||toISODate(getToday());
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -1284,8 +1294,8 @@ export default function App(){
     return okB&&okF;
   }),[computed,busqueda,filtro]);
   const deudores=useMemo(()=>computed.filter(c=>Number(c.deuda_restante||0)>0),[computed]);
-  const clasesList=useMemo(()=>computed.filter(c=>c.servicio==="clases"),[computed]);
-  const vencimientos=useMemo(()=>computed.filter(c=>c.servicio!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
+  const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases"),[computed]);
+  const vencimientos=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
   const vencimientosCriticos=useMemo(()=>{
     const pv=[],g=[],v=[];
     computed.forEach(c=>{
@@ -1370,7 +1380,7 @@ export default function App(){
   // = total nuevos clientes (planes) este mes / días transcurridos del mes
   const ventaPromedioDia=useMemo(()=>{
     const nuevosDelMes=curMI.filter(i=>{
-      if(i.servicio!=="mensual"&&i.servicio!=="anual")return false;
+      if(normalizeServicio(i.servicio)!=="mensual"&&normalizeServicio(i.servicio)!=="anual")return false;
       const anteriores=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
       return anteriores.length===0;
     });
@@ -1460,7 +1470,7 @@ export default function App(){
 
     // Nuevos clientes mes anterior
     const nuevosMesAnt=ingMesAnt.filter(i=>{
-      if(i.servicio!=="mensual"&&i.servicio!=="anual")return false;
+      if(normalizeServicio(i.servicio)!=="mensual"&&normalizeServicio(i.servicio)!=="anual")return false;
       const ant=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
       return ant.length===0;
     });
