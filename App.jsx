@@ -1157,7 +1157,19 @@ export default function App(){
   async function renovarRapido(cliente, vendedor="", montoCustom){
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
-    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(toISODate(today),dur));
+    const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
+    // Si está activo (no vencido), extender desde el vencimiento actual
+    // Si está vencido, extender desde hoy
+    let baseDate=toISODate(today);
+    if(va&&dur>0){
+      const due=parseISODate(va);
+      if(today<=due){
+        // Activo o en gracia — extender desde el vencimiento actual
+        baseDate=va;
+      }
+      // Si ya venció — extender desde hoy
+    }
+    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(baseDate,dur));
     const fb=toISODate(today);
     const transferido=!vendedor||vendedor===""?true:false;
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
@@ -1185,8 +1197,10 @@ export default function App(){
     const ing=ingresos.find(i=>i.id===id);
     const{error}=await supabase.from("ingresos").delete().eq("id",id);
     if(error){toast.error("No se pudo eliminar el ingreso");return;}
+    // Actualizar estado local inmediatamente sin recargar
+    setIngresos(prev=>prev.filter(i=>i.id!==id));
     await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto});
-    toast.success("Ingreso eliminado");fetchIngresos();
+    toast.success("Ingreso eliminado");
   }
   async function cambiarEstado(id,value){
     // Actualización optimista — cambia en pantalla de inmediato sin destello
