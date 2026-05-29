@@ -1154,7 +1154,7 @@ export default function App(){
     toast.success(`${v.nombre} renovado correctamente`);refetch();
     llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
-  async function renovarRapido(cliente, vendedor=""){
+  async function renovarRapido(cliente, vendedor="", montoCustom){
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
@@ -1169,12 +1169,14 @@ export default function App(){
     }
     const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(toISODate(today),diasRestantes));
     const transferido=!vendedor||vendedor===""?true:false;
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
+    // Usar monto custom si se ingresó, sino el del cliente
+    const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto,duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
-    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
-    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto,vendedor:vendedor||"Cristian"});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibe: ${vendedor||"Cristian"}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
+    await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,monto,toISODate(today),cliente.notas)]);
+    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto,vendedor:vendedor||"Cristian"});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${monto} · Días: ${diasRestantes} · Recibe: ${vendedor||"Cristian"}`,{servicio:cliente.servicio,monto,dias:diasRestantes});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir",(cliente.email||"").trim().toLowerCase());
   }
@@ -1541,13 +1543,21 @@ export default function App(){
         onConfirm={()=>{confirm.onConfirm();setConfirm(null);setVendedorRenovacion("");}}
         onCancel={()=>{setConfirm(null);setVendedorRenovacion("");}} t={t}>
         {confirm.showVendedor&&(
-          <div style={{marginBottom:4}}>
-            <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
-            <select value={vendedorRenovacion} onChange={e=>setVendedorRenovacion(e.target.value)}
-              style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
-              <option value="">Cristian (directo)</option>
-              {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
-            </select>
+          <div style={{display:"grid",gap:12,marginBottom:4}}>
+            <div>
+              <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Monto recibido (USD)</label>
+              <input type="number" value={confirm.montoRenovacion??""} onChange={e=>setConfirm(prev=>({...prev,montoRenovacion:e.target.value}))}
+                style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}
+                placeholder={confirm.montoDefault||"30"}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
+              <select value={vendedorRenovacion} onChange={e=>setVendedorRenovacion(e.target.value)}
+                style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
+                <option value="">Cristian (directo)</option>
+                {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+              </select>
+            </div>
           </div>
         )}
       </ConfirmModal>}
@@ -1837,7 +1847,7 @@ export default function App(){
                   accentBorder={dark?"#3a2000":"#fdba74"} accentBg={dark?"#1a1000":"#fff7ed"} accentText={dark?"#fdba74":"#9a3412"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion,confirm?.montoRenovacion),{label:"Renovar",showVendedor:true,montoDefault:c.monto})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1847,7 +1857,7 @@ export default function App(){
                   accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e"
                   nameColor="#1a0e00"
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion,confirm?.montoRenovacion),{label:"Renovar",showVendedor:true,montoDefault:c.monto})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1857,7 +1867,7 @@ export default function App(){
                   accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b"
                   nameColor="#1a0000"
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion,confirm?.montoRenovacion),{label:"Renovar",showVendedor:true,montoDefault:c.monto})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1947,7 +1957,7 @@ export default function App(){
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}>✔</button>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion,confirm?.montoRenovacion),{label:"Renovar",showVendedor:true,montoDefault:c.monto})}>✔</button>
                             <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                             {c.telefono&&(
                               <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
