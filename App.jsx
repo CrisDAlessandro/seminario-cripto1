@@ -568,14 +568,14 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
             ))}
           </div>
 
-          {/* Servicios activos — uno por cada registro con ese nombre */}
+          {/* Servicios activos — solo planes con vencimiento: Plan trader / Plan inversor */}
           <div style={{marginBottom:20}}>
             <div style={{fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Servicios activos</div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {mismoNombre.map(c=>(
+              {mismoNombre.filter(c=>["mensual","anual"].includes(normalizeServicio(c.servicio))).map(c=>(
                 <div key={c.id} style={{padding:"8px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`,fontSize:13}}>
                   <span style={{fontWeight:700,color:t.accent}}>{svcLabel(c.servicio)}</span>
-                  <span style={{color:t.textMuted,marginLeft:8}}>{c.vencimiento?`vence ${formatDate(c.vencimiento)}`:c.servicio==="clases"?"activo":""}</span>
+                  <span style={{color:t.textMuted,marginLeft:8}}>{c.vencimiento?`vence ${formatDate(c.vencimiento)}`:""}</span>
                   {safeNum(c.deuda_restante)>0&&<span style={{color:"#ef4444",marginLeft:8,fontWeight:700}}>debe USD {c.deuda_restante}</span>}
                 </div>
               ))}
