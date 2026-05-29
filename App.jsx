@@ -1213,7 +1213,7 @@ export default function App(){
     setIngresos(prev=>[{...ingreso,id:`tmp-${Date.now()}`},...prev]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,vendedor:vendedor||"Cristian"});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${vendedor||"Cristian"}`,{servicio,monto});
-    toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
+    toast.success(servicio==="clases"?`✓ ${cliente.nombre} renovado — clases registradas`:`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir",email);
   }
   async function eliminarClienteConfirmado(cliente){
@@ -2025,7 +2025,10 @@ export default function App(){
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                             {c.servicio==="clases"?(
-                              <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"7px 11px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
+                              <>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                                <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"7px 11px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
+                              </>
                             ):(
                               <>
                                 <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
@@ -2123,11 +2126,15 @@ export default function App(){
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>{c.notas||"-"}</td>
                         <td style={S.td}>
-                          {c.estado_manual==="finalizado"?(
-                            <span style={{fontSize:12,color:t.textMuted,fontWeight:700}}>Consolidada</span>
-                          ):(
-                            <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
-                          )}
+                          <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                            {c.estado_manual==="finalizado"?(
+                              <span style={{fontSize:12,color:t.textMuted,fontWeight:700}}>Consolidada</span>
+                            ):(
+                              <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
+                            )}
+                            <button title="Eliminar" style={{...btn(false),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
