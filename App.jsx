@@ -231,7 +231,7 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg"];
+const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg", "Jeremy"];
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
@@ -345,15 +345,16 @@ function useToast(){
 }
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
-function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t}){
+function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t,children}){
   if(!open)return null;
   const btn=makeBtn(t);
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
-      <div style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:420,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+      <div style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
-        <p style={{margin:"0 0 28px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
+        {children}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
           <button style={btn(false)} onClick={onCancel}>Cancelar</button>
           <button style={danger?{padding:"10px 18px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:"#ef4444",color:"#fff"}:btn(false,true)} onClick={onConfirm}>
             {confirmLabel}
@@ -1049,6 +1050,7 @@ export default function App(){
   const[ingDesde,setIngDesde]=useState("");
   const[ingHasta,setIngHasta]=useState("");
   const[emailSaved,setEmailSaved]=useState(null);
+  const[vendedorRenovacion,setVendedorRenovacion]=useState("");
 
   const toast=useToast();
 
@@ -1067,8 +1069,8 @@ export default function App(){
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
 
-  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar"}={}){
-    setConfirm({title,message,onConfirm,danger,label});
+  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false}={}){
+    setConfirm({title,message,onConfirm,danger,label,showVendedor});
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -1152,36 +1154,29 @@ export default function App(){
     toast.success(`${v.nombre} renovado correctamente`);refetch();
     llamarDrive("compartir", v.email); // en paralelo, no bloquea
   }
-  async function renovarRapido(cliente){
+  async function renovarRapido(cliente, vendedor=""){
     const today=getToday();
     const dur=cliente.servicio==="clases"?0:Number(cliente.duracion_dias||svcDuration(cliente.servicio));
     const va=cliente.vencimiento||cliente.fecha_vencimiento||null;
-
-    // Calcular días restantes del plan
-    // Si está vencido: le quedan (dur - días_pasados_desde_vencimiento)
-    // Si está activo/por vencer: arranca desde el vencimiento
-    let diasRestantes = dur;
-    let fb = toISODate(today); // fecha_inicio = hoy (es cuando paga)
-
-    if (va && dur > 0) {
-      const due = parseISODate(va);
-      if (today > due) {
-        // Está vencido — calcular cuántos días pasaron desde el vencimiento
-        const diasVencido = diffDays(due, today);
-        diasRestantes = Math.max(1, dur - diasVencido);
+    let diasRestantes=dur;
+    let fb=toISODate(today);
+    if(va&&dur>0){
+      const due=parseISODate(va);
+      if(today>due){
+        const diasVencido=diffDays(due,today);
+        diasRestantes=Math.max(1,dur-diasVencido);
       }
-      // Si está activo o en gracia sin vencer aún, da los 30 días completos
     }
-
-    const nv = cliente.servicio==="clases"||dur<=0 ? null : toISODate(addDays(toISODate(today), diasRestantes));
-    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv};
+    const nv=cliente.servicio==="clases"||dur<=0?null:toISODate(addDays(toISODate(today),diasRestantes));
+    const transferido=!vendedor||vendedor===""?true:false;
+    const payload={nombre:cliente.nombre||"",email:(cliente.email||"").trim().toLowerCase(),servicio:cliente.servicio,fecha_inicio:fb,monto:Number(cliente.monto||0),duracion_dias:diasRestantes,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     await supabase.from("ingresos").insert([buildIng(cliente.id,cliente.nombre||"",(cliente.email||"").trim().toLowerCase(),cliente.servicio,cliente.monto,toISODate(today),cliente.notas)]);
-    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
+    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio:cliente.servicio,monto:cliente.monto,vendedor:vendedor||"Cristian"});
+    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(cliente.servicio)} · Monto: USD ${cliente.monto} · Días: ${diasRestantes} · Recibe: ${vendedor||"Cristian"}`,{servicio:cliente.servicio,monto:cliente.monto,dias:diasRestantes});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
-    llamarDrive("compartir", (cliente.email||"").trim().toLowerCase());
+    llamarDrive("compartir",(cliente.email||"").trim().toLowerCase());
   }
   async function eliminarClienteConfirmado(cliente){
     // Quitar de pantalla inmediatamente sin destello
@@ -1542,7 +1537,20 @@ export default function App(){
   return(
     <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-      {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger} onConfirm={()=>{confirm.onConfirm();setConfirm(null);}} onCancel={()=>setConfirm(null)} t={t}/>}
+      {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
+        onConfirm={()=>{confirm.onConfirm();setConfirm(null);setVendedorRenovacion("");}}
+        onCancel={()=>{setConfirm(null);setVendedorRenovacion("");}} t={t}>
+        {confirm.showVendedor&&(
+          <div style={{marginBottom:4}}>
+            <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
+            <select value={vendedorRenovacion} onChange={e=>setVendedorRenovacion(e.target.value)}
+              style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
+              <option value="">Cristian (directo)</option>
+              {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+            </select>
+          </div>
+        )}
+      </ConfirmModal>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
         <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
@@ -1829,7 +1837,7 @@ export default function App(){
                   accentBorder={dark?"#3a2000":"#fdba74"} accentBg={dark?"#1a1000":"#fff7ed"} accentText={dark?"#fdba74":"#9a3412"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1839,7 +1847,7 @@ export default function App(){
                   accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e"
                   nameColor="#1a0e00"
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1849,7 +1857,7 @@ export default function App(){
                   accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b"
                   nameColor="#1a0000"
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -1939,7 +1947,7 @@ export default function App(){
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c),{label:"Renovar"})}>✔</button>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,()=>renovarRapido(c,vendedorRenovacion),{label:"Renovar",showVendedor:true})}>✔</button>
                             <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                             {c.telefono&&(
                               <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
