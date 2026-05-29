@@ -1182,9 +1182,11 @@ export default function App(){
     const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
+    setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
     const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,toISODate(today),cliente.notas);
     const{error:eI}=await supabase.from("ingresos").insert([ingreso]);
     if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
+    setIngresos(prev=>[{...ingreso,id:`tmp-${Date.now()}`},...prev]);
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,vendedor:vendedor||"Cristian"});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${vendedor||"Cristian"}`,{servicio,monto});
     toast.success(`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
@@ -1339,15 +1341,15 @@ export default function App(){
       if(c.estadoSistema==="sacar"||c.estadoSistema==="vencido")b.sacar++;
       if(Number(c.deuda_restante||0)>0)b.deudores++;
       if(c.servicio==="clases")b.clases++;
-      b.ingresos+=Number(c.monto||0);
     });
+    b.ingresos=ingresos.reduce((a,i)=>a+safeNum(i.monto),0);
     return b;
-  },[computed]);
+  },[computed,ingresos]);
   const totalDeuda=useMemo(()=>deudores.reduce((a,c)=>a+safeNum(c.deuda_restante),0),[deudores]);
 
   // Ventas pendientes de transferencia a Cristian
   const pendientesTransferencia=useMemo(()=>
-    computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido===false)
+    computed.filter(c=>c.vendedor&&c.vendedor!==""&&c.transferido!==true&&String(c.transferido)!=="true")
   ,[computed]);
 
   async function marcarTransferido(id, cliente){
@@ -1397,8 +1399,9 @@ export default function App(){
       if(key<"2026-03")return; // solo desde marzo 2026 en adelante
       if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,total:0,vM:0,vA:0,vC:0});
       const r=map.get(key);const m=Number(i.monto||0);
-      if(i.servicio==="mensual"){r.mensual+=m;r.vM++;}
-      else if(i.servicio==="anual"){r.anual+=m;r.vA++;}
+      const servicio=normalizeServicio(i.servicio);
+      if(servicio==="mensual"){r.mensual+=m;r.vM++;}
+      else if(servicio==="anual"){r.anual+=m;r.vA++;}
       else{r.clases+=m;r.vC++;}
       r.total+=m;
     });
@@ -1415,11 +1418,11 @@ export default function App(){
     const keyOf=i=>i.cliente_id?`id:${i.cliente_id}`:i.email?`email:${i.email.toLowerCase().trim()}`:null;
     const planes=["mensual","anual"];
     const pagaronMesAnt=new Set(
-      prevMI.filter(i=>planes.includes(i.servicio)).map(keyOf).filter(Boolean)
+      prevMI.filter(i=>planes.includes(normalizeServicio(i.servicio))).map(keyOf).filter(Boolean)
     );
     if(pagaronMesAnt.size===0)return null;
     const pagaronEsteMes=new Set(
-      curMI.filter(i=>planes.includes(i.servicio)).map(keyOf).filter(Boolean)
+      curMI.filter(i=>planes.includes(normalizeServicio(i.servicio))).map(keyOf).filter(Boolean)
     );
     let renovaron=0;
     pagaronMesAnt.forEach(k=>{if(pagaronEsteMes.has(k))renovaron++;});
@@ -1651,7 +1654,7 @@ export default function App(){
               const data=resumenConTrend.map(r=>{
                 const ingMesR=ingresos.filter(i=>
                   i.fecha_pago&&monthKey(i.fecha_pago)===r.key&&
-                  (i.servicio==="mensual"||i.servicio==="anual")
+                  (normalizeServicio(i.servicio)==="mensual"||normalizeServicio(i.servicio)==="anual")
                 );
                 const nuevos=ingMesR.filter(i=>{
                   const ant=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
@@ -1708,7 +1711,7 @@ export default function App(){
                 if(c.vendedor&&vendedorStats[c.vendedor]){
                   vendedorStats[c.vendedor].total+=safeNum(c.monto);
                   vendedorStats[c.vendedor].count+=1;
-                  if(!c.transferido)vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
+                  if(c.transferido!==true&&String(c.transferido)!=="true")vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
                 }
               });
               const hasData=Object.values(vendedorStats).some(v=>v.count>0);
