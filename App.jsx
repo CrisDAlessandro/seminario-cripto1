@@ -68,10 +68,18 @@ function toISODate(d) {
 function addDays(ds, days) {
   const d = new Date(`${ds}T12:00:00`); d.setDate(d.getDate()+Number(days||0)); return d;
 }
-function parseISODate(ds) { return ds ? new Date(`${ds}T12:00:00`) : null; }
+function dateOnly(ds){
+  if(!ds)return null;
+  return String(ds).slice(0,10);
+}
+function parseISODate(ds) {
+  const d=dateOnly(ds);
+  return d ? new Date(`${d}T12:00:00`) : null;
+}
 function formatDate(ds) {
-  if (!ds) return "-";
-  return new Intl.DateTimeFormat("es-AR").format(new Date(`${ds}T12:00:00`));
+  const d=dateOnly(ds);
+  if (!d) return "-";
+  return new Intl.DateTimeFormat("es-AR").format(new Date(`${d}T12:00:00`));
 }
 function formatDateTime(ts) {
   if (!ts) return "-";
@@ -83,7 +91,8 @@ function diffDays(a,b) {
   return Math.floor((db-da)/86400000);
 }
 function monthKey(ds) {
-  const d=new Date(`${ds}T12:00:00`);
+  const d=parseISODate(ds);
+  if(!d||Number.isNaN(d.getTime()))return null;
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 }
 function monthLabel(key) {
@@ -95,6 +104,7 @@ function isSameMonth(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()
 
 // ─── Negocio ──────────────────────────────────────────────────────────────────
 const GRACE_DAYS=3, WARN_DAYS=2;
+const INICIO_INGRESOS_HISTORICOS="2026-03";
 const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10};
 
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
@@ -166,6 +176,19 @@ function buildBreakdown(arr){
   const b={mensual:0,anual:0,clases:0};
   arr.forEach(i=>{const servicio=normalizeServicio(i.servicio);if(b[servicio]!==undefined)b[servicio]+=safeNum(i.monto);});
   return b;
+}
+function esIngresoHistorico(i){
+  const key=monthKey(i?.fecha_pago);
+  return !!key&&key>=INICIO_INGRESOS_HISTORICOS;
+}
+function totalIngresosHistoricosPorMes(ingresos){
+  const meses=new Map();
+  ingresos.forEach(i=>{
+    if(!esIngresoHistorico(i))return;
+    const key=monthKey(i.fecha_pago);
+    meses.set(key,(meses.get(key)||0)+safeNum(i.monto));
+  });
+  return Array.from(meses.values()).reduce((a,v)=>a+v,0);
 }
 
 // ─── XLSX export ─────────────────────────────────────────────────────────────
@@ -1333,6 +1356,9 @@ export default function App(){
       return diasDesdeInicio >= diasLimite;
     });
   }, [computed]);
+  const ingresosDesdeMarzo=useMemo(()=>ingresos.filter(esIngresoHistorico),[ingresos]);
+  const ingresosTotalesHistoricos=useMemo(()=>totalIngresosHistoricosPorMes(ingresos),[ingresos]);
+
   const resumen=useMemo(()=>{
     const b={activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
     computed.forEach(c=>{
@@ -1342,9 +1368,12 @@ export default function App(){
       if(Number(c.deuda_restante||0)>0)b.deudores++;
       if(c.servicio==="clases")b.clases++;
     });
-    b.ingresos=ingresos.reduce((a,i)=>a+safeNum(i.monto),0);
+    // Ingresos totales = marzo + abril + mayo + todos los meses siguientes.
+    // Se calcula agrupando primero por mes y luego sumando esos mensuales,
+    // así cada venta/renovación que refresca el mensual también refresca el total histórico.
+    b.ingresos=ingresosTotalesHistoricos;
     return b;
-  },[computed,ingresos]);
+  },[computed,ingresosTotalesHistoricos]);
   const totalDeuda=useMemo(()=>deudores.reduce((a,c)=>a+safeNum(c.deuda_restante),0),[deudores]);
 
   // Ventas pendientes de transferencia a Cristian
@@ -1376,7 +1405,13 @@ export default function App(){
   const ingMes=curMI.reduce((a,i)=>a+safeNum(i.monto),0);
   const ingMesAnt=prevMI.reduce((a,i)=>a+safeNum(i.monto),0);
   const trendMes=ingMesAnt>0?Math.round(((ingMes-ingMesAnt)/ingMesAnt)*100):null;
-  const dashStats=useMemo(()=>({ingMes,ventasMes:curMI.length,bkMes:buildBreakdown(curMI),bkTotal:buildBreakdown(ingresos)}),[ingresos,curMI,ingMes]);
+  const dashStats=useMemo(()=>({
+    ingMes,
+    ventasMes:curMI.length,
+    bkMes:buildBreakdown(curMI),
+    // Total histórico calculado igual que el resumen mensual: marzo 2026 en adelante.
+    bkTotal:buildBreakdown(ingresosDesdeMarzo)
+  }),[ingresosDesdeMarzo,curMI,ingMes]);
 
   // Promedio de ventas nuevas por día del mes actual
   // = total nuevos clientes (planes) este mes / días transcurridos del mes
@@ -1393,10 +1428,9 @@ export default function App(){
   },[curMI,ingresos,today]);
   const resumenMensual=useMemo(()=>{
     const map=new Map();
-    ingresos.forEach(i=>{
+    ingresosDesdeMarzo.forEach(i=>{
       if(!i.fecha_pago)return;
       const key=monthKey(i.fecha_pago);
-      if(key<"2026-03")return; // solo desde marzo 2026 en adelante
       if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,total:0,vM:0,vA:0,vC:0});
       const r=map.get(key);const m=Number(i.monto||0);
       const servicio=normalizeServicio(i.servicio);
@@ -1406,7 +1440,7 @@ export default function App(){
       r.total+=m;
     });
     return Array.from(map.values()).sort((a,b)=>a.key.localeCompare(b.key));
-  },[ingresos]);
+  },[ingresosDesdeMarzo]);
   const resumenConTrend=useMemo(()=>resumenMensual.map((r,i)=>{
     const prev=resumenMensual[i-1];
     const trend=prev&&prev.total>0?Math.round(((r.total-prev.total)/prev.total)*100):null;
