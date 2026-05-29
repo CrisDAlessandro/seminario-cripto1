@@ -144,7 +144,7 @@ function computeClient(c){
   const isClases=servicio==="clases";
   const vencimiento=resolveDueDate(c);
   let estadoSistema="activo",dias=null;
-  if(isClases){estadoSistema="clases";}
+  if(isClases){estadoSistema=cNorm.estado_manual==="finalizado"?"finalizado":"clases";}
   else if(cNorm.estado_manual==="sacar"){estadoSistema="sacar";}
   else if(vencimiento){
     const due=parseISODate(vencimiento);
@@ -325,6 +325,7 @@ function badgeStyle(status){
   if(status==="gracia")  return{...b,background:"#fef3c7",color:"#92400e",borderColor:"#fde68a"};
   if(status==="vencido") return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
   if(status==="clases")  return{...b,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
+  if(status==="finalizado") return{...b,background:"#e5e7eb",color:"#374151",borderColor:"#d1d5db"};
   if(status==="sacar")   return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
   return{...b,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
 }
@@ -383,8 +384,8 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
   if(!open)return null;
   const btn=makeBtn(t);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}>
-      <div style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={onCancel}>
+      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
         {children}
@@ -1250,6 +1251,14 @@ export default function App(){
     await logH(user?.email,"cambió estado manual","cliente",id,{nombre:c?.nombre,estado:value});
     await logNC(id,user?.email,"estado",`Estado cambiado a: ${value}`,{estado:value});
   }
+  async function finalizarClases(cliente){
+    setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,estado_manual:"finalizado"}:c));
+    const{error}=await supabase.from("clientes").update({estado_manual:"finalizado"}).eq("id",cliente.id);
+    if(error){toast.error("No se pudo finalizar la clase");fetchClientes();return;}
+    await logH(user?.email,"finalizó clases","cliente",cliente.id,{nombre:cliente.nombre,monto:cliente.monto});
+    await logNC(cliente.id,user?.email,"estado",`Clases finalizadas. Quedan consolidadas en historial e ingresos.`,{estado:"finalizado"});
+    toast.success(`Clases de ${cliente.nombre} finalizadas`);
+  }
   async function actualizarEmail(id, nuevoEmail) {
     const clienteActual = clientes.find(c => c.id === id);
     const emailAnterior = (clienteActual?.email || "").trim().toLowerCase();
@@ -1313,6 +1322,7 @@ export default function App(){
   // ── Datos derivados ───────────────────────────────────────────────────────
   const computed=useMemo(()=>clientes.map(computeClient),[clientes]);
   const filtered=useMemo(()=>computed.filter(c=>{
+    if(normalizeServicio(c.servicio)==="clases"&&c.estado_manual==="finalizado")return false;
     const txt=`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase();
     const okB=txt.includes(busqueda.toLowerCase());
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
@@ -2013,9 +2023,15 @@ export default function App(){
                         </td>
                         <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
-                          <div style={{display:"flex",gap:5,alignItems:"center"}}>
-                            <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
-                            <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
+                          <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+                            {c.servicio==="clases"?(
+                              <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"7px 11px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
+                            ):(
+                              <>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                                <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
+                              </>
+                            )}
                             {c.telefono&&(
                               <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                                 style={{...btn(false),padding:"7px 11px",fontSize:13,textDecoration:"none",color:"#22c55e",background:"rgba(34,197,94,0.12)"}} title="WhatsApp">💬</a>
@@ -2096,7 +2112,7 @@ export default function App(){
               <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Clases</h3>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Alumno","Inicio","Mes","Monto","Notas"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Alumno","Inicio","Mes","Monto","Estado","Notas","Acción"]} t={t}/></thead>
                   <tbody>
                     {clasPag.rows.map(c=>(
                       <tr key={c.id}>
@@ -2104,7 +2120,15 @@ export default function App(){
                         <td style={S.td}>{formatDate(c.fecha_inicio)}</td>
                         <td style={S.td}>{monthLabel(monthKey(c.fecha_inicio))}</td>
                         <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {c.monto}</td>
+                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>{c.notas||"-"}</td>
+                        <td style={S.td}>
+                          {c.estado_manual==="finalizado"?(
+                            <span style={{fontSize:12,color:t.textMuted,fontWeight:700}}>Consolidada</span>
+                          ):(
+                            <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
