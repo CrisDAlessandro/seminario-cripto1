@@ -1233,10 +1233,30 @@ export default function App(){
     const ing=ingresos.find(i=>i.id===id);
     const{error}=await supabase.from("ingresos").delete().eq("id",id);
     if(error){toast.error("No se pudo eliminar el ingreso");return;}
+
+    // Si el ingreso borrado correspondía al cliente que sigue activo en Base operativa,
+    // se revierte también el efecto operativo de esa carga/renovación: días agregados
+    // y pendiente de recepción. Esto NO aplica cuando el cliente ya fue dado de baja
+    // operativamente, porque en ese caso sus ingresos históricos quedan desvinculados.
+    let rollbackInfo=null;
+    if(ing?.cliente_id){
+      const clienteActivo=clientes.find(c=>c.id===ing.cliente_id);
+      const servicio=normalizeServicio(ing.servicio||clienteActivo?.servicio);
+      const dur=servicio==="clases"?0:svcDuration(servicio);
+      if(clienteActivo&&dur>0){
+        const vencActual=clienteActivo.fecha_vencimiento||clienteActivo.vencimiento||resolveDueDate(clienteActivo);
+        const nuevoVenc=vencActual?toISODate(addDays(vencActual,-dur)):null;
+        const payloadRollback={fecha_vencimiento:nuevoVenc,vencimiento:nuevoVenc,vendedor:"",transferido:true};
+        await supabase.from("clientes").update({fecha_vencimiento:nuevoVenc,vendedor:"",transferido:true}).eq("id",clienteActivo.id);
+        setClientes(prev=>prev.map(c=>c.id===clienteActivo.id?{...c,...payloadRollback}:c));
+        rollbackInfo={cliente:clienteActivo.nombre,servicio,dias_revertidos:dur,vencimiento:nuevoVenc};
+      }
+    }
+
     // Actualizar estado local inmediatamente sin recargar
     setIngresos(prev=>prev.filter(i=>i.id!==id));
-    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto});
-    toast.success("Ingreso eliminado");
+    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,rollback:rollbackInfo});
+    toast.success(rollbackInfo?"Ingreso eliminado y renovación revertida":"Ingreso eliminado");
   }
   async function cambiarEstado(id,value){
     // Actualización optimista — cambia en pantalla de inmediato sin destello
@@ -1259,18 +1279,22 @@ export default function App(){
     await logNC(cliente.id,user?.email,"estado",`Clases finalizadas. Quedan consolidadas en historial e ingresos.`,{estado:"finalizado"});
     toast.success(`Clases de ${cliente.nombre} finalizadas`);
   }
-  async function actualizarEmail(id, nuevoEmail) {
+  async function actualizarEmail(id, nuevoEmail, emailAnteriorForzado="") {
     const clienteActual = clientes.find(c => c.id === id);
-    const emailAnterior = (clienteActual?.email || "").trim().toLowerCase();
+    const emailAnterior = (emailAnteriorForzado || clienteActual?.email || "").trim().toLowerCase();
     const emailNuevo = nuevoEmail.trim().toLowerCase();
+    if (emailNuevo && !isValidEmail(emailNuevo)) { toast.error("El email no es válido"); fetchClientes(); return; }
     if (emailAnterior === emailNuevo) return; // no cambió nada
     const {error} = await supabase.from("clientes").update({email: emailNuevo}).eq("id", id);
-    if (error) { toast.error("No se pudo actualizar el email"); return; }
+    if (error) { toast.error("No se pudo actualizar el email"); fetchClientes(); return; }
+    setClientes(prev=>prev.map(c=>c.id===id?{...c,email:emailNuevo}:c));
     setEmailSaved(id); setTimeout(() => setEmailSaved(null), 2000);
-    fetchClientes();
-    // Revocar acceso al email anterior y dar acceso al nuevo
+    // Revocar acceso al email anterior y dar acceso al nuevo.
+    // Importante: el email anterior se captura al enfocar el campo, porque el input
+    // actualiza el estado local mientras se escribe.
     if (emailAnterior && emailAnterior.includes("@")) llamarDrive("revocar", emailAnterior);
     if (emailNuevo && emailNuevo.includes("@")) llamarDrive("compartir", emailNuevo);
+    toast.success("Email actualizado y acceso sincronizado");
   }
   async function actualizarNombre(id, nuevoNombre) {
     if (!nuevoNombre.trim()) return;
@@ -2000,7 +2024,7 @@ export default function App(){
                         {/* Email editable */}
                         <td style={S.td}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <input value={c.email||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value)}
+                            <input value={c.email||""} onFocus={e=>{e.currentTarget.dataset.emailAnterior=c.email||"";}} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,email:e.target.value}:cl))} onBlur={e=>actualizarEmail(c.id,e.target.value,e.currentTarget.dataset.emailAnterior||"")}
                               style={{flex:1,padding:"6px 10px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:13,boxSizing:"border-box",background:t.inputBg,color:t.inputText}}/>
                             {emailSaved===c.id&&<span style={{fontSize:11,color:"#22c55e",fontWeight:700,whiteSpace:"nowrap"}}>✓</span>}
                           </div>
