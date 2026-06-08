@@ -1086,6 +1086,7 @@ export default function App(){
   const[ingHasta,setIngHasta]=useState("");
   const[emailSaved,setEmailSaved]=useState(null);
   const[vendedorRenovacion,setVendedorRenovacion]=useState("");
+  const[editIngreso,setEditIngreso]=useState(null);
 
   const toast=useToast();
 
@@ -1258,6 +1259,61 @@ export default function App(){
     await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,rollback:rollbackInfo});
     toast.success(rollbackInfo?"Ingreso eliminado y renovación revertida":"Ingreso eliminado");
   }
+  async function editarMontoIngreso(id,nuevoMonto){
+    const montoNuevo=safeNum(nuevoMonto);
+    if(!montoNuevo||montoNuevo<=0){toast.error("Ingresá un monto válido");return;}
+    const ing=ingresos.find(i=>i.id===id);
+    if(!ing){toast.error("No se encontró el ingreso");return;}
+    const montoAnterior=safeNum(ing.monto);
+    if(montoAnterior===montoNuevo){setEditIngreso(null);return;}
+
+    const{error}=await supabase.from("ingresos").update({monto:montoNuevo}).eq("id",id);
+    if(error){toast.error("No se pudo editar el monto");return;}
+
+    // Actualizar ingresos en pantalla: Dashboard, gráficos, ingresos del mes y total histórico
+    setIngresos(prev=>prev.map(i=>i.id===id?{...i,monto:montoNuevo}:i));
+
+    // Si este ingreso corresponde al último movimiento activo del cliente, actualizar también
+    // el monto operativo para que pendientes de recepción y ficha del cliente reflejen el valor real.
+    let actualizoCliente=false;
+    if(ing?.cliente_id){
+      const relacionados=ingresos
+        .filter(i=>i.cliente_id===ing.cliente_id)
+        .sort((a,b)=>{
+          const fa=String(a.fecha_pago||"");
+          const fb=String(b.fecha_pago||"");
+          if(fa!==fb)return fb.localeCompare(fa);
+          return String(b.id||"").localeCompare(String(a.id||""));
+        });
+      const ultimo=relacionados[0];
+      if(ultimo?.id===id){
+        const{error:eC}=await supabase.from("clientes").update({monto:montoNuevo}).eq("id",ing.cliente_id);
+        if(!eC){
+          actualizoCliente=true;
+          setClientes(prev=>prev.map(c=>c.id===ing.cliente_id?{...c,monto:montoNuevo}:c));
+        }
+      }
+    }
+
+    await logH(user?.email,"editó monto de ingreso","ingreso",id,{
+      cliente:ing?.cliente_nombre,
+      email:ing?.email,
+      servicio:ing?.servicio,
+      monto_anterior:montoAnterior,
+      monto_nuevo:montoNuevo,
+      actualizo_cliente:actualizoCliente
+    });
+    if(ing?.cliente_id){
+      await logNC(ing.cliente_id,user?.email,"pago",`Monto de pago editado. Antes: USD ${montoAnterior} · Ahora: USD ${montoNuevo}`,{
+        ingreso_id:id,
+        monto_anterior:montoAnterior,
+        monto_nuevo:montoNuevo
+      });
+    }
+    setEditIngreso(null);
+    toast.success("Monto actualizado");
+  }
+
   async function cambiarEstado(id,value){
     // Actualización optimista — cambia en pantalla de inmediato sin destello
     setClientes(prev=>prev.map(c=>c.id===id?{...c,estado_manual:value}:c));
@@ -1652,6 +1708,17 @@ export default function App(){
           </div>
         )}
       </ConfirmModal>}
+      {editIngreso&&<ConfirmModal open={!!editIngreso} title="Editar monto" message={`Actualizar monto de ${editIngreso.ingreso?.cliente_nombre||"este ingreso"}.`} confirmLabel="Guardar" onConfirm={()=>editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto)} onCancel={()=>setEditIngreso(null)} t={t}>
+        <div style={{display:"grid",gap:8}}>
+          <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:2}}>Monto real recibido (USD)</label>
+          <input type="number" min="1" value={editIngreso.monto}
+            onChange={e=>setEditIngreso(prev=>({...prev,monto:e.target.value}))}
+            onKeyDown={e=>{if(e.key==="Enter")editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto);}}
+            style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}
+            autoFocus/>
+          <div style={{fontSize:12,color:t.textMuted}}>Esto recalcula detalle, historial, ingresos del mes, totales, gráficos y pendientes si corresponde.</div>
+        </div>
+      </ConfirmModal>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
         <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
@@ -1874,7 +1941,7 @@ export default function App(){
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Editar","Eliminar"]} t={t}/></thead>
                   <tbody>
                     {ingPag.rows.map(i=>(
                       <tr key={i.id}>
@@ -1884,6 +1951,7 @@ export default function App(){
                         <td style={S.td}>{svcLabel(i.servicio)}</td>
                         <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
                         <td style={S.td}>{i.notas||"-"}</td>
+                        <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>setEditIngreso({ingreso:i,monto:safeNum(i.monto)})}>✏️</button></td>
                         <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button></td>
                       </tr>
                     ))}
