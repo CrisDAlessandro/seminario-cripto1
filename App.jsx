@@ -381,10 +381,18 @@ function useToast(){
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
 function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t,children,closeOnBackdrop=true}){
+  const backdropMouseDown=useRef(false);
   if(!open)return null;
   const btn=makeBtn(t);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={closeOnBackdrop?onCancel:undefined}>
+    <div
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}
+      onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
+      onClick={e=>{
+        if(closeOnBackdrop&&e.target===e.currentTarget&&backdropMouseDown.current)onCancel?.();
+        backdropMouseDown.current=false;
+      }}
+    >
       <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
@@ -1708,7 +1716,7 @@ export default function App(){
           </div>
         )}
       </ConfirmModal>}
-      {editIngreso&&<ConfirmModal open={!!editIngreso} title="Editar monto" message={`Actualizar monto de ${editIngreso.ingreso?.cliente_nombre||"este ingreso"}.`} confirmLabel="Guardar" onConfirm={()=>editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto)} onCancel={()=>setEditIngreso(null)} closeOnBackdrop={false} t={t}>
+      {editIngreso&&<ConfirmModal open={!!editIngreso} title="Editar monto" message={`Actualizar monto de ${editIngreso.ingreso?.cliente_nombre||"este ingreso"}.`} confirmLabel="Guardar" onConfirm={()=>editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto)} onCancel={()=>setEditIngreso(null)} t={t}>
         <div style={{display:"grid",gap:8}}>
           <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:2}}>Monto real recibido (USD)</label>
           <input type="number" min="1" value={editIngreso.monto}
