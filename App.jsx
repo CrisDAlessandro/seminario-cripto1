@@ -380,11 +380,11 @@ function useToast(){
 }
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
-function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t,children}){
+function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t,children,closeOnBackdrop=true}){
   if(!open)return null;
   const btn=makeBtn(t);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={onCancel}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={closeOnBackdrop?onCancel:undefined}>
       <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
@@ -1708,7 +1708,7 @@ export default function App(){
           </div>
         )}
       </ConfirmModal>}
-      {editIngreso&&<ConfirmModal open={!!editIngreso} title="Editar monto" message={`Actualizar monto de ${editIngreso.ingreso?.cliente_nombre||"este ingreso"}.`} confirmLabel="Guardar" onConfirm={()=>editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto)} onCancel={()=>setEditIngreso(null)} t={t}>
+      {editIngreso&&<ConfirmModal open={!!editIngreso} title="Editar monto" message={`Actualizar monto de ${editIngreso.ingreso?.cliente_nombre||"este ingreso"}.`} confirmLabel="Guardar" onConfirm={()=>editarMontoIngreso(editIngreso.ingreso.id,editIngreso.monto)} onCancel={()=>setEditIngreso(null)} closeOnBackdrop={false} t={t}>
         <div style={{display:"grid",gap:8}}>
           <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:2}}>Monto real recibido (USD)</label>
           <input type="number" min="1" value={editIngreso.monto}
@@ -1941,7 +1941,7 @@ export default function App(){
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Editar","Eliminar"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
                   <tbody>
                     {ingPag.rows.map(i=>(
                       <tr key={i.id}>
@@ -1949,9 +1949,16 @@ export default function App(){
                         <td style={{...S.td,fontWeight:700}}>{i.cliente_nombre||"-"}</td>
                         <td style={S.td}>{i.email||"-"}</td>
                         <td style={S.td}>{svcLabel(i.servicio)}</td>
-                        <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
+                        <td style={S.td}>
+                          <button
+                            title="Editar monto"
+                            onClick={()=>setEditIngreso({ingreso:i,monto:safeNum(i.monto)})}
+                            style={{background:"transparent",border:"none",padding:0,margin:0,cursor:"pointer",color:t.accent,fontWeight:800,fontSize:13}}
+                          >
+                            {money(i.monto)}
+                          </button>
+                        </td>
                         <td style={S.td}>{i.notas||"-"}</td>
-                        <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>setEditIngreso({ingreso:i,monto:safeNum(i.monto)})}>✏️</button></td>
                         <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button></td>
                       </tr>
                     ))}
