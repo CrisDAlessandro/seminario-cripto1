@@ -500,27 +500,60 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
       || mismoNombre.find(c=>c.nombre?.trim().toLowerCase()===String(i?.cliente_nombre||"").trim().toLowerCase())
       || null;
   }
-  function receptorPago(i){
+  function infoPago(i){
     const c=clienteDeIngreso(i);
     const vendedor=i?.vendedor||i?.recibe||c?.vendedor||"";
     const rawTransferido=i?.transferido??c?.transferido;
     const transferido=rawTransferido===true||String(rawTransferido)==="true";
-    if(vendedor){
-      return `Recibe: ${vendedor}${transferido?" · Cristian ya recibió la transferencia":" · Pendiente de transferencia a Cristian"}`;
-    }
-    return "Recibe: Cristian";
+    const recibe=vendedor||"Cristian";
+    const estadoTransferencia=vendedor
+      ? (transferido?"Cristian ya recibió la transferencia":"Pendiente de transferencia a Cristian")
+      : "Cobrado directo por Cristian";
+    return{vendedor,recibe,transferido,estadoTransferencia};
+  }
+  function receptorPago(i){
+    const info=infoPago(i);
+    return `Quién se quedó con la venta: ${info.recibe} · ${info.estadoTransferencia}`;
   }
   const timelineCompleto=useMemo(()=>{
     const notas=(timeline||[]).map(n=>({...n,__kind:"nota"}));
-    const pagos=(pagosTotales||[]).map(i=>({
-      id:`pago-${i.id}`,
-      created_at:i.fecha_pago||i.created_at||new Date().toISOString(),
-      usuario_email:i.usuario_email||"Sistema",
-      tipo:"pago",
-      contenido:`Pago registrado. Servicio: ${svcLabel(i.servicio)} · Monto: USD ${safeNum(i.monto)} · ${receptorPago(i)}`,
-      detalle:{ingreso_id:i.id,servicio:svcLabel(i.servicio),monto:safeNum(i.monto)},
-      __kind:"pago"
-    }));
+    const notasTransferencia=new Set(
+      notas
+        .filter(n=>String(n.contenido||"").toLowerCase().includes("cristian recibió transferencia"))
+        .map(n=>`${n.detalle?.vendedor||""}|${n.detalle?.monto||""}`)
+    );
+    const pagos=(pagosTotales||[]).flatMap(i=>{
+      const info=infoPago(i);
+      const base={
+        id:`pago-${i.id}`,
+        created_at:i.fecha_pago||i.created_at||new Date().toISOString(),
+        usuario_email:i.usuario_email||"Sistema",
+        tipo:"pago",
+        contenido:`Pago registrado. Servicio: ${svcLabel(i.servicio)} · Monto: USD ${safeNum(i.monto)} · Quién se quedó con la venta: ${info.recibe} · ${info.estadoTransferencia}`,
+        detalle:{
+          ingreso_id:i.id,
+          servicio:svcLabel(i.servicio),
+          monto:safeNum(i.monto),
+          recibio_venta:info.recibe,
+          transferencia_a_cristian:info.estadoTransferencia
+        },
+        __kind:"pago"
+      };
+      const rows=[base];
+      const key=`${info.vendedor||""}|${safeNum(i.monto)}`;
+      if(info.vendedor&&info.transferido&&!notasTransferencia.has(key)){
+        rows.push({
+          id:`transferencia-${i.id}`,
+          created_at:i.fecha_transferencia||i.updated_at||i.fecha_pago||i.created_at||new Date().toISOString(),
+          usuario_email:i.usuario_email||"Sistema",
+          tipo:"pago",
+          contenido:`Cristian recibió transferencia de ${info.vendedor}. Venta: ${i.cliente_nombre||cliente.nombre} · Monto: USD ${safeNum(i.monto)}`,
+          detalle:{ingreso_id:i.id,vendedor:info.vendedor,recibe_final:"Cristian",monto:safeNum(i.monto)},
+          __kind:"transferencia"
+        });
+      }
+      return rows;
+    });
     return [...notas,...pagos].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   },[timeline,pagosTotales,allClientes,mismoNombre]);
   const tlTotal=Math.max(1,Math.ceil(timelineCompleto.length/TL_PAGE));
