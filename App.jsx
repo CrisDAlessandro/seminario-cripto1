@@ -494,8 +494,37 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
   const totalDeuda=mismoNombre.reduce((a,c)=>a+safeNum(c.deuda_restante),0);
 
-  const tlTotal=Math.max(1,Math.ceil(timeline.length/TL_PAGE));
-  const tlRows=useMemo(()=>{const s=(tlPage-1)*TL_PAGE;return timeline.slice(s,s+TL_PAGE);},[timeline,tlPage]);
+  function clienteDeIngreso(i){
+    return (allClientes||[]).find(c=>String(c.id)===String(i?.cliente_id))
+      || mismoNombre.find(c=>c.email&&i?.email&&c.email.toLowerCase()===String(i.email).toLowerCase())
+      || mismoNombre.find(c=>c.nombre?.trim().toLowerCase()===String(i?.cliente_nombre||"").trim().toLowerCase())
+      || null;
+  }
+  function receptorPago(i){
+    const c=clienteDeIngreso(i);
+    const vendedor=i?.vendedor||i?.recibe||c?.vendedor||"";
+    const rawTransferido=i?.transferido??c?.transferido;
+    const transferido=rawTransferido===true||String(rawTransferido)==="true";
+    if(vendedor){
+      return `Recibe: ${vendedor}${transferido?" · Cristian ya recibió la transferencia":" · Pendiente de transferencia a Cristian"}`;
+    }
+    return "Recibe: Cristian";
+  }
+  const timelineCompleto=useMemo(()=>{
+    const notas=(timeline||[]).map(n=>({...n,__kind:"nota"}));
+    const pagos=(pagosTotales||[]).map(i=>({
+      id:`pago-${i.id}`,
+      created_at:i.fecha_pago||i.created_at||new Date().toISOString(),
+      usuario_email:i.usuario_email||"Sistema",
+      tipo:"pago",
+      contenido:`Pago registrado. Servicio: ${svcLabel(i.servicio)} · Monto: USD ${safeNum(i.monto)} · ${receptorPago(i)}`,
+      detalle:{ingreso_id:i.id,servicio:svcLabel(i.servicio),monto:safeNum(i.monto)},
+      __kind:"pago"
+    }));
+    return [...notas,...pagos].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  },[timeline,pagosTotales,allClientes,mismoNombre]);
+  const tlTotal=Math.max(1,Math.ceil(timelineCompleto.length/TL_PAGE));
+  const tlRows=useMemo(()=>{const s=(tlPage-1)*TL_PAGE;return timelineCompleto.slice(s,s+TL_PAGE);},[timelineCompleto,tlPage]);
 
   useEffect(()=>{
     // Cargar timeline de todos los IDs del mismo cliente
@@ -616,11 +645,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
           <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <h4 style={{margin:0,color:t.text,fontSize:14,fontWeight:700}}>Historial completo</h4>
-              {timeline.length>0&&<span style={{color:t.textMuted,fontSize:12}}>{timeline.length} registro{timeline.length!==1?"s":""}</span>}
+              {timelineCompleto.length>0&&<span style={{color:t.textMuted,fontSize:12}}>{timelineCompleto.length} registro{timelineCompleto.length!==1?"s":""}</span>}
             </div>
             {loadingTL?(
               <div style={{color:t.textMuted,fontSize:13}}>Cargando...</div>
-            ):timeline.length===0?(
+            ):timelineCompleto.length===0?(
               <div style={{color:t.textMuted,fontSize:13}}>Sin registros todavía.</div>
             ):(
               <>
@@ -665,7 +694,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
               <h4 style={{margin:"0 0 10px",color:t.text,fontSize:14,fontWeight:700}}>Pagos registrados</h4>
               <div style={{borderRadius:10,border:`1px solid ${t.cardBorder}`,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
                 <table style={S.table}>
-                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Notas"].map(h=>(
+                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Recibe / Estado","Notas"].map(h=>(
                     <th key={h} style={{...S.td,fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
                   ))}</tr></thead>
                   <tbody>{pagosTotales.map(i=>(
@@ -673,6 +702,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                       <td style={S.td}>{formatDate(i.fecha_pago)}</td>
                       <td style={S.td}>{svcLabel(i.servicio)}</td>
                       <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
+                      <td style={{...S.td,fontSize:12,color:t.textMuted}}>{receptorPago(i)}</td>
                       <td style={S.td}>{i.notas||"—"}</td>
                     </tr>
                   ))}</tbody>
