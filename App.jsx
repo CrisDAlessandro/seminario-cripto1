@@ -503,8 +503,16 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   function infoPago(i){
     const c=clienteDeIngreso(i);
     const vendedor=i?.vendedor||i?.recibe||c?.vendedor||"";
-    const rawTransferido=i?.transferido??c?.transferido;
-    const transferido=rawTransferido===true||String(rawTransferido)==="true";
+
+    // La verdad operativa manda sobre el ingreso histórico:
+    // si el cliente todavía aparece en Ventas pendientes de recepción,
+    // el historial NO puede decir que Cristian ya recibió la transferencia,
+    // aunque el ingreso viejo haya quedado con transferido=true por una carga anterior.
+    const clientePendiente=!!(c?.vendedor&&c.vendedor!==""&&c.transferido!==true&&String(c.transferido)!=="true");
+    const ingresoTransferido=i?.transferido===true||String(i?.transferido)==="true";
+    const clienteTransferido=c?.transferido===true||String(c?.transferido)==="true";
+    const transferido=clientePendiente?false:(ingresoTransferido||clienteTransferido);
+
     const recibe=vendedor||"Cristian";
     const estadoTransferencia=vendedor
       ? (transferido?"Cristian ya recibió la transferencia":"Pendiente de transferencia a Cristian")
