@@ -265,7 +265,7 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const VENDEDORES = ["Bahiano", "Leonardo Bejarano", "Leonardo Steimberg", "Jeremy"];
+const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
