@@ -393,7 +393,7 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
         backdropMouseDown.current=false;
       }}
     >
-      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+      <div onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
         {children}
@@ -1077,8 +1077,22 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
       </div>
     </div>
   );
+  const backdropMouseDown=useRef(false);
   if(!isModal)return inner;
-  return(<div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}} onClick={onCancelar}><div onClick={e=>e.stopPropagation()}>{inner}</div></div>);
+  return(
+    <div
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
+      onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
+      onClick={e=>{
+        // Cierra solo cuando el click empieza y termina en el fondo.
+        // Si seleccionás un número/campo y soltás afuera, no lo toma como click de cierre.
+        if(e.target===e.currentTarget&&backdropMouseDown.current)onCancelar?.();
+        backdropMouseDown.current=false;
+      }}
+    >
+      <div onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
+    </div>
+  );
 }
 function Field({label,children,spanAll=false,t}){
   const S=makeS(t);
