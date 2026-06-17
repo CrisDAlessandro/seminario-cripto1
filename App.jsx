@@ -266,6 +266,7 @@ function usePagination(items,pageSize){
 }
 
 const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
+const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
@@ -388,12 +389,13 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
     <div
       style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}
       onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
-      onClick={e=>{
+      onMouseUp={e=>{
         if(closeOnBackdrop&&e.target===e.currentTarget&&backdropMouseDown.current)onCancel?.();
         backdropMouseDown.current=false;
       }}
+      onClick={e=>e.stopPropagation()}
     >
-      <div onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+      <div onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
         {children}
@@ -1059,9 +1061,11 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
           </Field>
         )}
         <Field label="Recibe la venta" t={t}>
-          <select style={S.input} value={form.vendedor||""} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
+          <select style={S.input} value={vendedorPermitido(form.vendedor)} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
             <option value="">Cristian (directo)</option>
-            {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+            <option value="Bahiano">Bahiano</option>
+            <option value="Luigi">Luigi</option>
+            <option value="Jeremy">Jeremy</option>
           </select>
         </Field>
         <Field label="Deuda restante (USD)" t={t}>
@@ -1083,14 +1087,15 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
     <div
       style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
       onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
-      onClick={e=>{
+      onMouseUp={e=>{
         // Cierra solo cuando el click empieza y termina en el fondo.
-        // Si seleccionás un número/campo y soltás afuera, no lo toma como click de cierre.
+        // Si seleccionás un número/campo y soltás afuera, no lo toma como cierre.
         if(e.target===e.currentTarget&&backdropMouseDown.current)onCancelar?.();
         backdropMouseDown.current=false;
       }}
+      onClick={e=>e.stopPropagation()}
     >
-      <div onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
+      <div onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
     </div>
   );
 }
@@ -1798,10 +1803,12 @@ export default function App(){
             </div>
             <div>
               <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
-              <select value={vendedorRenovacion} onChange={e=>setVendedorRenovacion(e.target.value)}
+              <select value={vendedorPermitido(vendedorRenovacion)} onChange={e=>setVendedorRenovacion(e.target.value)}
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
                 <option value="">Cristian (directo)</option>
-                {VENDEDORES.map(v=>(<option key={v} value={v}>{v}</option>))}
+                <option value="Bahiano">Bahiano</option>
+            <option value="Luigi">Luigi</option>
+            <option value="Jeremy">Jeremy</option>
               </select>
             </div>
           </div>
