@@ -470,7 +470,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
 
 // ─── Panel detalle cliente — historial unificado por nombre ───────────────────
 const TL_PAGE = 5;
-function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,t}){
+function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
   const [nuevaNota,setNuevaNota]=useState("");
@@ -755,7 +755,8 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
           )}
 
           {/* Acciones */}
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4}}>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4,flexWrap:"wrap"}}>
+            <button style={btn(false)} onClick={()=>onEditarDeuda&&onEditarDeuda(cliente)}>Editar deuda</button>
             <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
             <button style={{...btn(false),background:"rgba(239,68,68,0.1)",color:"#ef4444"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
           </div>
@@ -764,6 +765,39 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
     </div>
   );
 }
+// ─── DeudaModal ───────────────────────────────────────────────────────────────
+function DeudaModal({cliente,onClose,onConfirm,t}){
+  const S=makeS(t);const btn=makeBtn(t);
+  const [monto,setMonto]=useState(String(safeNum(cliente?.deuda_restante)||""));
+  const montoN=Math.max(0,safeNum(monto));
+  if(!cliente)return null;
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onClick={onClose}>
+      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Editar deuda</h3>
+        <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
+          <strong style={{color:t.text}}>{cliente.nombre}</strong> · Esto no renueva, no crea ingreso y no cambia vencimiento.
+        </p>
+        <div style={{marginBottom:14}}>
+          <label style={S.label}>Deuda pendiente (USD)</label>
+          <input type="number" style={S.input} placeholder="0" min="0" value={monto}
+            onChange={e=>setMonto(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&onConfirm(cliente,montoN)}
+            autoFocus/>
+        </div>
+        <div style={{marginBottom:20,padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",fontSize:13,color:t.textMuted,lineHeight:1.45}}>
+          Si ponés un monto mayor a cero, aparece en <strong style={{color:t.text}}>Deudores</strong> y en la ficha del cliente.
+          Si ponés 0, sale de deudores.
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button style={btn(false)} onClick={onClose}>Cancelar</button>
+          <button style={btn(false,true)} onClick={()=>onConfirm(cliente,montoN)}>Guardar deuda</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── PagoModal ────────────────────────────────────────────────────────────────
 function PagoModal({cliente,onClose,onConfirm,t}){
   const S=makeS(t);const btn=makeBtn(t);
@@ -1178,6 +1212,7 @@ export default function App(){
   const[dark,setDark]=useState(false);
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
+  const[deudaCliente,setDeudaCliente]=useState(null);
   const[confirm,setConfirm]=useState(null);
   const[busquedaRapida,setBusquedaRapida]=useState(false);
   const[ingDesde,setIngDesde]=useState("");
@@ -1467,6 +1502,25 @@ export default function App(){
     setClientes(prev => prev.map(c => c.id === id ? {...c, fecha_vencimiento: nuevaFecha} : c));
     toast.success("Vencimiento actualizado");
   }
+  async function actualizarDeudaCliente(cliente,montoDeuda){
+    const deudaNueva=Math.max(0,safeNum(montoDeuda));
+    const deudaAnterior=safeNum(cliente?.deuda_restante);
+    const notasLimpias=String(cliente?.notas||"")
+      .replace(/\s*Debe\s+\d+(?:[.,]\d+)?\s*USD\s*-?\s*/ig," ")
+      .replace(/\s+/g," ")
+      .trim();
+    const payload={deuda_restante:deudaNueva,notas:notasLimpias};
+    setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload}:c));
+    setClienteDetalle(prev=>prev&&prev.id===cliente.id?{...prev,...payload}:prev);
+    const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    if(error){toast.error("No se pudo actualizar la deuda");fetchClientes();return;}
+    await logH(user?.email,"editó deuda","cliente",cliente.id,{nombre:cliente.nombre,deuda_anterior:deudaAnterior,deuda_nueva:deudaNueva});
+    await logNC(cliente.id,user?.email,"estado",deudaNueva>0?`Deuda actualizada. Ahora debe USD ${deudaNueva}`:`Deuda cancelada manualmente`,{deuda_anterior:deudaAnterior,deuda_nueva:deudaNueva});
+    setDeudaCliente(null);
+    toast.success(deudaNueva>0?`Deuda actualizada: USD ${deudaNueva}`:"Deuda cancelada");
+    refetch();
+  }
+
   async function registrarPagoParcial(cliente,monto){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
     if(monto>safeNum(cliente.deuda_restante)){toast.error(`El monto supera la deuda actual (USD ${cliente.deuda_restante})`);return;}
@@ -1831,9 +1885,11 @@ export default function App(){
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
           onNotaGuardada={()=>toast.success("Nota guardada")}
+          onEditarDeuda={c=>setDeudaCliente(c)}
           t={t}/>
       )}
       {pagoCliente&&<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>}
+      {deudaCliente&&<DeudaModal cliente={deudaCliente} onClose={()=>setDeudaCliente(null)} onConfirm={actualizarDeudaCliente} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
       <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}} className="sc-pad">
