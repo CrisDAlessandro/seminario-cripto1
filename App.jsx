@@ -102,6 +102,32 @@ function monthLabel(key) {
 }
 function isSameMonth(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth();}
 
+function startOfWeekMonday(date){
+  const d=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12,0,0);
+  const day=d.getDay();
+  const diff=(day===0?-6:1-day);
+  d.setDate(d.getDate()+diff);
+  return d;
+}
+function endOfWeekMonday(date){
+  const d=startOfWeekMonday(date);
+  d.setDate(d.getDate()+6);
+  return d;
+}
+function weekKeyFromDate(date){return toISODate(startOfWeekMonday(date));}
+function weekLabelFromStart(startISO){
+  const s=parseISODate(startISO);
+  if(!s)return "-";
+  const e=new Date(s);e.setDate(e.getDate()+6);
+  return `${formatDate(toISODate(s))} al ${formatDate(toISODate(e))}`;
+}
+function weekDayLabel(ds){
+  const d=parseISODate(ds);
+  if(!d)return "-";
+  const raw=new Intl.DateTimeFormat("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"}).format(d);
+  return raw.charAt(0).toUpperCase()+raw.slice(1);
+}
+
 // ─── Negocio ──────────────────────────────────────────────────────────────────
 const GRACE_DAYS=3, WARN_DAYS=2;
 const INICIO_INGRESOS_HISTORICOS="2026-03";
@@ -1220,12 +1246,13 @@ export default function App(){
   const[emailSaved,setEmailSaved]=useState(null);
   const[vendedorRenovacion,setVendedorRenovacion]=useState("");
   const[editIngreso,setEditIngreso]=useState(null);
+  const[transferenciasRecibidas,setTransferenciasRecibidas]=useState([]);
 
   const toast=useToast();
 
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
-  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);
+  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const semanaActualRef=useRef(null);
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -1266,8 +1293,13 @@ export default function App(){
     if(error){toast.error("No se pudieron cargar los ingresos");return;}
     setIngresos(data||[]);
   }
-  async function refetch(){await Promise.all([fetchClientes(),fetchIngresos()]);}
-  useEffect(()=>{fetchClientes();fetchIngresos();limpiarHistorial();},[]);
+  async function fetchTransferenciasRecibidas(){
+    const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","pago").order("created_at",{ascending:false});
+    if(error){setTransferenciasRecibidas([]);return;}
+    setTransferenciasRecibidas((data||[]).filter(n=>String(n.contenido||"").toLowerCase().includes("recibió transferencia")));
+  }
+  async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas()]);}
+  useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();limpiarHistorial();},[]);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f){
@@ -1631,8 +1663,10 @@ export default function App(){
     if(error){toast.error("No se pudo actualizar");return;}
     setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
     // Registrar en historial: queda claro quién tomó la venta y cuándo Cristian recibió la plata.
+    const reciboNota={id:`tmp-recibo-${Date.now()}`,cliente_id:id,created_at:new Date().toISOString(),tipo:"pago",contenido:`Cristian recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${cliente?.monto}`,detalle:{vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:cliente?.monto}};
     await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:cliente?.monto});
-    await logNC(id,user?.email,"pago",`Cristian recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${cliente?.monto}`,{vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:cliente?.monto});
+    await logNC(id,user?.email,"pago",reciboNota.contenido,reciboNota.detalle);
+    setTransferenciasRecibidas(prev=>[reciboNota,...prev]);
     toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
   }
 
@@ -1695,6 +1729,79 @@ export default function App(){
     return{...r,trend};
   }),[resumenMensual]);
   const maxTotal=resumenMensual.length?Math.max(...resumenMensual.map(r=>r.total)):1;
+  const semanaActualKey=weekKeyFromDate(today);
+  const distribucionSemanal=useMemo(()=>{
+    const map=new Map();
+    function ensure(key){
+      if(!map.has(key))map.set(key,{key,total:0,ventas:0,dias:new Map()});
+      return map.get(key);
+    }
+    const clientesPorId=new Map(computed.map(c=>[String(c.id),c]));
+    const notasPorCliente=new Map();
+    (transferenciasRecibidas||[]).forEach(n=>{
+      const cid=String(n.cliente_id||"");
+      if(!cid)return;
+      if(!notasPorCliente.has(cid))notasPorCliente.set(cid,[]);
+      notasPorCliente.get(cid).push(n);
+    });
+    notasPorCliente.forEach(arr=>arr.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))));
+
+    function infoRecepcion(i){
+      const cliente=i.cliente_id?clientesPorId.get(String(i.cliente_id)):null;
+      const vendedor=String(i.vendedor||i.recibe||i.recibio_venta||i.recibe_venta||cliente?.vendedor||"").trim();
+      const esVendedor=VENDEDORES.includes(vendedor);
+      if(!esVendedor)return{recibido:true,fecha:i.fecha_pago};
+
+      // Si sigue en pendientes de recepción, todavía NO cuenta en ninguna semana.
+      const clientePendiente=cliente&&cliente.vendedor===vendedor&&cliente.transferido!==true&&String(cliente.transferido)!=="true";
+      if(clientePendiente)return{recibido:false,fecha:null};
+
+      // Si ya se marcó recibido, cuenta en la semana en que Cristian recibió la transferencia.
+      const notas=notasPorCliente.get(String(i.cliente_id||""))||[];
+      const monto=safeNum(i.monto);
+      const nota=notas.find(n=>{
+        const d=n.detalle||{};
+        const mismoVendedor=!d.vendedor||String(d.vendedor)===vendedor;
+        const mismoMonto=!d.monto||safeNum(d.monto)===monto;
+        return mismoVendedor&&mismoMonto;
+      })||notas[0];
+      return{recibido:true,fecha:nota?.created_at||i.fecha_pago};
+    }
+
+    ingresosDesdeMarzo.forEach(i=>{
+      if(!i.fecha_pago)return;
+      const rec=infoRecepcion(i);
+      if(!rec.recibido||!rec.fecha)return;
+      const d=parseISODate(rec.fecha);
+      if(!d)return;
+      const key=weekKeyFromDate(d);
+      const r=ensure(key);
+      const monto=safeNum(i.monto);
+      r.total+=monto;
+      r.ventas+=1;
+      const dayKey=toISODate(d);
+      r.dias.set(dayKey,(r.dias.get(dayKey)||0)+monto);
+    });
+
+    // Completar semanas sin ingresos para que funcione como calendario y siempre se vea la semana actual.
+    const keys=Array.from(map.keys()).sort();
+    let start=keys.length?parseISODate(keys[0]):startOfWeekMonday(today);
+    let end=keys.length?parseISODate(keys[keys.length-1]):startOfWeekMonday(today);
+    const current=startOfWeekMonday(today);
+    if(start>current)start=current;
+    if(end<current)end=current;
+    const cursor=new Date(start);
+    while(cursor<=end){ensure(toISODate(cursor));cursor.setDate(cursor.getDate()+7);}
+    return Array.from(map.values()).sort((a,b)=>b.key.localeCompare(a.key)).map(r=>({
+      ...r,
+      dias:Array.from({length:7},(_,idx)=>{const d=parseISODate(r.key);d.setDate(d.getDate()+idx);const k=toISODate(d);return{key:k,label:weekDayLabel(k),total:r.dias.get(k)||0};})
+    }));
+  },[ingresosDesdeMarzo,computed,transferenciasRecibidas,today]);
+  const semanaActual=useMemo(()=>distribucionSemanal.find(w=>w.key===semanaActualKey),[distribucionSemanal,semanaActualKey]);
+  const maxSemanaTotal=distribucionSemanal.length?Math.max(...distribucionSemanal.map(w=>w.total),1):1;
+  useEffect(()=>{
+    if(activeView==="semanal")setTimeout(()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),80);
+  },[activeView,semanaActualKey]);
   const tasaRenovacion=useMemo(()=>{
     // Usar cliente_id si existe, sino email como identificador
     const keyOf=i=>i.cliente_id?`id:${i.cliente_id}`:i.email?`email:${i.email.toLowerCase().trim()}`:null;
@@ -1910,6 +2017,7 @@ export default function App(){
               {totalCriticos>0&&<span style={{marginLeft:5,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:10,fontWeight:800,padding:"1px 5px",verticalAlign:"middle"}}>{totalCriticos}</span>}
             </button>
             <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
+            <button style={navBtn(activeView==="semanal")} onClick={()=>handleSetView("semanal")}>Semanal</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
@@ -1926,6 +2034,64 @@ export default function App(){
 
         {/* ── HISTORIAL ── */}
         {activeView==="historial"&&<HistorialView t={t}/>}
+
+        {/* ── SEMANAL ── */}
+        {activeView==="semanal"&&(
+          <div style={{display:"grid",gap:24}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+              <MetricCard title="Semana actual" value={semanaActual?money(semanaActual.total):"USD 0"} accent sub={weekLabelFromStart(semanaActualKey)} t={t}/>
+              <MetricCard title="Ingresos recibidos" value={money(semanaActual?.total||0)} t={t}/>
+              <MetricCard title="Pagos contabilizados" value={semanaActual?.ventas||0} t={t}/>
+              <MetricCard title="Pendiente recepción" value={money(pendientesTransferencia.reduce((a,c)=>a+safeNum(c.monto),0))} t={t}/>
+            </div>
+
+            <div style={S.card}>
+              <div className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+                <div>
+                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Ingresos semanales</h3>
+                  <div style={{fontSize:13,color:t.textMuted,marginTop:4}}>Total recibido por semana. Lo pendiente de recepción no cuenta hasta que marques recibido; ahí pasa a la semana de recepción.</div>
+                </div>
+                <button style={{...btn(false),padding:"8px 14px",fontSize:13}} onClick={()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"})}>Ir a semana actual</button>
+              </div>
+
+              {distribucionSemanal.length===0?(
+                <div style={{padding:24,textAlign:"center",color:t.textMuted}}>Sin ingresos registrados.</div>
+              ):(
+                <div style={{display:"grid",gap:14}}>
+                  {distribucionSemanal.map(w=>{
+                    const actual=w.key===semanaActualKey;
+                    const pct=Math.max(4,(w.total/maxSemanaTotal)*100);
+                    return(
+                      <div key={w.key} ref={actual?semanaActualRef:null} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:actual?(t.dark?"rgba(245,158,11,0.10)":"#fffbeb"):(t.dark?"#0d1526":"#fff"),boxShadow:actual?"0 10px 32px rgba(245,158,11,0.20)":"none"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                              <strong style={{color:t.text,fontSize:15}}>{weekLabelFromStart(w.key)}</strong>
+                              {actual&&<span style={{background:t.accent,color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>ACTUAL</span>}
+                            </div>
+                            <div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{w.ventas} pago{w.ventas!==1?"s":""} recibido{w.ventas!==1?"s":""} · No incluye pendientes de recepción</div>
+                          </div>
+                          <div style={{fontSize:22,fontWeight:900,color:t.accent}}>USD {w.total}</div>
+                        </div>
+                        <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden",marginTop:12}}>
+                          <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(82px,1fr))",gap:6,marginTop:12,overflowX:"auto"}}>
+                          {w.dias.map(d=>(
+                            <div key={d.key} style={{minWidth:82,padding:"7px 8px",borderRadius:10,background:d.total>0?(t.dark?"#1a2540":"#eef7ff"):(t.dark?"#0b1220":"#f8f6f3"),border:`1px solid ${t.tdBorder}`}}>
+                              <div style={{fontSize:10,color:t.textMuted,fontWeight:700}}>{d.label}</div>
+                              <div style={{fontSize:12,fontWeight:900,color:d.total>0?t.text:t.textMuted}}>USD {d.total}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── GRÁFICOS ── */}
         {activeView==="graficos"&&(
