@@ -2051,7 +2051,6 @@ export default function App(){
                   <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Ingresos semanales</h3>
                   <div style={{fontSize:13,color:t.textMuted,marginTop:4}}>Total recibido por semana. Lo pendiente de recepción no cuenta hasta que marques recibido; ahí pasa a la semana de recepción.</div>
                 </div>
-                <button style={{...btn(false),padding:"8px 14px",fontSize:13}} onClick={()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"})}>Ir a semana actual</button>
               </div>
 
               {distribucionSemanal.length===0?(
