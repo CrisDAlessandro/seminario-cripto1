@@ -25,6 +25,27 @@ function traducirError(msg) {
 // ─── CSS responsivo global ────────────────────────────────────────────────────
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;}
+  button,input,select,textarea{font-family:inherit;}
+  button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease;}
+  button:not(:disabled):hover{transform:translateY(-1px);}
+  button:disabled{cursor:not-allowed;opacity:.55;}
+  input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
+  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(201,151,42,.14)!important;border-color:#c9972a!important;}
+  table tbody tr{transition:background .14s ease;}
+  table tbody tr:hover{background:rgba(201,151,42,.035);}
+  ::selection{background:rgba(201,151,42,.25);}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(201,151,42,.55);border:2px solid transparent;background-clip:content-box;}
+  .sc-app-shell{background-image:radial-gradient(circle at 12% 0%,rgba(201,151,42,.14),transparent 28%),radial-gradient(circle at 92% 6%,rgba(15,23,42,.08),transparent 24%);}
+  .sc-topbar{position:sticky;top:0;z-index:100;background:rgba(246,243,237,.78);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(226,221,215,.72);box-shadow:0 12px 34px rgba(15,23,42,.06);}
+  .sc-dark .sc-topbar{background:rgba(8,14,26,.72);border-color:rgba(30,45,69,.72);box-shadow:0 18px 40px rgba(0,0,0,.28);}
+  .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;}
+  .sc-card-premium:hover{box-shadow:0 16px 42px rgba(15,23,42,.10);}
+  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 46px rgba(0,0,0,.34);}
   @media(max-width:640px){
     .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
     .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
@@ -308,46 +329,53 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#080e1a":"#f0ede8",
-    cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#1e2d45":"#e2ddd7",
-    cardShadow:       dark?"0 4px 24px rgba(0,0,0,0.5)":"0 2px 16px rgba(15,23,42,0.07)",
-    text:             dark?"#f0f4ff":"#0f172a",
-    textMuted:        dark?"#8899bb":"#64748b",
-    accent:           "#c8972a",
-    accentGrad:       "linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)",
-    inputBg:          dark?"#0d1526":"#fafaf9",
-    inputBorder:      dark?"#1e2d45":"#d4cfc9",
-    inputText:        dark?"#f0f4ff":"#0f172a",
-    thBg:             dark?"#0d1526":"#f8f6f3",
-    tdBorder:         dark?"#1a2540":"#ede9e4",
-    btnDkBg:          dark?"#c8972a":"#0f172a",
-    btnDkTx:          dark?"#0f172a":"#fff",
-    btnLtBg:          dark?"#1a2540":"#ede9e4",
-    btnLtTx:          dark?"#c8d4f0":"#374151",
-    navActBg:         dark?"#c8972a":"#0f172a",
-    navActTx:         dark?"#0f172a":"#fff",
-    navInBg:          dark?"#111827":"#fff",
-    navInTx:          dark?"#c8d4f0":"#374151",
-    navInBr:          dark?"#1e2d45":"#d4cfc9",
-    barBg:            dark?"#1a2540":"#ede9e4",
+    bg:               dark?"#070d19":"#f6f3ed",
+    surface:          dark?"rgba(17,24,39,.92)":"rgba(255,255,255,.90)",
+    cardBg:           dark?"#111827":"#fffdf9",
+    cardBorder:       dark?"#22314c":"#e7dfd4",
+    cardShadow:       dark?"0 18px 46px rgba(0,0,0,.30)":"0 14px 36px rgba(15,23,42,.075)",
+    text:             dark?"#f4f7ff":"#101828",
+    textMuted:        dark?"#97a6c4":"#667085",
+    accent:           "#c9972a",
+    accentSoft:       dark?"rgba(201,151,42,.18)":"#fff5db",
+    accentBorder:     dark?"rgba(201,151,42,.38)":"#efd295",
+    accentGrad:       "linear-gradient(135deg,#f3c75c 0%,#d39b24 55%,#a86f12 100%)",
+    navyGrad:         dark?"linear-gradient(135deg,#d6a439 0%,#b87b17 100%)":"linear-gradient(135deg,#111827 0%,#17233a 100%)",
+    inputBg:          dark?"#0b1424":"#fffefa",
+    inputBorder:      dark?"#263754":"#d9d1c6",
+    inputText:        dark?"#f4f7ff":"#101828",
+    thBg:             dark?"#0b1424":"#f8f4ed",
+    tdBorder:         dark?"#1b2941":"#eee7dc",
+    btnDkBg:          dark?"#d39b24":"#111827",
+    btnDkTx:          dark?"#101828":"#fff",
+    btnLtBg:          dark?"#172238":"#f1ede6",
+    btnLtTx:          dark?"#d4dcee":"#344054",
+    navActBg:         dark?"#d39b24":"#111827",
+    navActTx:         dark?"#101828":"#fff",
+    navInBg:          dark?"rgba(17,24,39,.86)":"rgba(255,255,255,.84)",
+    navInTx:          dark?"#d4dcee":"#344054",
+    navInBr:          dark?"#263754":"#ded7cd",
+    barBg:            dark?"#192641":"#ece4d9",
+    success:          "#12b76a",
+    danger:           "#ef4444",
+    warning:          "#f59e0b",
     dark,
   };
 }
 function makeS(t){
   return{
-    card: {background:t.cardBg,borderRadius:16,padding:24,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
-    input:{width:"100%",padding:"11px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText},
-    label:{display:"block",fontSize:11,fontWeight:700,color:t.textMuted,marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"},
-    table:{width:"100%",borderCollapse:"collapse",fontSize:14},
-    td:   {padding:"11px 14px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text},
+    card: {background:t.cardBg,borderRadius:20,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
+    input:{width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:t.dark?"inset 0 1px 0 rgba(255,255,255,.02)":"inset 0 1px 0 rgba(255,255,255,.75)"},
+    label:{display:"block",fontSize:10.5,fontWeight:800,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
+    table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14},
+    td:   {padding:"13px 14px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
     thRow:{background:t.thBg},
   };
 }
 function makeBtn(t){
   return function btn(dark=false,gold=false){
-    if(gold)return{padding:"11px 20px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:14,background:t.accentGrad,color:"#0f172a"};
-    return{padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:dark?t.btnDkBg:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx};
+    if(gold)return{padding:"11px 20px",borderRadius:12,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(168,111,18,.18)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#101828",boxShadow:t.dark?"0 10px 26px rgba(0,0,0,.22)":"0 10px 22px rgba(201,151,42,.22)"};
+    return{padding:"10px 16px",borderRadius:12,border:`1px solid ${dark?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:750,fontSize:14,background:dark?t.navyGrad:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx,boxShadow:dark?(t.dark?"0 10px 26px rgba(0,0,0,.22)":"0 10px 22px rgba(15,23,42,.12)"):"none"};
   };
 }
 
@@ -376,8 +404,10 @@ function useSafeBackdropClose(onClose, enabled=true){
 
 function makeNavBtn(t){
   return function navBtn(active){
-    return{padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,
-      border:active?"none":`1px solid ${t.navInBr}`,background:active?t.navActBg:t.navInBg,color:active?t.navActTx:t.navInTx};
+    return{padding:"10px 18px",borderRadius:13,cursor:"pointer",fontWeight:800,fontSize:14,
+      border:active?"1px solid transparent":`1px solid ${t.navInBr}`,
+      background:active?t.navyGrad:t.navInBg,color:active?t.navActTx:t.navInTx,
+      boxShadow:active?(t.dark?"0 12px 26px rgba(0,0,0,.28)":"0 10px 22px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.55) inset"};
   };
 }
 function badgeStyle(status){
@@ -995,7 +1025,7 @@ function TableHeader({cols,t}){
   const S=makeS(t);
   return(
     <tr style={S.thRow}>
-      {cols.map(h=>(<th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:700,fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>))}
+      {cols.map((h,idx)=>(<th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:850,fontSize:10.5,letterSpacing:"0.085em",textTransform:"uppercase",borderTop:idx===0?`1px solid ${t.tdBorder}`:undefined}}>{h}</th>))}
     </tr>
   );
 }
@@ -1003,14 +1033,15 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div style={{...S.card,borderTop:accent?`3px solid ${t.accent}`:undefined}}>
-      <div style={{fontSize:11,color:t.textMuted,marginBottom:8,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{title}</div>
-      <div style={{fontSize:26,fontWeight:800,color:accent?t.accent:t.text,letterSpacing:"-0.02em",display:"flex",alignItems:"center",gap:8}}>
+    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,minHeight:132}}>
+      {accent&&<div style={{position:"absolute",right:-34,top:-38,width:118,height:118,borderRadius:"50%",background:t.accentSoft,filter:"blur(2px)"}}/>}
+      <div style={{position:"relative",fontSize:10.5,color:t.textMuted,marginBottom:10,fontWeight:850,letterSpacing:"0.08em",textTransform:"uppercase"}}>{title}</div>
+      <div style={{position:"relative",fontSize:27,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.035em",display:"flex",alignItems:"center",gap:8,lineHeight:1.05}}>
         {value}
-        {trend!=null&&<span style={{fontSize:13,fontWeight:700,color:trend>0?"#22c55e":trend<0?"#ef4444":t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
+        {trend!=null&&<span style={{fontSize:12,fontWeight:800,color:trend>0?t.success:trend<0?t.danger:t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
-      {subValue!=null&&<div style={{marginTop:4,fontSize:13,color:t.textMuted,fontWeight:600}}>{subValue}</div>}
-      {sub&&<div style={{marginTop:5,fontSize:12,color:t.textMuted}}>{sub}</div>}
+      {subValue!=null&&<div style={{position:"relative",marginTop:7,fontSize:13,color:t.textMuted,fontWeight:650}}>{subValue}</div>}
+      {sub&&<div style={{position:"relative",marginTop:7,fontSize:12.5,color:t.textMuted,lineHeight:1.35}}>{sub}</div>}
     </div>
   );
 }
@@ -1190,10 +1221,10 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
     return()=>window.removeEventListener("keydown",onKey);
   },[isModal,onCancelar]);
   const inner=(
-    <div style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+    <div className="sc-card-premium" style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:22,padding:30,boxShadow:isModal?(t.dark?"0 34px 90px rgba(0,0,0,.52)":"0 30px 76px rgba(15,23,42,.20)"):t.cardShadow,border:`1px solid ${t.cardBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:isModal?16:0,borderBottom:isModal?`1px solid ${t.tdBorder}`:undefined}}>
         <div>
-          <h3 style={{margin:0,color:t.text,fontSize:18,fontWeight:800}}>{title}</h3>
+          <h3 style={{margin:0,color:t.text,fontSize:20,fontWeight:900,letterSpacing:"-0.03em"}}>{title}</h3>
           {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{subtitle}</div>}
         </div>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
@@ -1242,7 +1273,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
           <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
         </Field>
       </div>
-      <div style={{marginTop:20,display:"flex",justifyContent:"flex-end",gap:10}}>
+      <div style={{marginTop:24,display:"flex",justifyContent:"flex-end",gap:10,paddingTop:18,borderTop:`1px solid ${t.tdBorder}`}}>
         {isModal&&<button onClick={onCancelar} style={btn(false)}>Cancelar</button>}
         <button style={btn(false,true)} onClick={onGuardar}>{guardando?"Guardando...":isModal?"Confirmar renovación":"Guardar cliente"}</button>
       </div>
@@ -1251,7 +1282,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
   if(!isModal)return inner;
   return(
     <div
-      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
       {...backdropProps}
     >
       <div {...modalProps}>{inner}</div>
@@ -2754,7 +2785,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
+    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
@@ -2826,18 +2857,18 @@ export default function App(){
       {deudaCliente&&<DeudaModal cliente={deudaCliente} onClose={()=>setDeudaCliente(null)} onConfirm={actualizarDeudaCliente} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
-      <div style={{maxWidth:1320,margin:"0 auto",padding:"24px 28px"}} className="sc-pad">
+      <div style={{maxWidth:1360,margin:"0 auto",padding:"22px 28px 34px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div className="sc-header" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap"}}>
+        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap",padding:"14px 18px",borderRadius:22}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <img src={LOGO_SRC} alt="Logo" style={{width:44,height:44,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
+            <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.35))":"drop-shadow(0 8px 16px rgba(201,151,42,.18))"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
-              <h1 style={{margin:0,fontSize:22,fontWeight:900,color:t.text,letterSpacing:"-0.03em"}}>Seminario Cripto</h1>
-              <div className="sc-hide-mobile" style={{color:t.textMuted,fontSize:13,marginTop:2}}>Panel de gestión comercial y operativa</div>
+              <h1 style={{margin:0,fontSize:23,fontWeight:950,color:t.text,letterSpacing:"-0.04em",lineHeight:1}}>Seminario Cripto</h1>
+              <div className="sc-hide-mobile" style={{color:t.textMuted,fontSize:13,marginTop:5}}>Panel de gestión comercial y operativa</div>
             </div>
           </div>
-          <div className="sc-nav" style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <div className="sc-nav" style={{display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
             <button onClick={()=>setBusquedaRapida(true)} style={navBtn(false)}>🔍 Buscar</button>
             <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
               Operativa
