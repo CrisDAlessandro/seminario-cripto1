@@ -1818,35 +1818,48 @@ export default function App(){
   async function marcarTransferido(id, cliente, recibeFinal=""){
     const recibeCaja=["Cristian","Bahiano"].includes(recibeFinal)?recibeFinal:"";
     if(!recibeCaja){toast.error("Elegí si recibió Cristian o Bahiano");return;}
+    const vendedorOriginal=cliente?.vendedor||"Luigi";
     const ingresoRelacionado=[...(ingresos||[])]
       .filter(i=>String(i.cliente_id||"")===String(id))
       .sort((a,b)=>String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||""))||String(b.created_at||"").localeCompare(String(a.created_at||"")))[0]||null;
     const montoRecibido=safeNum(ingresoRelacionado?.monto)||safeNum(cliente?.monto);
     const fechaRecepcion=toISODate(getToday());
-    // Marcar recibido no puede fallar por columnas opcionales que no existan en la tabla.
-    // Primero actualizamos únicamente el campo operativo seguro: transferido.
-    const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
-    if(error){toast.error("No se pudo marcar como recibido");return;}
-    // Si existen estas columnas en alguna versión de la base, las completamos sin bloquear el flujo.
-    supabase.from("clientes").update({recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}).eq("id",id).then(()=>{});
-    setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true,recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}:c));
 
-    // La transferencia recibida SIEMPRE debe impactar en Caja con la fecha real de recepción.
-    // Si la nota de Caja falla por cualquier motivo, transferenciasRecibidas funciona como respaldo visual/calculado.
-    const cajaCreada=await registrarCajaDesdeVenta({fecha:fechaRecepcion,monto:montoRecibido,recibe:recibeCaja,nombre:cliente?.nombre,clienteId:id,origen:`recepción de ${cliente?.vendedor||"vendedor"}`,ingresoId:ingresoRelacionado?.id});
+    // Primero cambiamos el estado operativo: deja de estar como Luigi pendiente
+    // y pasa a quedar recibido por Cristian/Bahiano.
+    const{error}=await supabase.from("clientes").update({transferido:true,vendedor:recibeCaja}).eq("id",id);
+    if(error){toast.error("No se pudo marcar como recibido");return;}
+    // Estas columnas pueden no existir en algunas bases: no bloquean el flujo principal.
+    supabase.from("clientes").update({recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}).eq("id",id).then(()=>{});
+    setClientes(prev=>prev.map(c=>String(c.id)===String(id)?{...c,transferido:true,vendedor:recibeCaja,recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}:c));
+
+    // La plata de Luigi recién entra en Caja el día que se marca recibida.
+    // Insertamos la caja directa, sin usar la fecha original de venta.
+    const cajaPayload={
+      cliente_id:null,
+      tipo:"caja",
+      contenido:`Caja diaria: ${recibeCaja} recibió USD ${montoRecibido} · Transferencia de ${vendedorOriginal} · Venta: ${cliente?.nombre||""}`,
+      detalle:{concepto:"movimiento",origen:`recepción de ${vendedorOriginal}`,fecha:fechaRecepcion,recibe:recibeCaja,monto:montoRecibido,nombre:cliente?.nombre||"",cliente_id:id,ingreso_id:ingresoRelacionado?.id||null,vendedor_original:vendedorOriginal}
+    };
+    const{data:cajaCreada,error:cajaError}=await supabase.from("notas_cliente").insert([cajaPayload]).select().single();
+    if(cajaError){toast.error("Se marcó recibido, pero no se pudo sumar a Caja");}
+    else{
+      setCajaMovimientos(prev=>[cajaCreada||{...cajaPayload,id:`tmp-caja-recibida-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+      await logH(user?.email,"registró caja por transferencia recibida","Caja diaria",cajaCreada?.id||null,{nombre:"Caja diaria",fecha:fechaRecepcion,recibe:recibeCaja,monto:montoRecibido,venta:cliente?.nombre||"",vendedor:vendedorOriginal,ingreso_id:ingresoRelacionado?.id||null});
+    }
 
     const reciboNota={
       id:`tmp-recibo-${Date.now()}`,
       cliente_id:id,
       created_at:new Date().toISOString(),
       tipo:"pago",
-      contenido:`${recibeCaja} recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${montoRecibido}`,
-      detalle:{vendedor:cliente?.vendedor,recibe_final:recibeCaja,fecha_recepcion:fechaRecepcion,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null,caja_id:cajaCreada?.id||null}
+      contenido:`${recibeCaja} recibió transferencia de ${vendedorOriginal}. Venta: ${cliente?.nombre} · Monto: USD ${montoRecibido}`,
+      detalle:{vendedor:vendedorOriginal,recibe_final:recibeCaja,fecha_recepcion:fechaRecepcion,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null,caja_id:cajaCreada?.id||null}
     };
-    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:recibeCaja,fecha_recepcion:fechaRecepcion,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null,caja_id:cajaCreada?.id||null});
+    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:vendedorOriginal,recibe_final:recibeCaja,fecha_recepcion:fechaRecepcion,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null,caja_id:cajaCreada?.id||null});
     await logNC(id,user?.email,"pago",reciboNota.contenido,reciboNota.detalle);
     setTransferenciasRecibidas(prev=>[reciboNota,...prev]);
-    refetch();
+    await refetch();
     toast.success(`✓ ${montoRecibido} USD recibidos por ${recibeCaja}`);
   }
 
