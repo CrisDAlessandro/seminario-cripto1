@@ -1072,11 +1072,11 @@ function PagoModal({cliente,onClose,onConfirm,t}){
 function Pagination({page,totalPages,setPage,sectionRef,t}){
   const btn=makeBtn(t);
   if(totalPages<=1)return null;
-  function goTo(n){setPage(n);setTimeout(()=>sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);}
+  function goTo(n){setPage(n);}
   const pages=Array.from({length:totalPages},(_,i)=>i+1);
   return(
     <div style={{marginTop:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <div style={{color:t.textMuted,fontSize:13,whiteSpace:"nowrap"}}>Página {page} de {totalPages}</div>
+      
       <div style={{display:"flex",alignItems:"center",gap:7,flex:"1 1 auto",justifyContent:"flex-end",minWidth:0,flexWrap:"nowrap"}}>
         <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
         <div style={{display:"flex",alignItems:"center",gap:7,overflowX:"auto",overflowY:"hidden",whiteSpace:"nowrap",maxWidth:"min(100%,620px)",padding:"2px 2px 6px",scrollbarWidth:"thin"}}>
