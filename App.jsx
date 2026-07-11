@@ -1367,6 +1367,15 @@ export default function App(){
     const r=String(v||"").trim();
     return !!r && !cajaRecibeDirecto(r);
   };
+  const receptorExplicitoIngreso = i => {
+    const base=i||{};
+    const directo=base.recibe||base.recibio_venta||base.vendedor||base.recibe_final||base.recibio||"";
+    if(String(directo||"").trim())return directo;
+    const notas=String(base.notas||"");
+    const m=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
+    return m?m[1]:"";
+  };
+
   async function registrarCajaDesdeVenta({fecha,monto,recibe,nombre,clienteId,origen,ingresoId}){
     const montoNum=Number(monto||0);
     const f=dateOnly(fecha)||toISODate(getToday());
@@ -2203,16 +2212,14 @@ export default function App(){
     const porCliente=Object.fromEntries((computed||[]).map(c=>[String(c.id),c]));
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
-      const receptorExplicito=i.recibe||i.recibio_venta||i.vendedor||c.vendedor||"";
-      // Si el ingreso no trae receptor explícito, puede ser una venta directa de Cristian.
-      // Pero solo asumimos Cristian cuando el cliente tampoco tiene vendedor externo.
-      // Así se recuperan ventas directas que no generaron la nota de Caja, sin duplicar ventas de Bahiano/Luigi.
-      const receptorParaCaja=String(receptorExplicito||"").trim() ? receptorExplicito : (!String(c.vendedor||"").trim() ? "Cristian" : "");
+      const receptorParaCaja=receptorExplicitoIngreso(i);
+      // Importante: no usar el vendedor actual del cliente para reconstruir ingresos viejos.
+      // Si el cliente renovó por Luigi y después se marcó recibido por Bahiano, el vendedor actual cambia,
+      // pero los pagos anteriores deben quedar con su receptor original.
+      // Por eso el respaldo solo reconstruye ingresos que traen receptor explícito en el propio ingreso/notas.
       if(!String(receptorParaCaja||"").trim())return null;
       const quien=cajaRecibeDirecto(receptorParaCaja);
       if(!quien)return null;
-      // Si es venta de vendedor pendiente, no entra hasta marcar recibido.
-      if(c.vendedor&&!cajaRecibeDirecto(c.vendedor)&&c.transferido!==true&&String(c.transferido)!=="true")return null;
       const fecha=dateOnly(i.fecha_pago)||dateOnly(i.created_at)||toISODate(getToday());
       if(!cajaFechaHabilitada(fecha))return null;
       const monto=safeNum(i.monto);
@@ -2619,32 +2626,6 @@ export default function App(){
               <MetricCard title="Recibió Cristian" value={money(cajaHoy?.cristian||0)} t={t}/>
               <MetricCard title="Recibió Bahiano" value={money(cajaHoy?.bahiano||0)} t={t}/>
               <MetricCard title="Saldo actual" value={money(Math.abs(cajaSaldoActual))} sub={cajaTextoSaldo(cajaSaldoActual)} t={t}/>
-            </div>
-
-            <div style={S.card}>
-              <div className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:18}}>
-                <div>
-                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Caja diaria</h3>
-                </div>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,alignItems:"end",marginBottom:18}}>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Fecha</label>
-                  <input type="date" value={cajaForm.fecha} onChange={e=>setCajaForm(prev=>({...prev,fecha:e.target.value}))} style={S.input}/>
-                </div>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Recibió</label>
-                  <select value={cajaForm.recibe} onChange={e=>setCajaForm(prev=>({...prev,recibe:e.target.value}))} style={S.input}>
-                    <option value="Cristian">Cristian</option>
-                    <option value="Bahiano">Bahiano</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Monto</label>
-                  <input type="number" min="1" placeholder="USD" value={cajaForm.monto} onChange={e=>setCajaForm(prev=>({...prev,monto:e.target.value}))} onKeyDown={e=>{if(e.key==="Enter")registrarMovimientoCaja();}} style={S.input}/>
-                </div>
-                <button onClick={registrarMovimientoCaja} style={{...btn(false,true),height:42}}>Agregar a caja</button>
-              </div>
             </div>
 
             <div style={S.card} ref={cajaRef}>
