@@ -40,12 +40,12 @@ const MOBILE_CSS = `
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
   ::-webkit-scrollbar-thumb:hover{background:rgba(201,151,42,.55);border:2px solid transparent;background-clip:content-box;}
-  .sc-app-shell{background-image:radial-gradient(circle at 12% 0%,rgba(201,151,42,.14),transparent 28%),radial-gradient(circle at 92% 6%,rgba(15,23,42,.08),transparent 24%);}
-  .sc-topbar{position:sticky;top:0;z-index:100;background:rgba(246,243,237,.78);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(226,221,215,.72);box-shadow:0 12px 34px rgba(15,23,42,.06);}
-  .sc-dark .sc-topbar{background:rgba(8,14,26,.72);border-color:rgba(30,45,69,.72);box-shadow:0 18px 40px rgba(0,0,0,.28);}
+  .sc-app-shell{background-image:none;}
+  .sc-topbar{position:relative;z-index:1;background:#ffffff;border:1px solid rgba(226,221,215,.95);box-shadow:0 8px 24px rgba(16,24,40,.045);}
+  .sc-dark .sc-topbar{background:#111827;border-color:#263754;box-shadow:0 10px 28px rgba(0,0,0,.26);}
   .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;}
-  .sc-card-premium:hover{box-shadow:0 16px 42px rgba(15,23,42,.10);}
-  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 46px rgba(0,0,0,.34);}
+  .sc-card-premium:hover{box-shadow:0 14px 30px rgba(16,24,40,.075);border-color:rgba(201,151,42,.34);}
+  .sc-dark .sc-card-premium:hover{box-shadow:0 16px 34px rgba(0,0,0,.32);border-color:rgba(201,151,42,.32);}
   @media(max-width:640px){
     .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
     .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
@@ -329,33 +329,33 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#070d19":"#f6f3ed",
-    surface:          dark?"rgba(17,24,39,.92)":"rgba(255,255,255,.90)",
-    cardBg:           dark?"#111827":"#fffdf9",
-    cardBorder:       dark?"#22314c":"#e7dfd4",
-    cardShadow:       dark?"0 18px 46px rgba(0,0,0,.30)":"0 14px 36px rgba(15,23,42,.075)",
-    text:             dark?"#f4f7ff":"#101828",
-    textMuted:        dark?"#97a6c4":"#667085",
-    accent:           "#c9972a",
-    accentSoft:       dark?"rgba(201,151,42,.18)":"#fff5db",
-    accentBorder:     dark?"rgba(201,151,42,.38)":"#efd295",
-    accentGrad:       "linear-gradient(135deg,#f3c75c 0%,#d39b24 55%,#a86f12 100%)",
-    navyGrad:         dark?"linear-gradient(135deg,#d6a439 0%,#b87b17 100%)":"linear-gradient(135deg,#111827 0%,#17233a 100%)",
-    inputBg:          dark?"#0b1424":"#fffefa",
-    inputBorder:      dark?"#263754":"#d9d1c6",
-    inputText:        dark?"#f4f7ff":"#101828",
-    thBg:             dark?"#0b1424":"#f8f4ed",
-    tdBorder:         dark?"#1b2941":"#eee7dc",
-    btnDkBg:          dark?"#d39b24":"#111827",
+    bg:               dark?"#080d17":"#f4f1eb",
+    surface:          dark?"#101827":"#ffffff",
+    cardBg:           dark?"#111827":"#ffffff",
+    cardBorder:       dark?"#25324a":"#e4ddd2",
+    cardShadow:       dark?"0 14px 34px rgba(0,0,0,.28)":"0 10px 26px rgba(16,24,40,.055)",
+    text:             dark?"#f5f7fb":"#101828",
+    textMuted:        dark?"#98a5bd":"#657187",
+    accent:           "#bd8617",
+    accentSoft:       dark?"rgba(189,134,23,.14)":"#f7ead0",
+    accentBorder:     dark?"rgba(189,134,23,.38)":"#dfbf7d",
+    accentGrad:       "linear-gradient(135deg,#d8a53a 0%,#bd8617 100%)",
+    navyGrad:         dark?"linear-gradient(135deg,#d8a53a 0%,#bd8617 100%)":"linear-gradient(135deg,#111827 0%,#1f2937 100%)",
+    inputBg:          dark?"#0b1220":"#ffffff",
+    inputBorder:      dark?"#2d3b55":"#d6d0c7",
+    inputText:        dark?"#f5f7fb":"#101828",
+    thBg:             dark?"#0b1220":"#f6f2ec",
+    tdBorder:         dark?"#1e2a3f":"#eee7dd",
+    btnDkBg:          dark?"#d8a53a":"#111827",
     btnDkTx:          dark?"#101828":"#fff",
-    btnLtBg:          dark?"#172238":"#f1ede6",
+    btnLtBg:          dark?"#151f31":"#ffffff",
     btnLtTx:          dark?"#d4dcee":"#344054",
-    navActBg:         dark?"#d39b24":"#111827",
+    navActBg:         dark?"#d8a53a":"#111827",
     navActTx:         dark?"#101828":"#fff",
-    navInBg:          dark?"rgba(17,24,39,.86)":"rgba(255,255,255,.84)",
+    navInBg:          dark?"#111827":"#ffffff",
     navInTx:          dark?"#d4dcee":"#344054",
-    navInBr:          dark?"#263754":"#ded7cd",
-    barBg:            dark?"#192641":"#ece4d9",
+    navInBr:          dark?"#2d3b55":"#ded6cb",
+    barBg:            dark?"#1a263a":"#ebe4da",
     success:          "#12b76a",
     danger:           "#ef4444",
     warning:          "#f59e0b",
@@ -364,8 +364,8 @@ function getT(dark){
 }
 function makeS(t){
   return{
-    card: {background:t.cardBg,borderRadius:20,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
-    input:{width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:t.dark?"inset 0 1px 0 rgba(255,255,255,.02)":"inset 0 1px 0 rgba(255,255,255,.75)"},
+    card: {background:t.cardBg,borderRadius:18,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
+    input:{width:"100%",padding:"12px 14px",borderRadius:11,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:"none"},
     label:{display:"block",fontSize:10.5,fontWeight:800,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
     table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14},
     td:   {padding:"13px 14px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
@@ -404,10 +404,10 @@ function useSafeBackdropClose(onClose, enabled=true){
 
 function makeNavBtn(t){
   return function navBtn(active){
-    return{padding:"10px 18px",borderRadius:13,cursor:"pointer",fontWeight:800,fontSize:14,
+    return{padding:"10px 17px",borderRadius:12,cursor:"pointer",fontWeight:800,fontSize:14,
       border:active?"1px solid transparent":`1px solid ${t.navInBr}`,
       background:active?t.navyGrad:t.navInBg,color:active?t.navActTx:t.navInTx,
-      boxShadow:active?(t.dark?"0 12px 26px rgba(0,0,0,.28)":"0 10px 22px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.55) inset"};
+      boxShadow:active?(t.dark?"0 10px 22px rgba(0,0,0,.24)":"0 8px 18px rgba(15,23,42,.10)"):"none"};
   };
 }
 function badgeStyle(status){
@@ -1033,15 +1033,14 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,minHeight:132}}>
-      {accent&&<div style={{position:"absolute",right:-34,top:-38,width:118,height:118,borderRadius:"50%",background:t.accentSoft,filter:"blur(2px)"}}/>}
-      <div style={{position:"relative",fontSize:10.5,color:t.textMuted,marginBottom:10,fontWeight:850,letterSpacing:"0.08em",textTransform:"uppercase"}}>{title}</div>
-      <div style={{position:"relative",fontSize:27,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.035em",display:"flex",alignItems:"center",gap:8,lineHeight:1.05}}>
+    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,minHeight:128}}>
+      <div style={{fontSize:10.5,color:t.textMuted,marginBottom:12,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
+      <div style={{fontSize:28,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.04em",display:"flex",alignItems:"baseline",gap:8,lineHeight:1.05}}>
         {value}
-        {trend!=null&&<span style={{fontSize:12,fontWeight:800,color:trend>0?t.success:trend<0?t.danger:t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
+        {trend!=null&&<span style={{fontSize:12,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
-      {subValue!=null&&<div style={{position:"relative",marginTop:7,fontSize:13,color:t.textMuted,fontWeight:650}}>{subValue}</div>}
-      {sub&&<div style={{position:"relative",marginTop:7,fontSize:12.5,color:t.textMuted,lineHeight:1.35}}>{sub}</div>}
+      {subValue!=null&&<div style={{marginTop:8,fontSize:13,color:t.textMuted,fontWeight:650}}>{subValue}</div>}
+      {sub&&<div style={{marginTop:8,fontSize:12.5,color:t.textMuted,lineHeight:1.35}}>{sub}</div>}
     </div>
   );
 }
@@ -2857,10 +2856,10 @@ export default function App(){
       {deudaCliente&&<DeudaModal cliente={deudaCliente} onClose={()=>setDeudaCliente(null)} onConfirm={actualizarDeudaCliente} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
-      <div style={{maxWidth:1360,margin:"0 auto",padding:"22px 28px 34px"}} className="sc-pad">
+      <div style={{maxWidth:1360,margin:"0 auto",padding:"24px 28px 38px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:28,flexWrap:"wrap",padding:"14px 18px",borderRadius:22}}>
+        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:30,flexWrap:"wrap",padding:"16px 18px",borderRadius:18}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.35))":"drop-shadow(0 8px 16px rgba(201,151,42,.18))"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
