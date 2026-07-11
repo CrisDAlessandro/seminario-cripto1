@@ -1407,7 +1407,7 @@ export default function App(){
     const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
     if(error){toast.error("La venta se registró, pero no se pudo sumar a Caja");return null;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev.filter(m=>!eliminadosFecha.some(x=>x.id===m.id))]);
-    await logH(user?.email,"registró caja automática por venta","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:f,recibe:quien,monto:montoNum,venta:nombre||"",origen:origen||"venta"});
+    void logH(user?.email,"registró caja automática por venta","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:f,recibe:quien,monto:montoNum,venta:nombre||"",origen:origen||"venta"});
     return data;
   }
 
@@ -1419,37 +1419,74 @@ export default function App(){
       if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
     }
     setGuardando(true);
-    const payload=buildPayload(form,v.nombre,v.email);
-    const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
-    if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
-    const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
-    const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas)]).select().single();
-    if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
-    else await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:ins.vendedor||"Cristian",nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
-    const recibeAlta=ins.vendedor||"Cristian";
-    const pendienteAlta=ventaPendienteTransferencia(ins.vendedor);
-    await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
-    await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
-    setGuardando(false);setShowForm(false);setForm(FORM_DEF);
-    toast.success(`${v.nombre} agregado correctamente`);refetch();
-    llamarDrive("compartir", ins.email); // en paralelo, no bloquea
+    try{
+      const payload=buildPayload(form,v.nombre,v.email);
+      const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
+      if(error){toast.error("No se pudo guardar el cliente");return;}
+      const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
+      const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas)]).select().single();
+      if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
+      const recibeAlta=ins.vendedor||"Cristian";
+      const pendienteAlta=ventaPendienteTransferencia(ins.vendedor);
+
+      // Nada secundario puede dejar el botón clavado en "Guardando...".
+      // Caja, historial y Drive corren después del alta real.
+      void (async()=>{
+        try{
+          if(!eIngAlta){
+            await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:recibeAlta,nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
+          }
+          await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
+          await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
+          llamarDrive("compartir", ins.email);
+          refetch();
+        }catch(err){console.warn("Alta secundaria falló",err);refetch();}
+      })();
+
+      setShowForm(false);setForm(FORM_DEF);
+      toast.success(`${v.nombre} agregado correctamente`);
+      refetch();
+    }catch(err){
+      console.error(err);
+      toast.error("No se pudo guardar el cliente");
+    }finally{
+      setGuardando(false);
+    }
   }
   async function guardarRenovacion(){
     const v=validateForm(renovarForm);if(!v)return;
     setRenovando(true);
-    const payload=buildPayload(renovarForm,v.nombre,v.email);
-    const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
-    if(eC){setRenovando(false);toast.error("No se pudo renovar el cliente");return;}
-    const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,toISODate(getToday()),renovarForm.notas)]).select().single();
-    if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
-    else await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:renovarForm.monto,recibe:payload.vendedor||"Cristian",nombre:v.nombre,clienteId:renovarForm.id,origen:"renovación",ingresoId:ingRen?.id});
-    const recibeRenovacion=payload.vendedor||"Cristian";
-    const pendienteRenovacion=ventaPendienteTransferencia(payload.vendedor);
-    await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
-    await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibe: ${recibeRenovacion}${pendienteRenovacion?" · Pendiente de transferencia a Cristian":""}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
-    setRenovando(false);setShowRenovar(false);
-    toast.success(`${v.nombre} renovado correctamente`);refetch();
-    llamarDrive("compartir", v.email); // en paralelo, no bloquea
+    try{
+      const payload=buildPayload(renovarForm,v.nombre,v.email);
+      const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
+      if(eC){toast.error("No se pudo renovar el cliente");return;}
+      const fechaRenovacion=toISODate(getToday());
+      const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas)]).select().single();
+      if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
+      const recibeRenovacion=payload.vendedor||"Cristian";
+      const pendienteRenovacion=ventaPendienteTransferencia(payload.vendedor);
+
+      void (async()=>{
+        try{
+          if(!eIngRen){
+            await registrarCajaDesdeVenta({fecha:fechaRenovacion,monto:renovarForm.monto,recibe:recibeRenovacion,nombre:v.nombre,clienteId:renovarForm.id,origen:"renovación",ingresoId:ingRen?.id});
+          }
+          await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
+          await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibe: ${recibeRenovacion}${pendienteRenovacion?" · Pendiente de transferencia a Cristian":""}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
+          llamarDrive("compartir", v.email);
+          refetch();
+        }catch(err){console.warn("Renovación secundaria falló",err);refetch();}
+      })();
+
+      setShowRenovar(false);
+      toast.success(`${v.nombre} renovado correctamente`);
+      refetch();
+    }catch(err){
+      console.error(err);
+      toast.error("No se pudo renovar el cliente");
+    }finally{
+      setRenovando(false);
+    }
   }
   async function renovarRapido(cliente, vendedor="", montoCustom){
     const today=getToday();
