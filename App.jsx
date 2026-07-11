@@ -1705,6 +1705,25 @@ export default function App(){
     const recibe=cajaForm.recibe||"Cristian";
     if(monto<=0){toast.error("Ingresá un monto válido");return;}
     if(!["Cristian","Bahiano"].includes(recibe)){toast.error("Elegí quién recibió");return;}
+
+    // Si esa fecha había sido quitada del calendario por error, al cargar un nuevo movimiento
+    // se reactiva automáticamente. Así no queda bloqueada para siempre por el marcador
+    // dia_eliminado y la tarjeta vuelve a aparecer en el calendario.
+    const eliminadosFecha=(cajaMovimientos||[]).filter(m=>
+      m?.tipo==="caja"&&
+      (m?.detalle||{})?.concepto==="dia_eliminado"&&
+      dateOnly((m?.detalle||{})?.fecha)===fecha
+    );
+    const eliminadosReales=eliminadosFecha.map(m=>m.id).filter(Boolean).filter(id=>!String(id).startsWith("tmp-"));
+    if(eliminadosReales.length){
+      const{error:restoreError}=await supabase.from("notas_cliente").delete().in("id",eliminadosReales);
+      if(restoreError){toast.error("No se pudo reactivar esa fecha de caja");return;}
+    }
+    if(eliminadosFecha.length){
+      setCajaMovimientos(prev=>prev.filter(m=>!eliminadosFecha.some(x=>x.id===m.id)));
+      await logH(user?.email,"reactivó día de caja","Caja diaria",null,{nombre:"Caja diaria",fecha,motivo:"nuevo movimiento cargado"});
+    }
+
     const payload={
       cliente_id:null,
       usuario_email:user?.email||"—",
@@ -1714,7 +1733,7 @@ export default function App(){
     };
     const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
     if(error){toast.error("No se pudo registrar el movimiento de caja");return;}
-    setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev.filter(m=>!eliminadosFecha.some(x=>x.id===m.id))]);
     setCajaForm(prev=>({...prev,monto:""}));
     await logH(user?.email,"registró movimiento de caja","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha,recibe,monto});
     toast.success("Movimiento de caja registrado");
@@ -1929,7 +1948,21 @@ export default function App(){
       return{...m,concepto,fecha,recibe,monto,saldoCancelado};
     }).filter(m=>m.fecha)
   ,[cajaMovimientos]);
-  const cajaDiasEliminados=useMemo(()=>Array.from(new Set(cajaBaseMovs.filter(m=>m.concepto==="dia_eliminado").map(m=>m.fecha))).sort((a,b)=>b.localeCompare(a)),[cajaBaseMovs]);
+  const cajaDiasEliminados=useMemo(()=>{
+    const byFecha={};
+    cajaBaseMovs.forEach(m=>{
+      const f=m.fecha;
+      if(!f)return;
+      const ts=new Date(m.created_at||0).getTime()||0;
+      if(!byFecha[f])byFecha[f]={ultimoEliminado:0,ultimoMovimiento:0};
+      if(m.concepto==="dia_eliminado")byFecha[f].ultimoEliminado=Math.max(byFecha[f].ultimoEliminado,ts);
+      if(m.concepto!=="dia_eliminado")byFecha[f].ultimoMovimiento=Math.max(byFecha[f].ultimoMovimiento,ts);
+    });
+    return Object.entries(byFecha)
+      .filter(([,v])=>v.ultimoEliminado>0&&v.ultimoEliminado>=v.ultimoMovimiento)
+      .map(([f])=>f)
+      .sort((a,b)=>b.localeCompare(a));
+  },[cajaBaseMovs]);
   const cajaDiaria=useMemo(()=>{
     const eliminados=new Set(cajaDiasEliminados);
     const movs=cajaBaseMovs.filter(m=>m.concepto!=="dia_eliminado"&&!eliminados.has(m.fecha));
