@@ -842,27 +842,39 @@ function DeudaModal({cliente,onClose,onConfirm,t}){
 function PagoModal({cliente,onClose,onConfirm,t}){
   const S=makeS(t);const btn=makeBtn(t);
   const [monto,setMonto]=useState("");
+  const [recibe,setRecibe]=useState("Cristian");
   if(!cliente)return null;
   const deuda=safeNum(cliente.deuda_restante);
   const montoN=Number(monto)||0;
   const restante=Math.max(0,deuda-montoN);
+  const puedeGuardar=montoN>0&&montoN<=deuda&&!!recibe;
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={onClose}>
-      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:400,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
-        <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Registrar pago parcial</h3>
+      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Registrar pago de deuda</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
           <strong style={{color:t.text}}>{cliente.nombre}</strong> · Deuda total: <strong style={{color:"#ef4444"}}>USD {deuda}</strong>
         </p>
-        <div style={{marginBottom:8}}>
+        <div style={{marginBottom:12}}>
           <label style={S.label}>Monto a abonar hoy ({formatDate(toISODate(getToday()))}) (USD)</label>
           <input type="number" style={S.input} placeholder="0" min="1" max={deuda} value={monto}
             onChange={e=>setMonto(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&montoN>0&&montoN<=deuda&&onConfirm(cliente,montoN)}/>
+            onKeyDown={e=>e.key==="Enter"&&puedeGuardar&&onConfirm(cliente,montoN,recibe)} />
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={S.label}>Recibe el pago</label>
+          <select style={S.input} value={recibe} onChange={e=>setRecibe(e.target.value)}>
+            <option value="Cristian">Cristian</option>
+            <option value="Bahiano">Bahiano</option>
+            <option value="Luigi">Luigi</option>
+          </select>
         </div>
         {montoN>0&&montoN<=deuda&&(
-          <div style={{marginBottom:20,padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",fontSize:13,color:t.textMuted}}>
+          <div style={{marginBottom:20,padding:"10px 14px",borderRadius:10,background:t.dark?"#0d1526":"#f8f6f3",fontSize:13,color:t.textMuted,lineHeight:1.45}}>
             Deuda restante después del pago: <strong style={{color:restante===0?"#22c55e":"#ef4444"}}>USD {restante}</strong>
             {restante===0&&<span style={{color:"#22c55e",marginLeft:8,fontWeight:700}}>✓ Deuda cancelada</span>}
+            <br/>
+            {recibe==="Luigi"?"Queda pendiente de recepción hasta marcarlo recibido.":`Entra a Caja de ${recibe} al registrarlo.`}
           </div>
         )}
         {montoN>deuda&&deuda>0&&(
@@ -872,9 +884,9 @@ function PagoModal({cliente,onClose,onConfirm,t}){
         )}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button style={btn(false)} onClick={onClose}>Cancelar</button>
-          <button style={{...btn(false,true),opacity:montoN<=0||montoN>deuda?0.5:1}} disabled={montoN<=0||montoN>deuda}
-            onClick={()=>onConfirm(cliente,montoN)}>
-            Registrar ingreso
+          <button style={{...btn(false,true),opacity:!puedeGuardar?0.5:1}} disabled={!puedeGuardar}
+            onClick={()=>onConfirm(cliente,montoN,recibe)}>
+            Registrar pago
           </button>
         </div>
       </div>
@@ -1853,28 +1865,42 @@ export default function App(){
     refetch();
   }
 
-  async function registrarPagoParcial(cliente,monto){
+  async function registrarPagoParcial(cliente,monto,recibePago="Cristian"){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
     if(monto>safeNum(cliente.deuda_restante)){toast.error(`El monto supera la deuda actual (USD ${cliente.deuda_restante})`);return;}
+    const recibe=String(recibePago||"Cristian").trim();
+    if(!["Cristian","Bahiano","Luigi"].includes(recibe)){toast.error("Elegí quién recibió el pago");return;}
     const nuevaDeuda=Math.max(0,safeNum(cliente.deuda_restante)-monto);
     const fechaHoy=toISODate(getToday());
-    // 1. Actualizar deuda en la tabla clientes
+    const pendienteDeRecepcion=ventaPendienteTransferencia(recibe);
+
+    // 1. Actualizar deuda en la tabla clientes. No toca vencimiento ni renovación.
     const{error:eD}=await supabase.from("clientes").update({deuda_restante:nuevaDeuda}).eq("id",cliente.id);
     if(eD){toast.error("No se pudo registrar el pago");return;}
-    // 2. Registrar como ingreso real con la fecha de hoy
-    await supabase.from("ingresos").insert([{
-      cliente_id:cliente.id,
-      cliente_nombre:cliente.nombre,
-      email:cliente.email,
-      servicio:cliente.servicio,
-      monto:Number(monto),
-      fecha_pago:fechaHoy,
-      notas:`Pago parcial de deuda. Deuda restante: USD ${nuevaDeuda}`,
-    }]);
-    await logH(user?.email,"registró pago parcial","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda});
-    await logNC(cliente.id,user?.email,"pago",`Pago de USD ${monto} aplicado a deuda. Deuda restante: USD ${nuevaDeuda}`,{monto_abonado:monto,deuda_restante:nuevaDeuda});
+
+    // 2. Registrar el pago de deuda como ingreso real, con receptor propio.
+    const notasPago=`Pago de deuda. Deuda restante: USD ${nuevaDeuda}`;
+    const ingresoPago=buildIng(cliente.id,cliente.nombre||"",cliente.email||"",cliente.servicio,monto,fechaHoy,notasPago,{recibe,pendiente:pendienteDeRecepcion});
+    const{data:ingPago,error:eI}=await supabase.from("ingresos").insert([ingresoPago]).select().single();
+    if(eI){toast.error("Deuda actualizada, pero no se pudo registrar el ingreso");refetch();return;}
+
+    const ingresoLocal={...(ingPago||ingresoPago),id:ingPago?.id||`tmp-deuda-${Date.now()}`,cliente_id:cliente.id,cliente_nombre:cliente.nombre,email:cliente.email,servicio:cliente.servicio,monto:Number(monto),fecha_pago:fechaHoy};
+    setIngresos(prev=>[ingresoLocal,...prev]);
+    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,deuda_restante:nuevaDeuda}:c));
+    setClienteDetalle(prev=>prev&&String(prev.id)===String(cliente.id)?{...prev,deuda_restante:nuevaDeuda}:prev);
+
+    // 3. Caja: Cristian/Bahiano entran directo. Luigi queda pendiente hasta marcar recibido.
+    if(!pendienteDeRecepcion){
+      await registrarCajaDesdeVenta({fecha:fechaHoy,monto,recibe,nombre:cliente.nombre,clienteId:cliente.id,origen:"pago de deuda",ingresoId:ingPago?.id});
+    }else{
+      await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingPago?.id,nombre:cliente.nombre,servicio:cliente.servicio,monto,fecha:fechaHoy,vendedor:recibe,origen:"pago de deuda"});
+    }
+
+    const estadoTexto=pendienteDeRecepcion?` · Cobró ${recibe} · Pendiente de recepción`:` · Cobró ${recibe}`;
+    await logH(user?.email,"registró pago de deuda","cliente",cliente.id,{nombre:cliente.nombre,monto_abonado:monto,deuda_restante:nuevaDeuda,recibe,pendiente_de_recepcion:pendienteDeRecepcion,ingreso_id:ingPago?.id||null});
+    await logNC(cliente.id,user?.email,"pago",`Pago de deuda registrado. Monto: USD ${monto} · Deuda restante: USD ${nuevaDeuda}${estadoTexto}`,{monto_abonado:monto,deuda_restante:nuevaDeuda,recibe,pendiente_transferencia:pendienteDeRecepcion,ingreso_id:ingPago?.id||null});
     setPagoCliente(null);
-    toast.success(`Pago USD ${monto} registrado. Deuda restante: USD ${nuevaDeuda}`);
+    toast.success(pendienteDeRecepcion?`Pago de deuda registrado. Queda pendiente de recepción por ${recibe}.`:`Pago de deuda registrado en Caja de ${recibe}.`);
     refetch();
   }
   function abrirRenovar(cliente){
