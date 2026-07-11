@@ -1823,8 +1823,12 @@ export default function App(){
       .sort((a,b)=>String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||""))||String(b.created_at||"").localeCompare(String(a.created_at||"")))[0]||null;
     const montoRecibido=safeNum(ingresoRelacionado?.monto)||safeNum(cliente?.monto);
     const fechaRecepcion=toISODate(getToday());
-    const{error}=await supabase.from("clientes").update({transferido:true,recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}).eq("id",id);
-    if(error){toast.error("No se pudo actualizar");return;}
+    // Marcar recibido no puede fallar por columnas opcionales que no existan en la tabla.
+    // Primero actualizamos únicamente el campo operativo seguro: transferido.
+    const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
+    if(error){toast.error("No se pudo marcar como recibido");return;}
+    // Si existen estas columnas en alguna versión de la base, las completamos sin bloquear el flujo.
+    supabase.from("clientes").update({recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}).eq("id",id).then(()=>{});
     setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true,recibe_final:recibeCaja,fecha_transferencia:fechaRecepcion}:c));
 
     // La transferencia recibida SIEMPRE debe impactar en Caja con la fecha real de recepción.
