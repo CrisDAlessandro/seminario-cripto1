@@ -1719,6 +1719,16 @@ export default function App(){
     setCajaMovimientos(prev=>prev.filter(m=>m.id!==id));
     toast.success("Movimiento eliminado");
   }
+  async function deshacerCajaNeteada(ids=[]){
+    const reales=(ids||[]).filter(Boolean).filter(id=>!String(id).startsWith("tmp-"));
+    if(reales.length){
+      const{error}=await supabase.from("notas_cliente").delete().in("id",reales);
+      if(error){toast.error("No se pudo deshacer el neteo");return;}
+    }
+    setCajaMovimientos(prev=>prev.filter(m=>!ids.includes(m.id)));
+    await logH(user?.email,"deshizo caja neteada","caja",null,{ids});
+    toast.success("Caja neteada deshecha");
+  }
 
   async function actualizarVendedor(id,vendedor){
     const transferido=vendedor===""?true:false;
@@ -1876,10 +1886,11 @@ export default function App(){
       const total=cristian+bahiano;
       const saldoInicial=saldo;
       const saldoDia=cristian-(total/2);
-      let saldoAntesNeteo=saldoInicial+saldoDia;
-      const neteado=neteos.length>0;
-      const saldoFinal=neteado?0:saldoAntesNeteo;
-      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoFinal,neteado,movimientos,neteos});
+      const saldoAntesNeteo=saldoInicial+saldoDia;
+      const saldoCancelado=neteos.reduce((a,m)=>a+safeNum(m.saldoCancelado),0);
+      const saldoFinal=saldoAntesNeteo-saldoCancelado;
+      const neteado=neteos.length>0&&Math.abs(saldoFinal)<0.01;
+      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,movimientos,neteos});
       saldo=saldoFinal;
     });
     return rows.sort((a,b)=>b.key.localeCompare(a.key));
@@ -2218,7 +2229,6 @@ export default function App(){
                 </div>
                 <button onClick={registrarMovimientoCaja} style={{...btn(false,true),height:42}}>Agregar a caja</button>
               </div>
-              <div style={{fontSize:12,color:t.textMuted,lineHeight:1.5}}>Ejemplo: si en el día entran USD 150, a cada uno le corresponden USD 75. Si Cristian recibió USD 90 y Bahiano USD 60, Cristian le debe USD 15 a Bahiano. Si no lo marcás como neteado, ese saldo se arrastra al día siguiente.</div>
             </div>
 
             <div style={S.card}>
@@ -2230,7 +2240,8 @@ export default function App(){
                   {cajaDiaria.map(r=>{
                     const actual=r.key===toISODate(getToday());
                     const saldo=r.saldoFinal;
-                    const necesitaNeteo=Math.abs(r.saldoAntesNeteo)>0.01&&!r.neteado;
+                    const tieneNeteo=r.neteos.length>0;
+                    const necesitaNeteo=Math.abs(r.saldoFinal)>0.01;
                     return(
                       <div key={r.key} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:actual?(t.dark?"rgba(245,158,11,0.10)":"#fffbeb"):(t.dark?"#0d1526":"#fff")}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
@@ -2251,8 +2262,11 @@ export default function App(){
                           <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:12}}>
-                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoAntesNeteo):r.neteado?"Este día quedó cerrado y no arrastra saldo.":"Este día no dejó saldo pendiente."}</div>
-                          {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoAntesNeteo)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
+                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.neteado?"Este día quedó cerrado y no arrastra saldo.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoFinal)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
+                            {tieneNeteo&&<button onClick={()=>askConfirm("Deshacer caja neteada","¿Deshacer el neteo de este día para que vuelva a calcular y arrastrar el saldo?",()=>deshacerCajaNeteada(r.neteos.map(n=>n.id)),{danger:false,label:"Deshacer"})} style={{...btn(false,false),padding:"8px 12px"}}>Deshacer neteo</button>}
+                          </div>
                         </div>
                         {r.movimientos.length>0&&(
                           <div style={{marginTop:10,display:"grid",gap:6}}>
