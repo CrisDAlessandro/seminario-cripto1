@@ -1178,10 +1178,31 @@ function HistorialView({t}){
   function badge(accion){
     const b={display:"inline-block",padding:"3px 9px",borderRadius:999,fontSize:11,fontWeight:700,border:"1px solid transparent"};
     if(accion?.includes("eliminó"))return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
+    if(accion?.includes("caja"))return{...b,background:"#ecfeff",color:"#155e75",borderColor:"#67e8f9"};
     if(accion?.includes("renovó")||accion?.includes("renovación"))return{...b,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
     if(accion?.includes("guardó")||accion?.includes("nuevo"))return{...b,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
     if(accion?.includes("pago"))return{...b,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
     return{...b,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
+  }
+  function histEntidad(h){
+    if(String(h.entidad||"").toLowerCase()==="caja"||String(h.entidad||"").toLowerCase()==="caja diaria"||String(h.accion||"").toLowerCase().includes("caja"))return "Caja diaria";
+    return h.detalle?.nombre||h.entidad||"-";
+  }
+  function histDetalle(h){
+    const d=h.detalle||null;
+    if(!d)return "—";
+    if(histEntidad(h)==="Caja diaria"){
+      const partes=[];
+      if(d.fecha)partes.push(`Fecha: ${formatDate(d.fecha)}`);
+      if(d.recibe)partes.push(`Recibió: ${d.recibe}`);
+      if(d.monto!=null)partes.push(`Monto: USD ${d.monto}`);
+      if(d.saldo_cancelado!=null)partes.push(`Saldo neteado: USD ${Math.abs(Number(d.saldo_cancelado||0))}`);
+      if(d.cantidad!=null)partes.push(`Registros afectados: ${d.cantidad}`);
+      if(d.total!=null)partes.push(`Total eliminado: USD ${d.total}`);
+      if(d.concepto)partes.push(`Concepto: ${d.concepto}`);
+      return partes.length?partes.join(" · "):"—";
+    }
+    return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · ")||"—";
   }
   return(
     <div ref={ref} style={S.card}>
@@ -1201,9 +1222,9 @@ function HistorialView({t}){
                     <td style={{...S.td,whiteSpace:"nowrap",fontSize:13}}>{formatDateTime(h.created_at)}</td>
                     <td style={{...S.td,fontSize:13}}>{h.usuario_email||"-"}</td>
                     <td style={S.td}><span style={badge(h.accion)}>{h.accion||"-"}</span></td>
-                    <td style={{...S.td,fontWeight:600}}>{h.detalle?.nombre||h.entidad||"-"}</td>
+                    <td style={{...S.td,fontWeight:600}}>{histEntidad(h)}</td>
                     <td style={{...S.td,color:t.textMuted,fontSize:12,maxWidth:320,wordBreak:"break-word",whiteSpace:"normal",lineHeight:1.5}}>
-                      {h.detalle?Object.entries(h.detalle).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · "):"—"}
+                      {histDetalle(h)}
                     </td>
                   </tr>
                 ))}
@@ -1694,7 +1715,7 @@ export default function App(){
     if(error){toast.error("No se pudo registrar el movimiento de caja");return;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
     setCajaForm(prev=>({...prev,monto:""}));
-    await logH(user?.email,"registró movimiento de caja","caja",data?.id||null,{nombre:"Caja diaria",fecha,recibe,monto});
+    await logH(user?.email,"registró movimiento de caja","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha,recibe,monto});
     toast.success("Movimiento de caja registrado");
   }
   async function marcarCajaNeteada(fecha,saldo){
@@ -1710,7 +1731,7 @@ export default function App(){
     const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
     if(error){toast.error("No se pudo marcar la caja como neteada");return;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
-    await logH(user?.email,"marcó caja neteada","caja",data?.id||null,{nombre:"Caja diaria",fecha:payload.detalle.fecha,saldo_cancelado:saldoReal});
+    await logH(user?.email,"marcó caja neteada","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:payload.detalle.fecha,saldo_cancelado:saldoReal});
     toast.success("Caja marcada como neteada");
   }
   async function eliminarMovimientoCaja(id){
@@ -1718,7 +1739,7 @@ export default function App(){
     const{error}=await supabase.from("notas_cliente").delete().eq("id",id);
     if(error){toast.error("No se pudo eliminar el movimiento");return;}
     setCajaMovimientos(prev=>prev.filter(m=>m.id!==id));
-    await logH(user?.email,"eliminó movimiento de caja","caja",id,{nombre:"Caja diaria",fecha:mov?.detalle?.fecha,recibe:mov?.detalle?.recibe,monto:mov?.detalle?.monto,concepto:mov?.detalle?.concepto||"movimiento"});
+    await logH(user?.email,"eliminó movimiento de caja","Caja diaria",id,{nombre:"Caja diaria",fecha:mov?.detalle?.fecha,recibe:mov?.detalle?.recibe,monto:mov?.detalle?.monto,concepto:mov?.detalle?.concepto||"movimiento"});
     toast.success("Movimiento eliminado");
   }
 
@@ -1731,7 +1752,7 @@ export default function App(){
     }
     setCajaMovimientos(prev=>prev.filter(m=>!(ids.includes(m.id)||(dateOnly(m.detalle?.fecha)===fecha&&m.tipo==="caja"))));
     const total=(registros||[]).filter(m=>m.concepto!=="neteada").reduce((a,m)=>a+safeNum(m.monto),0);
-    await logH(user?.email,"eliminó día de caja","caja",null,{nombre:"Caja diaria",fecha,cantidad:ids.length,total});
+    await logH(user?.email,"eliminó día de caja","Caja diaria",null,{nombre:"Caja diaria",fecha,cantidad:ids.length,total});
     toast.success("Día de caja eliminado");
   }
 
@@ -1742,7 +1763,7 @@ export default function App(){
       if(error){toast.error("No se pudo deshacer el neteo");return;}
     }
     setCajaMovimientos(prev=>prev.filter(m=>!ids.includes(m.id)));
-    await logH(user?.email,"deshizo caja neteada","caja",null,{nombre:"Caja diaria",ids});
+    await logH(user?.email,"deshizo caja neteada","Caja diaria",null,{nombre:"Caja diaria",cantidad:ids?.length||0});
     toast.success("Caja neteada deshecha");
   }
 
