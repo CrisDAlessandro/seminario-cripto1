@@ -1919,11 +1919,49 @@ export default function App(){
     toast.success("Caja marcada como neteada");
   }
   async function eliminarMovimientoCaja(id){
-    const mov=(cajaMovimientos||[]).find(m=>m.id===id);
-    const{error}=await supabase.from("notas_cliente").delete().eq("id",id);
-    if(error){toast.error("No se pudo eliminar el movimiento");return;}
-    setCajaMovimientos(prev=>prev.filter(m=>m.id!==id));
-    await logH(user?.email,"eliminó movimiento de caja","Caja diaria",id,{nombre:"Caja diaria",fecha:mov?.detalle?.fecha,recibe:mov?.detalle?.recibe,monto:mov?.detalle?.monto,concepto:mov?.detalle?.concepto||"movimiento"});
+    const mov=(cajaBaseMovs||cajaMovimientos||[]).find(m=>String(m.id)===String(id));
+    if(!mov){toast.error("No se encontró el movimiento");return;}
+    const d=mov.detalle||{};
+    const esVirtual=!!mov.virtual||String(id).startsWith("auto-")||String(id).startsWith("tmp-");
+
+    async function ocultarMovimiento(){
+      const payload={
+        cliente_id:null,
+        usuario_email:user?.email||"—",
+        tipo:"caja",
+        contenido:`Movimiento de caja eliminado: ${d.recibe||mov.recibe||"—"} USD ${safeNum(d.monto||mov.monto)}`,
+        detalle:{
+          concepto:"movimiento_oculto",
+          target_id:String(id),
+          fecha:dateOnly(d.fecha||mov.fecha),
+          recibe:d.recibe||mov.recibe||"",
+          monto:safeNum(d.monto||mov.monto),
+          nombre:d.nombre||"",
+          cliente_id:d.cliente_id||mov.cliente_id||null,
+          ingreso_id:d.ingreso_id||null,
+          origen:d.origen||"eliminado_manual"
+        }
+      };
+      const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
+      if(error){toast.error("No se pudo eliminar el movimiento");return false;}
+      setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-oculto-${Date.now()}`,created_at:new Date().toISOString()},...prev.filter(m=>String(m.id)!==String(id))]);
+      return true;
+    }
+
+    if(esVirtual){
+      const ok=await ocultarMovimiento();
+      if(!ok)return;
+    }else{
+      const{error}=await supabase.from("notas_cliente").delete().eq("id",id);
+      if(error){
+        const ok=await ocultarMovimiento();
+        if(!ok)return;
+      }else{
+        setCajaMovimientos(prev=>prev.filter(m=>String(m.id)!==String(id)));
+      }
+    }
+
+    await logH(user?.email,"eliminó movimiento de caja","Caja diaria",id,{nombre:"Caja diaria",fecha:d.fecha||mov.fecha,recibe:d.recibe||mov.recibe,monto:d.monto||mov.monto,concepto:d.concepto||mov.concepto||"movimiento"});
     toast.success("Movimiento eliminado");
   }
 
@@ -2103,7 +2141,7 @@ export default function App(){
     if(activeView==="semanal")setTimeout(()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),80);
   },[activeView,semanaActualKey]);
   const cajaBaseMovs=useMemo(()=>{
-    const reales=(cajaMovimientos||[]).map(m=>{
+    const realesRaw=(cajaMovimientos||[]).map(m=>{
       const d=m.detalle||{};
       const concepto=d.concepto||"movimiento";
       const fecha=dateOnly(d.fecha)||dateOnly(m.created_at)||toISODate(getToday());
@@ -2112,6 +2150,29 @@ export default function App(){
       const saldoCancelado=safeNum(d.saldo_cancelado);
       return{...m,concepto,fecha,recibe,monto,saldoCancelado};
     }).filter(m=>m.fecha);
+
+    const movimientosOcultos=realesRaw.filter(m=>m.concepto==="movimiento_oculto"||m.concepto==="movimiento_eliminado");
+    const estaOculto=m=>movimientosOcultos.some(o=>{
+      const d=o.detalle||{};
+      if(d.target_id&&String(d.target_id)===String(m.id))return true;
+      const mismaFecha=dateOnly(d.fecha)===dateOnly(m.fecha);
+      const mismoMonto=safeNum(d.monto)===safeNum(m.monto);
+      if(!mismaFecha||!mismoMonto)return false;
+      const dCliente=String(d.cliente_id||"");
+      const mCliente=String(m.detalle?.cliente_id||m.cliente_id||"");
+      if(dCliente&&mCliente&&dCliente===mCliente)return true;
+      const dIngreso=String(d.ingreso_id||"");
+      const mIngreso=String(m.detalle?.ingreso_id||"");
+      if(dIngreso&&mIngreso&&dIngreso===mIngreso)return true;
+      const dNombre=normCajaText(d.nombre||"");
+      const mNombre=normCajaText(m.detalle?.nombre||"");
+      if(dNombre&&mNombre&&dNombre===mNombre)return true;
+      const dRecibe=String(d.recibe||"");
+      const mRecibe=String(m.detalle?.recibe||m.recibe||"");
+      return !!dRecibe&&!!mRecibe&&dRecibe===mRecibe;
+    });
+
+    const reales=realesRaw.filter(m=>m.concepto!=="movimiento_oculto"&&m.concepto!=="movimiento_eliminado"&&!estaOculto(m));
 
     // Respaldo: si por cualquier motivo no se creó la nota de Caja,
     // una venta/renovación directa de Cristian o Bahiano igual debe aparecer en Caja.
@@ -2149,7 +2210,7 @@ export default function App(){
         concepto:"movimiento",fecha,recibe:quien,monto,saldoCancelado:0,
         virtual:true
       };
-    }).filter(Boolean);
+    }).filter(Boolean).filter(m=>!estaOculto(m));
 
     const transferenciasVirtuales=(transferenciasRecibidas||[]).map(n=>{
       const d=n.detalle||{};
@@ -2171,7 +2232,7 @@ export default function App(){
         concepto:"movimiento",fecha,recibe:quien,monto,saldoCancelado:0,
         virtual:true
       };
-    }).filter(Boolean);
+    }).filter(Boolean).filter(m=>!estaOculto(m));
     return [...reales,...virtuales,...transferenciasVirtuales];
   },[cajaMovimientos,ingresos,computed,transferenciasRecibidas]);
   const cajaDiasEliminados=useMemo(()=>{
