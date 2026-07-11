@@ -418,20 +418,35 @@ function useToast(){
 
 // ─── Confirm modal ────────────────────────────────────────────────────────────
 function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,onConfirm,onCancel,t,children,closeOnBackdrop=true}){
-  const backdropMouseDown=useRef(false);
+  const backdropMouseDown=useRef(null);
+  useEffect(()=>{
+    if(!open)return;
+    const onKey=e=>{if(e.key==="Escape")onCancel?.();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[open,onCancel]);
   if(!open)return null;
   const btn=makeBtn(t);
+  const startBackdrop=e=>{
+    if(e.button!==0)return;
+    backdropMouseDown.current=e.target===e.currentTarget?{x:e.clientX,y:e.clientY}:null;
+  };
+  const endBackdrop=e=>{
+    const start=backdropMouseDown.current;
+    const moved=start&&(Math.abs(e.clientX-start.x)>4||Math.abs(e.clientY-start.y)>4);
+    const selected=typeof window!=="undefined"&&window.getSelection&&String(window.getSelection()||"").length>0;
+    if(closeOnBackdrop&&e.target===e.currentTarget&&start&&!moved&&!selected)onCancel?.();
+    backdropMouseDown.current=null;
+  };
+  const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
     <div
       style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}
-      onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
-      onMouseUp={e=>{
-        if(closeOnBackdrop&&e.target===e.currentTarget&&backdropMouseDown.current)onCancel?.();
-        backdropMouseDown.current=false;
-      }}
+      onMouseDown={startBackdrop}
+      onMouseUp={endBackdrop}
       onClick={e=>e.stopPropagation()}
     >
-      <div onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
+      <div onMouseDown={cancelBackdrop} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:18,padding:36,border:`1px solid ${t.cardBorder}`,maxWidth:440,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}}>
         <h3 style={{margin:"0 0 12px",color:t.text,fontSize:19,fontWeight:900}}>{title}</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:14,lineHeight:1.65}}>{message}</p>
         {children}
@@ -810,10 +825,26 @@ function DeudaModal({cliente,onClose,onConfirm,t}){
   const S=makeS(t);const btn=makeBtn(t);
   const [monto,setMonto]=useState(String(safeNum(cliente?.deuda_restante)||""));
   const montoN=Math.max(0,safeNum(monto));
+  const backdropMouseDown=useRef(null);
+  useEffect(()=>{
+    if(!cliente)return;
+    const onKey=e=>{if(e.key==="Escape")onClose?.();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[cliente,onClose]);
   if(!cliente)return null;
+  const startBackdrop=e=>{if(e.button===0&&e.target===e.currentTarget)backdropMouseDown.current={x:e.clientX,y:e.clientY};else backdropMouseDown.current=null;};
+  const endBackdrop=e=>{
+    const start=backdropMouseDown.current;
+    const moved=start&&(Math.abs(e.clientX-start.x)>4||Math.abs(e.clientY-start.y)>4);
+    const selected=typeof window!=="undefined"&&window.getSelection&&String(window.getSelection()||"").length>0;
+    if(e.target===e.currentTarget&&start&&!moved&&!selected)onClose?.();
+    backdropMouseDown.current=null;
+  };
+  const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onClick={onClose}>
-      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
+      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onMouseDown={cancelBackdrop} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
         <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Editar deuda</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
           <strong style={{color:t.text}}>{cliente.nombre}</strong> · Esto no renueva, no crea ingreso y no cambia vencimiento.
@@ -843,14 +874,30 @@ function PagoModal({cliente,onClose,onConfirm,t}){
   const S=makeS(t);const btn=makeBtn(t);
   const [monto,setMonto]=useState("");
   const [recibe,setRecibe]=useState("Cristian");
+  const backdropMouseDown=useRef(null);
+  useEffect(()=>{
+    if(!cliente)return;
+    const onKey=e=>{if(e.key==="Escape")onClose?.();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[cliente,onClose]);
   if(!cliente)return null;
   const deuda=safeNum(cliente.deuda_restante);
   const montoN=Number(monto)||0;
   const restante=Math.max(0,deuda-montoN);
   const puedeGuardar=montoN>0&&montoN<=deuda&&!!recibe;
+  const startBackdrop=e=>{if(e.button===0&&e.target===e.currentTarget)backdropMouseDown.current={x:e.clientX,y:e.clientY};else backdropMouseDown.current=null;};
+  const endBackdrop=e=>{
+    const start=backdropMouseDown.current;
+    const moved=start&&(Math.abs(e.clientX-start.x)>4||Math.abs(e.clientY-start.y)>4);
+    const selected=typeof window!=="undefined"&&window.getSelection&&String(window.getSelection()||"").length>0;
+    if(e.target===e.currentTarget&&start&&!moved&&!selected)onClose?.();
+    backdropMouseDown.current=null;
+  };
+  const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onClick={onClose}>
-      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
+      <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onMouseDown={cancelBackdrop} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
         <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Registrar pago de deuda</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
           <strong style={{color:t.text}}>{cliente.nombre}</strong> · Deuda total: <strong style={{color:"#ef4444"}}>USD {deuda}</strong>
@@ -1177,7 +1224,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
       }}
       onClick={e=>e.stopPropagation()}
     >
-      <div onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
+      <div onMouseDown={e=>{backdropMouseDown.current=false;e.stopPropagation();}} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
     </div>
   );
 }
@@ -1709,6 +1756,28 @@ export default function App(){
       if(eCaja)toast.error("Ingreso eliminado, pero no se pudo quitar de Caja");
     }
 
+    // Historial real de la persona: si se elimina un ingreso desde Dashboard
+    // porque fue una prueba/error, también se eliminan las notas del cliente
+    // que pertenecían a ese ingreso puntual. Esto evita que, por ejemplo,
+    // una renovación de clases borrada siga apareciendo como movimiento real.
+    let notasClienteEliminadas=0;
+    if(ing?.cliente_id){
+      try{
+        const{data:notasDelCliente}=await supabase
+          .from("notas_cliente")
+          .select("id,detalle")
+          .eq("cliente_id",ing.cliente_id);
+        const idsNotasIngreso=(notasDelCliente||[])
+          .filter(n=>String(n?.detalle?.ingreso_id||"")===String(id))
+          .map(n=>n.id)
+          .filter(Boolean);
+        if(idsNotasIngreso.length){
+          const{error:eNotas}=await supabase.from("notas_cliente").delete().in("id",idsNotasIngreso);
+          if(!eNotas)notasClienteEliminadas=idsNotasIngreso.length;
+        }
+      }catch(err){console.warn("No se pudieron limpiar notas del ingreso eliminado",err);}
+    }
+
     // Si el ingreso borrado correspondía al cliente que sigue activo en Base operativa,
     // se revierte también el efecto operativo de esa carga/renovación: días agregados
     // y pendiente de recepción. Esto NO aplica cuando el cliente ya fue dado de baja
@@ -1733,7 +1802,7 @@ export default function App(){
     if(movimientosCajaRelacionados.length){
       setCajaMovimientos(prev=>prev.filter(m=>!movimientosCajaRelacionados.some(x=>String(x.id)===String(m.id))));
     }
-    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,rollback:rollbackInfo,caja_eliminada:movimientosCajaRelacionados.length});
+    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,servicio:ing?.servicio,rollback:rollbackInfo,caja_eliminada:movimientosCajaRelacionados.length,notas_cliente_eliminadas:notasClienteEliminadas});
     if(movimientosCajaRelacionados.length){
       await logH(user?.email,"eliminó caja automática por ingreso eliminado","Caja diaria",null,{nombre:"Caja diaria",ingreso_id:id,cliente:ing?.cliente_nombre,monto:ing?.monto,cantidad:movimientosCajaRelacionados.length});
     }
