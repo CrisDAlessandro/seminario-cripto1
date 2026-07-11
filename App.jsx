@@ -1433,6 +1433,35 @@ export default function App(){
     const m=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
     return m?m[1]:"";
   };
+  function parseFechaRecepcionTexto(txt){
+    const t=String(txt||"");
+    const m=t.match(/(?:Transferencia recibida por|recib[ií]o transferencia).*?(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if(!m)return null;
+    return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  }
+  function infoCajaDesdeIngreso(i, transferenciasPorIngreso=new Map()){
+    const notas=String(i?.notas||"");
+    const ingresoId=String(i?.id||"");
+    const tr=ingresoId?transferenciasPorIngreso.get(ingresoId):null;
+    if(tr){
+      const recibe=cajaRecibeDirecto(tr.recibe);
+      const fecha=dateOnly(tr.fecha)||dateOnly(i?.fecha_pago)||dateOnly(i?.created_at)||toISODate(getToday());
+      if(recibe)return {recibe,fecha,origen:"transferencia recibida",nombre:tr.nombre||i?.cliente_nombre||""};
+    }
+    const mTransfer=notas.match(/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i);
+    if(mTransfer){
+      const recibe=cajaRecibeDirecto(mTransfer[1]);
+      const fecha=parseFechaRecepcionTexto(notas)||dateOnly(i?.fecha_pago)||dateOnly(i?.created_at)||toISODate(getToday());
+      if(recibe)return {recibe,fecha,origen:"transferencia recibida",nombre:i?.cliente_nombre||""};
+    }
+    const receptor=receptorExplicitoIngreso(i);
+    const recibe=cajaRecibeDirecto(receptor);
+    const pendiente=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(notas);
+    if(recibe&&!pendiente){
+      return {recibe,fecha:dateOnly(i?.fecha_pago)||dateOnly(i?.created_at)||toISODate(getToday()),origen:"ingreso automático",nombre:i?.cliente_nombre||""};
+    }
+    return null;
+  }
 
   async function registrarCajaDesdeVenta({fecha,monto,recibe,nombre,clienteId,origen,ingresoId}){
     const montoNum=Number(monto||0);
@@ -2331,42 +2360,46 @@ export default function App(){
 
     const reales=realesRaw.filter(m=>m.concepto!=="movimiento_oculto"&&m.concepto!=="movimiento_eliminado"&&!estaOculto(m));
 
-    // Respaldo: si por cualquier motivo no se creó la nota de Caja,
-    // una venta/renovación directa de Cristian o Bahiano igual debe aparecer en Caja.
+    // Respaldo fuerte: la Caja se arma por ingreso_id.
+    // Cada venta/renovación es independiente, aunque sea la misma persona, mismo día y mismo monto.
+    // Si el ingreso fue directo a Cristian/Bahiano, entra por fecha_pago.
+    // Si fue de Luigi, entra recién cuando existe una transferencia recibida y con fecha de recepción.
     const movimientosReales=reales.filter(m=>m.concepto==="movimiento");
-    const clavesReales=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${String(m.detalle?.ingreso_id||"")}`));
-    const ingresosRealesCaja=new Set(movimientosReales.map(m=>String(m.detalle?.ingreso_id||"")).filter(Boolean));
-    const ventasRealesCaja=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}`));
-    const ventasRealesPorNombre=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${normCajaText(m.detalle?.nombre||"")}`).filter(k=>!k.endsWith("|")));
+    const realExacto=new Set(movimientosReales.map(m=>`${String(m.detalle?.ingreso_id||"")}|${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}`));
+    const realSinIngreso=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${normCajaText(m.detalle?.nombre||"")}`));
+
+    const transferenciasPorIngreso=new Map();
+    (transferenciasRecibidas||[]).forEach(n=>{
+      const d=n.detalle||{};
+      const ingresoId=String(d.ingreso_id||"");
+      if(!ingresoId)return;
+      const recibe=cajaRecibeDirecto(d.recibe_final);
+      const fecha=dateOnly(d.fecha_recepcion)||dateOnly(n.created_at)||toISODate(getToday());
+      if(!recibe)return;
+      transferenciasPorIngreso.set(ingresoId,{recibe,fecha,nombre:(n.contenido||"").replace(/^.*Venta:\s*/i,"").split("·")[0]||"",nota:n});
+    });
+
     const porCliente=Object.fromEntries((computed||[]).map(c=>[String(c.id),c]));
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
-      const receptorParaCaja=receptorExplicitoIngreso(i);
-      // Importante: no usar el vendedor actual del cliente para reconstruir ingresos viejos.
-      // Si el cliente renovó por Luigi y después se marcó recibido por Bahiano, el vendedor actual cambia,
-      // pero los pagos anteriores deben quedar con su receptor original.
-      // Por eso el respaldo solo reconstruye ingresos que traen receptor explícito en el propio ingreso/notas.
-      if(!String(receptorParaCaja||"").trim())return null;
-      const quien=cajaRecibeDirecto(receptorParaCaja);
-      if(!quien)return null;
-      const fecha=dateOnly(i.fecha_pago)||dateOnly(i.created_at)||toISODate(getToday());
+      const info=infoCajaDesdeIngreso(i,transferenciasPorIngreso);
+      if(!info)return null;
+      const fecha=dateOnly(info.fecha)||dateOnly(i.fecha_pago)||dateOnly(i.created_at)||toISODate(getToday());
       if(!cajaFechaHabilitada(fecha))return null;
       const monto=safeNum(i.monto);
-      const key=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|${String(i.id||"")}`;
-      const keySinIngreso=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|`;
-      const keyMismaVenta=`${fecha}|${monto}|${String(i.cliente_id||"")}`;
-      const keyMismoNombre=`${fecha}|${monto}|${normCajaText(i.cliente_nombre||c.nombre||"")}`;
-      if(i.id){
-        // Con ingreso_id, cada ingreso/renovación es independiente. No deduplicar por cliente+fecha+monto,
-        // porque dos renovaciones de la misma persona el mismo día pueden ser ventas distintas.
-        if(ingresosRealesCaja.has(String(i.id))||clavesReales.has(key))return null;
-      }else if(ventasRealesCaja.has(keyMismaVenta)||ventasRealesPorNombre.has(keyMismoNombre)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
+      if(monto<=0)return null;
+      const nombre=i.cliente_nombre||c.nombre||info.nombre||"";
+      const ingresoId=String(i.id||"");
+      const keyExacto=`${ingresoId}|${fecha}|${info.recibe}|${monto}`;
+      const keySinIngreso=`${fecha}|${info.recibe}|${monto}|${String(i.cliente_id||"")}|${normCajaText(nombre)}`;
+      if(ingresoId&&realExacto.has(keyExacto))return null;
+      if(!ingresoId&&realSinIngreso.has(keySinIngreso))return null;
       return{
-        id:`auto-ingreso-${i.id||fecha}-${i.cliente_id||""}`,
+        id:`auto-ingreso-${ingresoId||fecha}-${fecha}-${info.recibe}-${String(i.cliente_id||"")}`,
         tipo:"caja",
         created_at:i.created_at||`${fecha}T12:00:00`,
-        detalle:{concepto:"movimiento",origen:"ingreso automático",fecha,recibe:quien,monto,nombre:i.cliente_nombre||c.nombre||"",cliente_id:i.cliente_id||null,ingreso_id:i.id||null},
-        concepto:"movimiento",fecha,recibe:quien,monto,saldoCancelado:0,
+        detalle:{concepto:"movimiento",origen:info.origen,fecha,recibe:info.recibe,monto,nombre,cliente_id:i.cliente_id||null,ingreso_id:i.id||null},
+        concepto:"movimiento",fecha,recibe:info.recibe,monto,saldoCancelado:0,
         virtual:true
       };
     }).filter(Boolean).filter(m=>!estaOculto(m));
@@ -2379,10 +2412,11 @@ export default function App(){
       const ingresoId=String(d.ingreso_id||"");
       const clienteId=String(n.cliente_id||d.cliente_id||"");
       if(!cajaFechaHabilitada(fecha)||!quien||monto<=0)return null;
-      if(ingresoId&&ingresosRealesCaja.has(ingresoId))return null;
-      const keyMismaVenta=`${fecha}|${monto}|${clienteId}`;
-      const keyMismoNombre=`${fecha}|${monto}|${normCajaText((n.contenido||"").replace(/^.*Venta:\s*/i,"").split("·")[0]||"")}`;
-      if(!ingresoId&&(ventasRealesCaja.has(keyMismaVenta)||ventasRealesPorNombre.has(keyMismoNombre)))return null;
+      // Si el ingreso existe, el respaldo por ingresos ya genera este movimiento.
+      // Solo usamos este respaldo para transferencias viejas sin ingreso_id.
+      if(ingresoId&&(ingresos||[]).some(i=>String(i.id)===ingresoId))return null;
+      const keySinIngreso=`${fecha}|${quien}|${monto}|${clienteId}|${normCajaText((n.contenido||"").replace(/^.*Venta:\s*/i,"").split("·")[0]||"")}`;
+      if(realSinIngreso.has(keySinIngreso))return null;
       return{
         id:`auto-transferencia-${n.id||fecha}-${clienteId}`,
         tipo:"caja",
