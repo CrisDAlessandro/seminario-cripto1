@@ -350,6 +350,30 @@ function makeBtn(t){
     return{padding:"10px 16px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:14,background:dark?t.btnDkBg:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx};
   };
 }
+
+function useSafeBackdropClose(onClose, enabled=true){
+  const backdropMouseDown=useRef(null);
+  const onBackdropMouseDown=useCallback((e)=>{
+    if(!enabled||e.button!==0)return;
+    backdropMouseDown.current=e.target===e.currentTarget?{x:e.clientX,y:e.clientY}:null;
+  },[enabled]);
+  const onBackdropMouseUp=useCallback((e)=>{
+    const start=backdropMouseDown.current;
+    const moved=start&&(Math.abs(e.clientX-start.x)>4||Math.abs(e.clientY-start.y)>4);
+    const selected=typeof window!=="undefined"&&window.getSelection&&String(window.getSelection()||"").length>0;
+    if(enabled&&e.target===e.currentTarget&&start&&!moved&&!selected)onClose?.();
+    backdropMouseDown.current=null;
+  },[enabled,onClose]);
+  const cancelBackdrop=useCallback((e)=>{
+    backdropMouseDown.current=null;
+    e.stopPropagation();
+  },[]);
+  return {
+    backdropProps:{onMouseDown:onBackdropMouseDown,onMouseUp:onBackdropMouseUp,onClick:e=>e.stopPropagation()},
+    modalProps:{onMouseDown:cancelBackdrop,onMouseUp:e=>e.stopPropagation(),onClick:e=>e.stopPropagation()}
+  };
+}
+
 function makeNavBtn(t){
   return function navBtn(active){
     return{padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,
@@ -478,9 +502,10 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
     const lo=q.toLowerCase();
     return clientes.filter(c=>`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase().includes(lo)).slice(0,9);
   },[clientes,q]);
+  const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"72px 24px",zIndex:3000}} onClick={onClose}>
-      <div style={{background:t.cardBg,borderRadius:18,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",overflow:"hidden"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"72px 24px",zIndex:3000}} {...backdropProps}>
+      <div style={{background:t.cardBg,borderRadius:18,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",overflow:"hidden"}} {...modalProps}>
         <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:t.textMuted,fontSize:17}}>🔍</span>
           <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
@@ -524,12 +549,18 @@ const TL_PAGE = 5;
 function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
+  const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
   const [nuevaNota,setNuevaNota]=useState("");
   const [sending,setSending]=useState(false);
   const [copiado,setCopiado]=useState(false);
   const [timeline,setTimeline]=useState([]);
   const [loadingTL,setLoadingTL]=useState(true);
   const [tlPage,setTlPage]=useState(1);
+  useEffect(()=>{
+    const onKey=e=>{if(e.key==="Escape")onClose?.();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[onClose]);
 
   // Buscar TODOS los registros con el mismo nombre (mismo cliente, distintos servicios)
   const mismoNombre = useMemo(()=>
@@ -676,8 +707,8 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.82)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.82)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
+      <div {...modalProps} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
 
         {/* Header */}
         <div style={{padding:"24px 28px 0",flexShrink:0}}>
@@ -1150,7 +1181,14 @@ function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,
 // ─── ClienteForm ─────────────────────────────────────────────────────────────
 function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando,isModal=false,t}){
   const S=makeS(t);const btn=makeBtn(t);
+  const {backdropProps,modalProps}=useSafeBackdropClose(onCancelar,isModal);
   const isClases=form.servicio==="clases";
+  useEffect(()=>{
+    if(!isModal)return;
+    const onKey=e=>{if(e.key==="Escape")onCancelar?.();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[isModal,onCancelar]);
   const inner=(
     <div style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:16,padding:28,boxShadow:isModal?"0 32px 80px rgba(0,0,0,0.5)":undefined,border:`1px solid ${t.cardBorder}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
@@ -1210,21 +1248,13 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
       </div>
     </div>
   );
-  const backdropMouseDown=useRef(false);
   if(!isModal)return inner;
   return(
     <div
       style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
-      onMouseDown={e=>{backdropMouseDown.current=e.target===e.currentTarget;}}
-      onMouseUp={e=>{
-        // Cierra solo cuando el click empieza y termina en el fondo.
-        // Si seleccionás un número/campo y soltás afuera, no lo toma como cierre.
-        if(e.target===e.currentTarget&&backdropMouseDown.current)onCancelar?.();
-        backdropMouseDown.current=false;
-      }}
-      onClick={e=>e.stopPropagation()}
+      {...backdropProps}
     >
-      <div onMouseDown={e=>{backdropMouseDown.current=false;e.stopPropagation();}} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>{inner}</div>
+      <div {...modalProps}>{inner}</div>
     </div>
   );
 }
