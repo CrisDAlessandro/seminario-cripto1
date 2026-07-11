@@ -1247,6 +1247,8 @@ export default function App(){
   const[vendedorRenovacion,setVendedorRenovacion]=useState("");
   const[editIngreso,setEditIngreso]=useState(null);
   const[transferenciasRecibidas,setTransferenciasRecibidas]=useState([]);
+  const[cajaMovimientos,setCajaMovimientos]=useState([]);
+  const[cajaForm,setCajaForm]=useState({fecha:toISODate(getToday()),recibe:"Cristian",monto:""});
 
   const toast=useToast();
 
@@ -1298,8 +1300,13 @@ export default function App(){
     if(error){setTransferenciasRecibidas([]);return;}
     setTransferenciasRecibidas((data||[]).filter(n=>String(n.contenido||"").toLowerCase().includes("recibió transferencia")));
   }
-  async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas()]);}
-  useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();limpiarHistorial();},[]);
+  async function fetchCajaMovimientos(){
+    const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","caja").order("created_at",{ascending:false});
+    if(error){setCajaMovimientos([]);return;}
+    setCajaMovimientos(data||[]);
+  }
+  async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas(),fetchCajaMovimientos()]);}
+  useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();fetchCajaMovimientos();limpiarHistorial();},[]);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f){
@@ -1670,6 +1677,49 @@ export default function App(){
     toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
   }
 
+  async function registrarMovimientoCaja(){
+    const monto=Number(cajaForm.monto||0);
+    const fecha=dateOnly(cajaForm.fecha)||toISODate(getToday());
+    const recibe=cajaForm.recibe||"Cristian";
+    if(monto<=0){toast.error("Ingresá un monto válido");return;}
+    if(!["Cristian","Bahiano"].includes(recibe)){toast.error("Elegí quién recibió");return;}
+    const payload={
+      cliente_id:null,
+      usuario_email:user?.email||"—",
+      tipo:"caja",
+      contenido:`Caja diaria: ${recibe} recibió USD ${monto}`,
+      detalle:{concepto:"movimiento",fecha,recibe,monto}
+    };
+    const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
+    if(error){toast.error("No se pudo registrar el movimiento de caja");return;}
+    setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    setCajaForm(prev=>({...prev,monto:""}));
+    await logH(user?.email,"registró movimiento de caja","caja",data?.id||null,{fecha,recibe,monto});
+    toast.success("Movimiento de caja registrado");
+  }
+  async function marcarCajaNeteada(fecha,saldo){
+    const saldoReal=Number(saldo||0);
+    const texto=saldoReal>0?`Cristian saldó USD ${Math.abs(saldoReal)} con Bahiano`:saldoReal<0?`Bahiano saldó USD ${Math.abs(saldoReal)} con Cristian`:"Caja neteada";
+    const payload={
+      cliente_id:null,
+      usuario_email:user?.email||"—",
+      tipo:"caja",
+      contenido:`Caja diaria neteada: ${texto}`,
+      detalle:{concepto:"neteada",fecha:dateOnly(fecha)||toISODate(getToday()),saldo_cancelado:saldoReal}
+    };
+    const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
+    if(error){toast.error("No se pudo marcar la caja como neteada");return;}
+    setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    await logH(user?.email,"marcó caja neteada","caja",data?.id||null,{fecha:payload.detalle.fecha,saldo_cancelado:saldoReal});
+    toast.success("Caja marcada como neteada");
+  }
+  async function eliminarMovimientoCaja(id){
+    const{error}=await supabase.from("notas_cliente").delete().eq("id",id);
+    if(error){toast.error("No se pudo eliminar el movimiento");return;}
+    setCajaMovimientos(prev=>prev.filter(m=>m.id!==id));
+    toast.success("Movimiento eliminado");
+  }
+
   async function actualizarVendedor(id,vendedor){
     const transferido=vendedor===""?true:false;
     const{error}=await supabase.from("clientes").update({vendedor,transferido}).eq("id",id);
@@ -1802,6 +1852,46 @@ export default function App(){
   useEffect(()=>{
     if(activeView==="semanal")setTimeout(()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),80);
   },[activeView,semanaActualKey]);
+  const cajaDiaria=useMemo(()=>{
+    const movs=(cajaMovimientos||[]).map(m=>{
+      const d=m.detalle||{};
+      const concepto=d.concepto||"movimiento";
+      const fecha=dateOnly(d.fecha)||dateOnly(m.created_at)||toISODate(getToday());
+      const recibe=String(d.recibe||"");
+      const monto=safeNum(d.monto);
+      const saldoCancelado=safeNum(d.saldo_cancelado);
+      return{...m,concepto,fecha,recibe,monto,saldoCancelado};
+    }).filter(m=>m.fecha);
+    const keys=new Set(movs.map(m=>m.fecha));
+    keys.add(toISODate(getToday()));
+    const sortedKeys=Array.from(keys).sort();
+    let saldo=0;
+    const rows=[];
+    sortedKeys.forEach(key=>{
+      const delDia=movs.filter(m=>m.fecha===key);
+      const movimientos=delDia.filter(m=>m.concepto!=="neteada");
+      const neteos=delDia.filter(m=>m.concepto==="neteada");
+      const cristian=movimientos.filter(m=>m.recibe==="Cristian").reduce((a,m)=>a+safeNum(m.monto),0);
+      const bahiano=movimientos.filter(m=>m.recibe==="Bahiano").reduce((a,m)=>a+safeNum(m.monto),0);
+      const total=cristian+bahiano;
+      const saldoInicial=saldo;
+      const saldoDia=cristian-(total/2);
+      let saldoAntesNeteo=saldoInicial+saldoDia;
+      const neteado=neteos.length>0;
+      const saldoFinal=neteado?0:saldoAntesNeteo;
+      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoFinal,neteado,movimientos,neteos});
+      saldo=saldoFinal;
+    });
+    return rows.sort((a,b)=>b.key.localeCompare(a.key));
+  },[cajaMovimientos]);
+  const cajaHoy=useMemo(()=>cajaDiaria.find(r=>r.key===toISODate(getToday())),[cajaDiaria]);
+  const cajaSaldoActual=cajaDiaria.length?cajaDiaria[0].saldoFinal:0;
+  function cajaTextoSaldo(saldo){
+    const v=Number(saldo||0);
+    if(Math.abs(v)<0.01)return"Caja neteada";
+    return v>0?`Cristian debe enviar USD ${Math.abs(v)} a Bahiano`:`Bahiano debe enviar USD ${Math.abs(v)} a Cristian`;
+  }
+
   const tasaRenovacion=useMemo(()=>{
     // Usar cliente_id si existe, sino email como identificador
     const keyOf=i=>i.cliente_id?`id:${i.cliente_id}`:i.email?`email:${i.email.toLowerCase().trim()}`:null;
@@ -2018,6 +2108,7 @@ export default function App(){
             </button>
             <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
             <button style={navBtn(activeView==="semanal")} onClick={()=>handleSetView("semanal")}>Semanal</button>
+            <button style={navBtn(activeView==="caja")} onClick={()=>handleSetView("caja")}>Caja</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
@@ -2083,6 +2174,96 @@ export default function App(){
                             </div>
                           ))}
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── CAJA ── */}
+        {activeView==="caja"&&(
+          <div style={{display:"grid",gap:24}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+              <MetricCard title="Caja de hoy" value={money(cajaHoy?.total||0)} accent sub={formatDate(toISODate(getToday()))} t={t}/>
+              <MetricCard title="Recibió Cristian" value={money(cajaHoy?.cristian||0)} t={t}/>
+              <MetricCard title="Recibió Bahiano" value={money(cajaHoy?.bahiano||0)} t={t}/>
+              <MetricCard title="Saldo actual" value={money(Math.abs(cajaSaldoActual))} sub={cajaTextoSaldo(cajaSaldoActual)} t={t}/>
+            </div>
+
+            <div style={S.card}>
+              <div className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:18}}>
+                <div>
+                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Caja diaria</h3>
+                  <div style={{fontSize:13,color:t.textMuted,marginTop:4}}>Registrá quién recibió cada cobro. La caja calcula mitad y mitad, muestra quién debe transferir y arrastra el saldo si no se netea ese día.</div>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,alignItems:"end",marginBottom:18}}>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Fecha</label>
+                  <input type="date" value={cajaForm.fecha} onChange={e=>setCajaForm(prev=>({...prev,fecha:e.target.value}))} style={S.input}/>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Recibió</label>
+                  <select value={cajaForm.recibe} onChange={e=>setCajaForm(prev=>({...prev,recibe:e.target.value}))} style={S.input}>
+                    <option value="Cristian">Cristian</option>
+                    <option value="Bahiano">Bahiano</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Monto</label>
+                  <input type="number" min="1" placeholder="USD" value={cajaForm.monto} onChange={e=>setCajaForm(prev=>({...prev,monto:e.target.value}))} onKeyDown={e=>{if(e.key==="Enter")registrarMovimientoCaja();}} style={S.input}/>
+                </div>
+                <button onClick={registrarMovimientoCaja} style={{...btn(false,true),height:42}}>Agregar a caja</button>
+              </div>
+              <div style={{fontSize:12,color:t.textMuted,lineHeight:1.5}}>Ejemplo: si en el día entran USD 150, a cada uno le corresponden USD 75. Si Cristian recibió USD 90 y Bahiano USD 60, Cristian le debe USD 15 a Bahiano. Si no lo marcás como neteado, ese saldo se arrastra al día siguiente.</div>
+            </div>
+
+            <div style={S.card}>
+              <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Calendario de caja</h3>
+              {cajaDiaria.length===0?(
+                <div style={{padding:24,textAlign:"center",color:t.textMuted}}>Todavía no hay movimientos de caja.</div>
+              ):(
+                <div style={{display:"grid",gap:12}}>
+                  {cajaDiaria.map(r=>{
+                    const actual=r.key===toISODate(getToday());
+                    const saldo=r.saldoFinal;
+                    const necesitaNeteo=Math.abs(r.saldoAntesNeteo)>0.01&&!r.neteado;
+                    return(
+                      <div key={r.key} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:actual?(t.dark?"rgba(245,158,11,0.10)":"#fffbeb"):(t.dark?"#0d1526":"#fff")}}>
+                        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                              <strong style={{color:t.text,fontSize:15}}>{formatDate(r.key)}</strong>
+                              {actual&&<span style={{background:t.accent,color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>HOY</span>}
+                              {r.neteado&&<span style={{background:"#10b981",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>NETEADA</span>}
+                            </div>
+                            <div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{cajaTextoSaldo(saldo)}</div>
+                          </div>
+                          <div style={{fontSize:22,fontWeight:900,color:Math.abs(saldo)<0.01?"#10b981":t.accent}}>USD {Math.abs(saldo)}</div>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginTop:12}}>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Total del día</div><div style={{fontWeight:900}}>USD {r.total}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Cristian recibió</div><div style={{fontWeight:900}}>USD {r.cristian}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Bahiano recibió</div><div style={{fontWeight:900}}>USD {r.bahiano}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:12}}>
+                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoAntesNeteo):r.neteado?"Este día quedó cerrado y no arrastra saldo.":"Este día no dejó saldo pendiente."}</div>
+                          {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoAntesNeteo)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
+                        </div>
+                        {r.movimientos.length>0&&(
+                          <div style={{marginTop:10,display:"grid",gap:6}}>
+                            {r.movimientos.map(m=>(
+                              <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:12,color:t.textMuted,padding:"6px 8px",borderRadius:10,background:t.dark?"#0b1220":"#fafaf9"}}>
+                                <span>{m.recibe} recibió USD {m.monto}</span>
+                                <button onClick={()=>askConfirm("Eliminar movimiento",`¿Eliminar este movimiento de caja de USD ${m.monto}?`,()=>eliminarMovimientoCaja(m.id),{danger:true,label:"Eliminar"})} style={{border:"none",borderRadius:8,padding:"4px 7px",cursor:"pointer",background:t.btnLtBg,color:t.btnLtTx}}>🗑</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
