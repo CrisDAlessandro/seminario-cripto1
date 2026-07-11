@@ -1356,8 +1356,17 @@ export default function App(){
       vendedor,transferido:!ventaPendienteTransferencia(vendedor),
       fecha_vencimiento:servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
-  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
-    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
+  function notaConRecepcion(notas, recibe, pendiente){
+    const base=String(notas||"").trim();
+    const r=String(recibe||"Cristian").trim()||"Cristian";
+    const meta=`recibe: ${r} · pendiente_transferencia: ${pendiente?"true":"false"}`;
+    return base ? `${base} · ${meta}` : meta;
+  }
+  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,recepcion={}){
+    const notasFinal=recepcion&&recepcion.recibe
+      ? notaConRecepcion(notas, recepcion.recibe, !!recepcion.pendiente)
+      : (notas||"");
+    return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notasFinal};
   }
   const CAJA_AUTO_DESDE = "2026-07-11";
   const cajaFechaHabilitada = fecha => (dateOnly(fecha)||toISODate(getToday())) >= CAJA_AUTO_DESDE;
@@ -1417,6 +1426,7 @@ export default function App(){
     }
     const payload={
       cliente_id:null,
+      usuario_email:user?.email||"—",
       tipo:"caja",
       contenido:`Caja diaria: ${quien} recibió USD ${montoNum}${nombre?` · Venta: ${nombre}`:""}`,
       detalle:{concepto:"movimiento",origen:origen||"venta",fecha:f,recibe:quien,monto:montoNum,nombre:nombre||"",cliente_id:clienteId||null,ingreso_id:ingresoId||null}
@@ -1450,10 +1460,10 @@ export default function App(){
       const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
       if(error){toast.error("No se pudo guardar el cliente");return;}
       const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
-      const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas)]).select().single();
-      if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
       const recibeAlta=payload.vendedor||ins.vendedor||form.vendedor||"Cristian";
       const pendienteAlta=ventaPendienteTransferencia(recibeAlta);
+      const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas,{recibe:recibeAlta,pendiente:pendienteAlta})]).select().single();
+      if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
 
       // Actualización local inmediata: evita que Caja dependa de un refetch para saber quién recibió.
       setClientes(prev=>[{...ins,vendedor:payload.vendedor||"",transferido:!pendienteAlta},...prev.filter(c=>String(c.id)!==String(ins.id))]);
@@ -1495,10 +1505,10 @@ export default function App(){
       const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
       if(eC){toast.error("No se pudo renovar el cliente");return;}
       const fechaRenovacion=toISODate(getToday());
-      const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas)]).select().single();
-      if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
       const recibeRenovacion=payload.vendedor||renovarForm.vendedor||"Cristian";
       const pendienteRenovacion=ventaPendienteTransferencia(recibeRenovacion);
+      const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas,{recibe:recibeRenovacion,pendiente:pendienteRenovacion})]).select().single();
+      if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
 
       setClientes(prev=>prev.map(c=>String(c.id)===String(renovarForm.id)?{...c,...payload,vendedor:payload.vendedor||"",transferido:!pendienteRenovacion}:c));
       if(ingRen)setIngresos(prev=>[{...ingRen,cliente_id:renovarForm.id,cliente_nombre:v.nombre,email:v.email,servicio:renovarForm.servicio,monto:renovarForm.monto,fecha_pago:fechaRenovacion},...prev.filter(i=>String(i.id)!==String(ingRen.id))]);
@@ -1546,13 +1556,13 @@ export default function App(){
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
-    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,toISODate(today),cliente.notas);
+    const recibeRapida=vendedor||"Cristian";
+    const pendienteRapida=ventaPendienteTransferencia(vendedor);
+    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,toISODate(today),cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
     const{data:ingRapida,error:eI}=await supabase.from("ingresos").insert([ingreso]).select().single();
     if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
     setIngresos(prev=>[{...(ingRapida||ingreso),id:ingRapida?.id||`tmp-${Date.now()}`},...prev]);
-    await registrarCajaDesdeVenta({fecha:toISODate(today),monto,recibe:vendedor||"Cristian",nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
-    const recibeRapida=vendedor||"Cristian";
-    const pendienteRapida=ventaPendienteTransferencia(vendedor);
+    await registrarCajaDesdeVenta({fecha:toISODate(today),monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${recibeRapida}${pendienteRapida?" · Pendiente de transferencia a Cristian":""}`,{servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
     if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:toISODate(today),vendedor:recibeRapida,origen:"renovación rápida"});
@@ -1922,6 +1932,7 @@ export default function App(){
     // Insertamos la caja directa con el ingreso exacto, no con el cliente actual.
     const cajaPayload={
       cliente_id:null,
+      usuario_email:user?.email||"—",
       tipo:"caja",
       contenido:`Caja diaria: ${recibeCaja} recibió USD ${montoRecibido} · Transferencia de ${vendedorOriginal} · Venta: ${cliente?.nombre||ingresoRelacionado?.cliente_nombre||""}`,
       detalle:{concepto:"movimiento",origen:`recepción de ${vendedorOriginal}`,fecha:fechaRecepcion,recibe:recibeCaja,monto:montoRecibido,nombre:cliente?.nombre||ingresoRelacionado?.cliente_nombre||"",cliente_id:id||cliente?.cliente_id||null,ingreso_id:ingresoRelacionado?.id||cliente?.ingreso_id||null,vendedor_original:vendedorOriginal,pendiente_id:cliente?.pendiente_id||null}
