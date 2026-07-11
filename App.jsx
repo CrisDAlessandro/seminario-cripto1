@@ -371,7 +371,7 @@ function usePagination(items,pageSize){
 
 const VENDEDORES = ["Bahiano", "Luigi"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
-const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
+const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -620,7 +620,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
                 <div>
                   <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</div>
                   <div style={{color:t.textMuted,fontSize:12,marginTop:2}}>
-                    {c.email}{c.telefono?` · ${c.telefono}`:""}
+                    {c.email}
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1578,7 +1578,7 @@ export default function App(){
     const servicio=normalizeServicio(f.servicio);
     const dur=servicio==="clases"?0:Number(f.duracion_dias||svcDuration(servicio));
     const vendedor=f.vendedor||"";
-    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),telefono:f.telefono||"",
+    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),
       vendedor,transferido:!ventaPendienteTransferencia(vendedor),
       fecha_vencimiento:servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
@@ -1845,7 +1845,7 @@ export default function App(){
     const transferido=!ventaPendienteTransferencia(vendedor);
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
     const email=(cliente.email||"").trim().toLowerCase();
-    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",telefono:cliente.telefono||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
+    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
@@ -2120,7 +2120,7 @@ export default function App(){
     const servicio=normalizeServicio(cliente.servicio);
     const va=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
     const fb=va||toISODate(getToday());
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -2129,7 +2129,7 @@ export default function App(){
   const computed=useMemo(()=>clientes.map(computeClient),[clientes]);
   const filtered=useMemo(()=>computed.filter(c=>{
     if(normalizeServicio(c.servicio)==="clases"&&c.estado_manual==="finalizado")return false;
-    const txt=`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase();
+    const txt=`${c.nombre||""} ${c.email||""}`.toLowerCase();
     const okB=txt.includes(busqueda.toLowerCase());
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
@@ -3407,7 +3407,7 @@ export default function App(){
                 </div>
                 <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
                   onClick={()=>exportXLSX(filtered,[
-                    {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"telefono",label:"Teléfono"},{key:"servicio",label:"Servicio"},
+                    {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
                     {key:"vencimiento",label:"Vencimiento"},{key:"estadoSistema",label:"Estado"},{key:"monto",label:"Monto"},{key:"deuda_restante",label:"Deuda"},
                   ],"clientes_seminario_cripto.xlsx")}>
                   Exportar Excel
