@@ -135,6 +135,15 @@ const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10,caja:1
 
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
 function money(v){return `USD ${safeNum(v)}`;}
+
+function normCajaText(v){
+  return String(v||"")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .trim()
+    .toLowerCase();
+}
+
 function normalizeServicio(v){
   const raw=String(v||"").trim().toLowerCase();
   if(raw==="mensual"||raw==="plan trader"||raw==="trader")return "mensual";
@@ -2043,7 +2052,7 @@ export default function App(){
     const clavesReales=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${String(m.detalle?.ingreso_id||"")}`));
     const ingresosRealesCaja=new Set(movimientosReales.map(m=>String(m.detalle?.ingreso_id||"")).filter(Boolean));
     const ventasRealesCaja=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}`));
-    const ventasRealesPorNombre=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${norm(m.detalle?.nombre||"")}`).filter(k=>!k.endsWith("|")));
+    const ventasRealesPorNombre=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${normCajaText(m.detalle?.nombre||"")}`).filter(k=>!k.endsWith("|")));
     const porCliente=Object.fromEntries((computed||[]).map(c=>[String(c.id),c]));
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
@@ -2061,7 +2070,7 @@ export default function App(){
       const key=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|${String(i.id||"")}`;
       const keySinIngreso=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|`;
       const keyMismaVenta=`${fecha}|${monto}|${String(i.cliente_id||"")}`;
-      const keyMismoNombre=`${fecha}|${monto}|${norm(i.cliente_nombre||c.nombre||"")}`;
+      const keyMismoNombre=`${fecha}|${monto}|${normCajaText(i.cliente_nombre||c.nombre||"")}`;
       if((i.id&&ingresosRealesCaja.has(String(i.id)))||ventasRealesCaja.has(keyMismaVenta)||ventasRealesPorNombre.has(keyMismoNombre)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
       return{
         id:`auto-ingreso-${i.id||fecha}-${i.cliente_id||""}`,
