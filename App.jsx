@@ -654,12 +654,6 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                 <button onClick={copiarEmail} style={{background:"none",border:"none",cursor:"pointer",color:copiado?"#22c55e":t.textMuted,fontSize:12,padding:"2px 8px",borderRadius:6,fontWeight:copiado?700:400}}>
                   {copiado?"✓ Copiado":"Copiar email"}
                 </button>
-                {cliente.telefono&&(
-                  <a href={`https://wa.me/${cliente.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                    style={{color:"#22c55e",fontSize:12,fontWeight:700,textDecoration:"none",padding:"3px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)"}}>
-                    WhatsApp ↗
-                  </a>
-                )}
               </div>
             </div>
             <button onClick={onClose} style={{...btn(false),padding:"8px 14px",flexShrink:0,marginLeft:12}}>Cerrar</button>
@@ -1106,9 +1100,6 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           </Field>
         )}
-        <Field label="Teléfono / WhatsApp" t={t}>
-          <input style={S.input} placeholder="Ej: 5491112345678" value={form.telefono||""} onChange={e=>setForm({...form,telefono:e.target.value})}/>
-        </Field>
         <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}>
           <input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/>
         </Field>
@@ -1355,6 +1346,7 @@ export default function App(){
   }
   const CAJA_AUTO_DESDE = "2026-07-11";
   const cajaFechaHabilitada = fecha => (dateOnly(fecha)||toISODate(getToday())) >= CAJA_AUTO_DESDE;
+  const fechaIngresoDesdeFormulario = f => dateOnly(f?.fecha_inicio)||toISODate(getToday());
   const cajaRecibeDirecto = v => {
     const r=String(v||"").trim().toLowerCase();
     // Valor vacío = Cristian directo. También aceptamos variantes con h/acentos por si vienen de datos viejos.
@@ -1414,9 +1406,10 @@ export default function App(){
     const payload=buildPayload(form,v.nombre,v.email);
     const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
     if(error){setGuardando(false);toast.error("No se pudo guardar el cliente");return;}
-    const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,toISODate(getToday()),ins.notas)]).select().single();
+    const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
+    const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas)]).select().single();
     if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
-    else await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:ins.monto,recibe:ins.vendedor||"Cristian",nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
+    else await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:ins.vendedor||"Cristian",nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
     const recibeAlta=ins.vendedor||"Cristian";
     const pendienteAlta=ventaPendienteTransferencia(ins.vendedor);
     await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
@@ -2843,10 +2836,6 @@ export default function App(){
                                 <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
                                 <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                               </>
-                            )}
-                            {c.telefono&&(
-                              <a href={`https://wa.me/${c.telefono.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                                style={{...btn(false),padding:"7px 11px",fontSize:13,textDecoration:"none",color:"#22c55e",background:"rgba(34,197,94,0.12)"}} title="WhatsApp">💬</a>
                             )}
                             <button title="Eliminar" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
