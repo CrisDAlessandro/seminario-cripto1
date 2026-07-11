@@ -71,10 +71,22 @@ const MOBILE_CSS = `
   .sc-hist-table th:last-child, .sc-hist-table td:last-child{padding-right:18px!important;}
   .sc-tl-item{box-shadow:0 1px 0 rgba(16,24,40,.02);}
 
-  .sc-dark input[type="date"]{color-scheme:dark;}
+  .sc-dark input[type="date"]{
+    color-scheme:dark!important;
+    -webkit-appearance:none!important;
+    appearance:none!important;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E")!important;
+    background-repeat:no-repeat!important;
+    background-position:right 10px center!important;
+    background-size:16px 16px!important;
+    padding-right:36px!important;
+  }
   .sc-dark input[type="date"]::-webkit-calendar-picker-indicator{
-    filter:invert(1) brightness(2.2) contrast(1.15)!important;
-    opacity:1!important;
+    filter:invert(1) brightness(3) contrast(1.25)!important;
+    opacity:0!important;
+    cursor:pointer!important;
+    background:transparent!important;
+    color:#fff!important;
   }
 
   @media(max-width:640px){
@@ -108,7 +120,7 @@ function applyDateColorScheme(dark) {
   let el = document.getElementById("sc-date-scheme");
   if (!el) { el = document.createElement("style"); el.id = "sc-date-scheme"; document.head.appendChild(el); }
   el.textContent = dark
-    ? `input[type="date"]{color-scheme:dark;}input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(2.2) contrast(1.15)!important;opacity:1!important;}`
+    ? `input[type="date"]{color-scheme:dark;}input[type="date"]::-webkit-calendar-picker-indicator{opacity:0!important;cursor:pointer!important;}`
     : `input[type="date"]{color-scheme:light;}`;
 }
 
@@ -580,17 +592,17 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
   const results=useMemo(()=>{
     if(!q.trim())return[];
     const lo=q.toLowerCase();
-    return clientes.filter(c=>`${c.nombre||""} ${c.email||""} ${c.telefono||""}`.toLowerCase().includes(lo)).slice(0,9);
+    return clientes.filter(c=>`${c.nombre||""} ${c.email||""}`.toLowerCase().includes(lo)).slice(0,9);
   },[clientes,q]);
   const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"72px 24px",zIndex:3000}} {...backdropProps}>
       <div style={{background:t.cardBg,borderRadius:18,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",overflow:"hidden"}} {...modalProps}>
         <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",alignItems:"center",gap:12}}>
-          <span style={{color:t.textMuted,fontSize:17}}>🔍</span>
+          <span style={{color:t.dark?t.accent:t.textMuted,fontSize:17}}>🔍</span>
           <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
-            placeholder="Nombre, email o teléfono..."
-            style={{flex:1,border:"none",outline:"none",background:"transparent",color:t.text,fontSize:15}}/>
+            placeholder="Nombre o email..."
+            style={{flex:1,border:`2px solid ${t.dark?"#d4a23a":"#163a5c"}`,outline:"none",background:t.inputBg,color:t.text,fontSize:15,borderRadius:12,padding:"10px 12px",boxShadow:t.dark?"0 0 0 4px rgba(212,162,58,.20), inset 0 0 0 1px rgba(212,162,58,.18)":"0 0 0 3px rgba(22,58,92,.08)"}}/>
           {/* × button instead of Esc label */}
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.textMuted,fontSize:20,lineHeight:1,padding:"0 2px",display:"flex",alignItems:"center"}}>×</button>
         </div>
@@ -1301,7 +1313,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
           </Field>
         )}
         <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}>
-          <input type="date" style={S.input} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/>
+          <input type="date" style={{...S.input,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/>
         </Field>
         <Field label="Monto (USD)" t={t}>
           <input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/>
@@ -1452,7 +1464,7 @@ export default function App(){
   const[filtro,setFiltro]=useState("todos");
   const[form,setForm]=useState(FORM_DEF);
   const[renovarForm,setRenovarForm]=useState({...FORM_DEF,id:null});
-  const[dark,setDark]=useState(false);
+  const[dark,setDark]=useState(true);
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
   const[deudaCliente,setDeudaCliente]=useState(null);
@@ -2798,25 +2810,25 @@ export default function App(){
     return(
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 18%, rgba(200,145,31,.14), transparent 28%), linear-gradient(180deg,#f8fafc 0%,#eef2f6 100%)",padding:24}}>
-          <div style={{width:430,background:"rgba(255,255,255,.96)",borderRadius:24,padding:40,border:"1px solid #e4e7ec",boxShadow:"0 28px 74px rgba(16,24,40,.13)"}}>
+        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 18%, rgba(212,162,58,.16), transparent 28%), linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)",padding:24}}>
+          <div style={{width:430,background:"rgba(13,18,27,.96)",borderRadius:24,padding:40,border:"1px solid #273244",boxShadow:"0 32px 86px rgba(0,0,0,.48)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
-              <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
+              <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain",filter:"drop-shadow(0 10px 22px rgba(212,162,58,.22))"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
-                <div style={{fontSize:23,fontWeight:900,color:"#101828",letterSpacing:"-0.025em"}}>Seminario Cripto</div>
-                <div style={{fontSize:13,color:"#667085",marginTop:2}}>Sistema de gestión interno</div>
+                <div style={{fontSize:23,fontWeight:900,color:"#f8fafc",letterSpacing:"-0.025em"}}>Seminario Cripto</div>
+                <div style={{fontSize:13,color:"#b7c2d3",marginTop:2}}>Sistema de gestión interno</div>
               </div>
             </div>
             <div style={{marginBottom:14}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
+              <label style={{display:"block",fontSize:11,fontWeight:800,color:"#d4a23a",marginBottom:5,letterSpacing:"0.08em",textTransform:"uppercase"}}>Email</label>
               <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #d8e0ea",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.035)"}}/>
+                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #2c394d",fontSize:14,outline:"none",boxSizing:"border-box",background:"#090d14",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.22)"}}/>
             </div>
             <div style={{position:"relative",marginBottom:22}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
+              <label style={{display:"block",fontSize:11,fontWeight:800,color:"#d4a23a",marginBottom:5,letterSpacing:"0.08em",textTransform:"uppercase"}}>Contraseña</label>
               <input type={showPwd?"text":"password"} placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #d8e0ea",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.035)"}}/>
-              <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#667085",display:"flex",alignItems:"center"}}>
+                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #2c394d",fontSize:14,outline:"none",boxSizing:"border-box",background:"#090d14",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.22)"}}/>
+              <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#b7c2d3",display:"flex",alignItems:"center"}}>
                 {showPwd?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
@@ -2831,7 +2843,7 @@ export default function App(){
                 )}
               </span>
             </div>
-            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:12,border:"1px solid #d7bc7c",cursor:"pointer",fontWeight:800,fontSize:15,background:"#cf9a2e",color:"#0f172a",boxShadow:"0 10px 22px rgba(207,154,46,.22)",appearance:"none"}}>
+            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:12,border:"1px solid #d8b55f",cursor:"pointer",fontWeight:900,fontSize:15,background:"linear-gradient(180deg,#e0b64c 0%,#c8911f 100%)",color:"#0b0f17",boxShadow:"0 14px 28px rgba(212,162,58,.24)",appearance:"none"}}>
               Ingresar
             </button>
           </div>
@@ -2873,7 +2885,7 @@ export default function App(){
                 <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Fecha de inicio</label>
                 <input type="date" value={confirm.fechaRenovacion||toISODate(getToday())}
                   onChange={e=>setConfirm(prev=>({...prev,fechaRenovacion:e.target.value}))}
-                  style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}/>
+                  style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}}/>
               </div>
             )}
             <div>
@@ -3252,9 +3264,9 @@ export default function App(){
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
                     <label style={{...S.label,marginBottom:0,whiteSpace:"nowrap"}}>Desde</label>
-                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13}} value={ingDesde} onChange={e=>setIngDesde(e.target.value)}/>
+                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}} value={ingDesde} onChange={e=>setIngDesde(e.target.value)}/>
                     <label style={{...S.label,marginBottom:0,whiteSpace:"nowrap"}}>Hasta</label>
-                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13}} value={ingHasta} onChange={e=>setIngHasta(e.target.value)}/>
+                    <input type="date" style={{...S.input,width:"auto",padding:"7px 12px",fontSize:13,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}} value={ingHasta} onChange={e=>setIngHasta(e.target.value)}/>
                     {(ingDesde||ingHasta)&&<button style={{...btn(false),padding:"7px 12px",fontSize:12}} onClick={()=>{setIngDesde("");setIngHasta("");}}>Limpiar</button>}
                   </div>
                   <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
@@ -3400,7 +3412,7 @@ export default function App(){
                 ))}
               </div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:18}}>
-                <input style={{...S.input,maxWidth:340}} placeholder="Buscar por nombre, email o teléfono" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
+                <input style={{...S.input,maxWidth:340}} placeholder="Buscar por nombre o email" value={busqueda} onChange={e=>setBusqueda(e.target.value)}/>
               </div>
               <div className="sc-table-wrap" style={{overflowX:"auto"}}>
                 <table style={S.table}>
@@ -3437,7 +3449,7 @@ export default function App(){
                         <td style={S.td}>
                           {c.servicio==="clases"?"-":(
                             <input type="date" value={c.vencimiento||""} onChange={e=>setClientes(prev=>prev.map(cl=>cl.id===c.id?{...cl,fecha_vencimiento:e.target.value,vencimiento:e.target.value}:cl))} onBlur={e=>actualizarVencimiento(c.id,e.target.value)}
-                              style={{padding:"5px 8px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:12,background:t.inputBg,color:t.inputText,width:130}}/>
+                              style={{padding:"5px 8px",borderRadius:8,border:`1px solid ${t.inputBorder}`,fontSize:12,background:t.inputBg,color:t.inputText,width:130,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}}/>
                           )}
                         </td>
                         {/* Días con color */}
