@@ -300,7 +300,7 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
+const VENDEDORES = ["Bahiano", "Luigi"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
 const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
@@ -1125,7 +1125,6 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <option value="">Cristian</option>
             <option value="Bahiano">Bahiano</option>
             <option value="Luigi">Luigi</option>
-            <option value="Jeremy">Jeremy</option>
           </select>
         </Field>
         <Field label="Deuda restante (USD)" t={t}>
@@ -1289,8 +1288,8 @@ export default function App(){
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
 
-  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,montoDefault=null,onConfirmFn=null}={}){
-    setConfirm({title,message,onConfirm,danger,label,showVendedor,montoDefault,montoRenovacion:montoDefault,onConfirmFn});
+  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,showRecibeFinal=false,montoDefault=null,onConfirmFn=null}={}){
+    setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,montoDefault,montoRenovacion:montoDefault,recibeFinal:"Cristian",onConfirmFn});
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -1361,7 +1360,7 @@ export default function App(){
     // Valor vacío = Cristian. También aceptamos variantes con h/acentos por si vienen de datos viejos.
     if(!r||r==="cristian"||r==="christian")return "Cristian";
     if(r==="bahiano"||r==="baiano"||r==="bahiana"||r==="baiana")return "Bahiano";
-    // Luigi/Jeremy/otros no entran a Caja hasta que se marque recibido.
+    // Luigi/otros no entran a Caja hasta que se marque recibido.
     return null;
   };
   const ventaPendienteTransferencia = v => {
@@ -1816,7 +1815,7 @@ export default function App(){
     computed.filter(c=>ventaPendienteTransferencia(c.vendedor)&&c.transferido!==true&&String(c.transferido)!=="true")
   ,[computed]);
 
-  async function marcarTransferido(id, cliente){
+  async function marcarTransferido(id, cliente, recibeFinal="Cristian"){
     const ingresoRelacionado=[...(ingresos||[])]
       .filter(i=>String(i.cliente_id||"")===String(id))
       .sort((a,b)=>String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||""))||String(b.created_at||"").localeCompare(String(a.created_at||"")))[0]||null;
@@ -1824,13 +1823,14 @@ export default function App(){
     const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
     setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
-    await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:montoRecibido,recibe:"Cristian",nombre:cliente?.nombre,clienteId:id,origen:`recepción de ${cliente?.vendedor||"vendedor"}`,ingresoId:ingresoRelacionado?.id});
-    // Registrar en historial: queda claro quién tomó la venta y cuándo Cristian recibió la plata.
-    const reciboNota={id:`tmp-recibo-${Date.now()}`,cliente_id:id,created_at:new Date().toISOString(),tipo:"pago",contenido:`Cristian recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${montoRecibido}`,detalle:{vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null}};
-    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null});
+    const recibeCaja=["Cristian","Bahiano"].includes(recibeFinal)?recibeFinal:"Cristian";
+    await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:montoRecibido,recibe:recibeCaja,nombre:cliente?.nombre,clienteId:id,origen:`recepción de ${cliente?.vendedor||"vendedor"}`,ingresoId:ingresoRelacionado?.id});
+    // Registrar en historial: queda claro quién tomó la venta y quién recibió la transferencia.
+    const reciboNota={id:`tmp-recibo-${Date.now()}`,cliente_id:id,created_at:new Date().toISOString(),tipo:"pago",contenido:`${recibeCaja} recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${montoRecibido}`,detalle:{vendedor:cliente?.vendedor,recibe_final:recibeCaja,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null}};
+    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:recibeCaja,monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null});
     await logNC(id,user?.email,"pago",reciboNota.contenido,reciboNota.detalle);
     setTransferenciasRecibidas(prev=>[reciboNota,...prev]);
-    toast.success(`✓ ${montoRecibido} USD recibidos de ${cliente?.vendedor}`);
+    toast.success(`✓ ${montoRecibido} USD recibidos por ${recibeCaja}`);
   }
 
   async function registrarMovimientoCaja(){
@@ -2096,7 +2096,7 @@ export default function App(){
       const receptorExplicito=i.recibe||i.recibio_venta||i.vendedor||c.vendedor||"";
       // Si el ingreso no trae receptor explícito, puede ser una venta directa de Cristian.
       // Pero solo asumimos Cristian cuando el cliente tampoco tiene vendedor externo.
-      // Así se recuperan ventas directas que no generaron la nota de Caja, sin duplicar ventas de Bahiano/Luigi/Jeremy.
+      // Así se recuperan ventas directas que no generaron la nota de Caja, sin duplicar ventas de Bahiano/Luigi.
       const receptorParaCaja=String(receptorExplicito||"").trim() ? receptorExplicito : (!String(c.vendedor||"").trim() ? "Cristian" : "");
       if(!String(receptorParaCaja||"").trim())return null;
       const quien=cajaRecibeDirecto(receptorParaCaja);
@@ -2319,7 +2319,13 @@ export default function App(){
         onConfirm={()=>{
           const montoActual=confirm.montoRenovacion;
           const vendedorActual=vendedorRenovacion;
-          confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual):confirm.onConfirm();
+          if(confirm.showRecibeFinal){
+            const recibeFinal=confirm.recibeFinal;
+            if(!["Cristian","Bahiano"].includes(recibeFinal)){toast.error("Elegí quién recibió la plata");return;}
+            confirm.onConfirmFn?confirm.onConfirmFn(recibeFinal):confirm.onConfirm?.();
+          }else{
+            confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual):confirm.onConfirm();
+          }
           setConfirm(null);setVendedorRenovacion("");
         }}
         onCancel={()=>{setConfirm(null);setVendedorRenovacion("");}} t={t}>
@@ -2338,10 +2344,19 @@ export default function App(){
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
                 <option value="">Cristian</option>
                 <option value="Bahiano">Bahiano</option>
-            <option value="Luigi">Luigi</option>
-            <option value="Jeremy">Jeremy</option>
+                <option value="Luigi">Luigi</option>
               </select>
             </div>
+          </div>
+        )}
+        {confirm.showRecibeFinal&&(
+          <div style={{display:"grid",gap:8,marginBottom:4}}>
+            <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:2}}>¿Quién recibió la transferencia?</label>
+            <select value={confirm.recibeFinal||"Cristian"} onChange={e=>setConfirm(prev=>({...prev,recibeFinal:e.target.value}))}
+              style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
+              <option value="Cristian">Cristian</option>
+              <option value="Bahiano">Bahiano</option>
+            </select>
           </div>
         )}
       </ConfirmModal>}
@@ -3092,7 +3107,7 @@ export default function App(){
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
                         <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
-                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya te transfirió ${c.monto} USD por ${c.nombre}?`,()=>marcarTransferido(c.id,c),{label:"Recibido ✓"})}>
+                        <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya transfirió ${c.monto} USD por ${c.nombre}?`,null,{label:"Recibido ✓",showRecibeFinal:true,onConfirmFn:(recibeFinal)=>marcarTransferido(c.id,c,recibeFinal)})}>
                           Marcar recibido
                         </button>
                       </div>
