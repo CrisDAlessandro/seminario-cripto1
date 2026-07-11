@@ -1209,7 +1209,10 @@ function HistorialView({t}){
       if(d.saldo_cancelado!=null)partes.push(`Saldo neteado: USD ${Math.abs(Number(d.saldo_cancelado||0))}`);
       if(d.cantidad!=null)partes.push(`Registros afectados: ${d.cantidad}`);
       if(d.total!=null)partes.push(`Total eliminado: USD ${d.total}`);
-      if(d.concepto)partes.push(`Concepto: ${d.concepto}`);
+      if(d.concepto){
+        const conceptoHumano=String(d.concepto).replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
+        partes.push(`Concepto: ${conceptoHumano}`);
+      }
       return partes.length?partes.join(" · "):"—";
     }
     const labels={
@@ -1397,30 +1400,40 @@ export default function App(){
     // la caja de una renovación nueva cobrada por Cristian/Bahiano.
     return base ? `${meta} · ${base}` : meta;
   }
+  function normalizarReceptorCaja(v){
+    const r=String(v||"").trim();
+    if(!r)return "";
+    const low=r.toLowerCase();
+    if(low==="cristian"||low==="christian")return "Cristian";
+    if(low==="bahiano"||low==="baiano"||low==="bahiana"||low==="baiana")return "Bahiano";
+    if(low==="luigi")return "Luigi";
+    return r;
+  }
   function recepcionActualDesdeIngreso(i){
-    const notas=String(i?.notas||"");
-    const directo=i?.recibe||i?.recibio_venta||i?.vendedor||i?.recibe_final||i?.recibio||"";
-    if(String(directo||"").trim()){
-      const r=String(directo).trim();
-      const pend=ventaPendienteTransferencia(r)||/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(notas);
-      return {recibe:r,pendiente:pend};
+    // IMPORTANTE: la Caja se decide por ESTE ingreso, nunca por el estado actual del cliente.
+    // Un cliente puede tener una venta vieja pendiente con Luigi y renovaciones nuevas cobradas
+    // por Cristian/Bahiano el mismo día. Cada ingreso debe leerse separado por su propio id/nota.
+    const notas=limpiarTextoRecepcion(i?.notas||"");
+    const directo=normalizarReceptorCaja(i?.recibe||i?.recibio_venta||i?.recibe_venta||i?.vendedor||i?.recibe_final||i?.recibio||"");
+    if(directo){
+      return {recibe:directo,pendiente:ventaPendienteTransferencia(directo)&&!/Transferencia recibida por/i.test(notas)};
     }
-    const matches=[...notas.matchAll(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/gi)];
-    if(matches.length){
-      const actual=matches[0];
-      const nextIndex=matches[1]?.index ?? notas.length;
-      const segmento=notas.slice(actual.index||0,nextIndex);
-      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(segmento) && !/Cobrado|Transferencia recibida por/i.test(segmento);
-      return {recibe:actual[1],pendiente:pend};
+
+    const cobro=notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)\s*·\s*(Cobrado|Pendiente de recepción|Pendiente de transferencia)/i);
+    if(cobro){
+      const recibe=normalizarReceptorCaja(cobro[1]);
+      const estado=String(cobro[2]||"").toLowerCase();
+      const pendiente=estado.includes("pendiente")&&!/Transferencia recibida por/i.test(notas);
+      return {recibe,pendiente};
     }
-    const legacy=[...notas.matchAll(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/gi)];
-    if(legacy.length){
-      const actual=legacy[0];
-      const nextIndex=legacy[1]?.index ?? notas.length;
-      const segmento=notas.slice(actual.index||0,nextIndex);
-      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(segmento) && !/Cobrado|Transferencia recibida por/i.test(segmento);
-      return {recibe:actual[1],pendiente:pend};
+
+    const legacy=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
+    if(legacy){
+      const recibe=normalizarReceptorCaja(legacy[1]);
+      const pendiente=(/pendiente_transferencia\s*:?\s*true/i.test(notas)||/Pendiente de recepción|Pendiente de transferencia/i.test(notas))&&!/Transferencia recibida por/i.test(notas);
+      return {recibe,pendiente};
     }
+
     return {recibe:"",pendiente:false};
   }
   function formatearNotasIngreso(notas){
@@ -1485,20 +1498,10 @@ export default function App(){
     if(!cajaFechaHabilitada(f))return null;
     const quien=cajaRecibeDirecto(recibe);
     if(!quien||montoNum<=0)return null;
-    const nombreKey=norm(nombre||"");
-    const yaExiste=(cajaMovimientos||[]).some(m=>{
+    const yaExiste=ingresoId&&(cajaMovimientos||[]).some(m=>{
       const d=m?.detalle||{};
       if(m?.tipo!=="caja"||d?.concepto!=="movimiento")return false;
-      if(ingresoId){
-        // Cada ingreso/renovación es independiente. Si una misma persona renueva dos veces
-        // el mismo día por el mismo monto, NO se puede deduplicar por cliente+fecha+monto.
-        return String(d.ingreso_id||"")===String(ingresoId);
-      }
-      const mismaFechaMonto=dateOnly(d.fecha)===f&&safeNum(d.monto)===montoNum;
-      const mismoCliente=clienteId&&String(d.cliente_id||m.cliente_id||"")===String(clienteId);
-      const mismoNombre=nombreKey&&norm(d.nombre||"")===nombreKey;
-      if(mismaFechaMonto&&(mismoCliente||mismoNombre))return true;
-      return mismaFechaMonto&&String(d.recibe||"")===quien&&String(d.origen||"").startsWith(String(origen||"venta").slice(0,8));
+      return String(d.ingreso_id||"")===String(ingresoId);
     });
     if(yaExiste)return null;
     const eliminadosFecha=(cajaMovimientos||[]).filter(m=>
@@ -1878,7 +1881,7 @@ export default function App(){
     const servicio=normalizeServicio(cliente.servicio);
     const va=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
     const fb=va||toISODate(getToday());
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||""});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",telefono:cliente.telefono||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -2350,27 +2353,14 @@ export default function App(){
     const movimientosOcultos=realesRaw.filter(m=>m.concepto==="movimiento_oculto"||m.concepto==="movimiento_eliminado");
     const estaOculto=m=>movimientosOcultos.some(o=>{
       const d=o.detalle||{};
-      // Ocultar solo el movimiento exacto que el usuario quiso sacar.
-      // El fix anterior era demasiado amplio: si coincidían fecha/monto/recibe,
-      // podía ocultar movimientos válidos y dejar la Caja vacía.
+      // Regla estable: una eliminación de Caja solo puede ocultar el movimiento exacto
+      // o el ingreso exacto. Nunca ocultamos por cliente+fecha+monto/nombre porque eso
+      // rompe el caso real: mismo alumno, mismo día, mismo monto, varios ingresos distintos
+      // (Luigi pendiente + renovación a Cristian/Bahiano).
       if(d.target_id&&String(d.target_id)===String(m.id))return true;
-      const mismaFecha=dateOnly(d.fecha)===dateOnly(m.fecha);
-      const mismoMonto=safeNum(d.monto)===safeNum(m.monto);
-      if(!mismaFecha||!mismoMonto)return false;
-      const dRecibe=String(d.recibe||"");
-      const mRecibe=String(m.detalle?.recibe||m.recibe||"");
-      if(dRecibe&&mRecibe&&dRecibe!==mRecibe)return false;
       const dIngreso=String(d.ingreso_id||"");
       const mIngreso=String(m.detalle?.ingreso_id||"");
       if(dIngreso&&mIngreso&&dIngreso===mIngreso)return true;
-      const dCliente=String(d.cliente_id||"");
-      const mCliente=String(m.detalle?.cliente_id||m.cliente_id||"");
-      if(dCliente&&mCliente&&dCliente===mCliente)return true;
-      const dNombre=normCajaText(d.nombre||"");
-      const mNombre=normCajaText(m.detalle?.nombre||"");
-      if(dNombre&&mNombre&&dNombre===mNombre)return true;
-      // Si el registro oculto no tiene ingreso/cliente/nombre, no lo usamos
-      // para ocultar por coincidencia genérica. Así no borra toda la Caja.
       return false;
     });
 
@@ -2381,8 +2371,13 @@ export default function App(){
     // Si el ingreso fue directo a Cristian/Bahiano, entra por fecha_pago.
     // Si fue de Luigi, entra recién cuando existe una transferencia recibida y con fecha de recepción.
     const movimientosReales=reales.filter(m=>m.concepto==="movimiento");
-    const realExacto=new Set(movimientosReales.map(m=>`${String(m.detalle?.ingreso_id||"")}|${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}`));
-    const realSinIngreso=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${normCajaText(m.detalle?.nombre||"")}`));
+    // Deduplicación segura: solo por ingreso_id cuando existe.
+    // No deduplicar por cliente+fecha+monto porque rompe renovaciones repetidas del mismo día
+    // y el flujo Luigi pendiente + renovación directa.
+    const realPorIngreso=new Set(movimientosReales.map(m=>String(m.detalle?.ingreso_id||"")).filter(Boolean));
+    const realSinIngreso=new Set(movimientosReales
+      .filter(m=>!String(m.detalle?.ingreso_id||""))
+      .map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${normCajaText(m.detalle?.nombre||"")}`));
 
     const transferenciasPorIngreso=new Map();
     (transferenciasRecibidas||[]).forEach(n=>{
@@ -2406,9 +2401,8 @@ export default function App(){
       if(monto<=0)return null;
       const nombre=i.cliente_nombre||c.nombre||info.nombre||"";
       const ingresoId=String(i.id||"");
-      const keyExacto=`${ingresoId}|${fecha}|${info.recibe}|${monto}`;
       const keySinIngreso=`${fecha}|${info.recibe}|${monto}|${String(i.cliente_id||"")}|${normCajaText(nombre)}`;
-      if(ingresoId&&realExacto.has(keyExacto))return null;
+      if(ingresoId&&realPorIngreso.has(ingresoId))return null;
       if(!ingresoId&&realSinIngreso.has(keySinIngreso))return null;
       return{
         id:`auto-ingreso-${ingresoId||fecha}-${fecha}-${info.recibe}-${String(i.cliente_id||"")}`,
