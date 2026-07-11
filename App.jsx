@@ -1239,11 +1239,11 @@ function PieChart({breakdown,title,t}){
 function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
   const btn=makeBtn(t);
   return(
-    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":accentBg,borderRadius:14,padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
+    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":accentBg,borderRadius:14,padding:"9px 14px",height:60,boxSizing:"border-box",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 10px 22px rgba(16,24,40,0.08)`}
       onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
       <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
-        <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14}}>{cliente.nombre}</div>
+        <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{cliente.nombre}</div>
         <div style={{fontSize:12,color:accentText,marginTop:2}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
       </div>
       <div style={{display:"flex",gap:6}}>
@@ -1257,22 +1257,33 @@ function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLab
 
 function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t}){
   const S=makeS(t);
+  const visibleRows=rows||[];
+  const rowSlots=[
+    ...visibleRows,
+    ...Array.from({length:Math.max(0,3-visibleRows.length)},(_,i)=>({__empty:true,id:`empty-${titulo}-${i}`}))
+  ];
   return(
-    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:330,borderTop:`3px solid ${accentBorder}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+    <div style={{...S.card,display:"flex",flexDirection:"column",height:354,minHeight:354,borderTop:`3px solid ${accentBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flex:"0 0 auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:t.text}}>{titulo}</div>
         <div style={{minWidth:30,height:30,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:badgeBg,color:badgeColor,fontWeight:800,fontSize:13}}>{clientes.length}</div>
       </div>
-      <div style={{flex:1,minHeight:184}}>
+      <div style={{height:196,minHeight:196,maxHeight:196,flex:"0 0 196px"}}>
         {clientes.length?(
-          <div style={{display:"grid",gap:8,minHeight:184,alignContent:"start"}}>
-            {rows.map(c=>(<ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} nameColor={nameColor} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>))}
+          <div style={{display:"grid",gridTemplateRows:"repeat(3,60px)",gap:8,height:196,alignContent:"start"}}>
+            {rowSlots.slice(0,3).map(c=>c.__empty?(
+              <div key={c.id} style={{height:60,visibility:"hidden",pointerEvents:"none"}}/>
+            ):(
+              <ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} nameColor={nameColor} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>
+            ))}
           </div>
         ):(
           <div style={{color:t.textMuted,fontSize:13}}>Sin clientes en esta categoría.</div>
         )}
       </div>
-      <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t}/>
+      <div style={{height:58,minHeight:58,flex:"0 0 58px",display:"flex",alignItems:"flex-end"}}>
+        <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t}/>
+      </div>
     </div>
   );
 }
