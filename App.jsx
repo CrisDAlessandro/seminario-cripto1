@@ -148,7 +148,7 @@ function svcLabel(v){
   if(s==="anual")   return "Plan inversor";
   return "Clases";
 }
-function svcAmount(v){return normalizeServicio(v)==="mensual"?30:250;}
+function svcAmount(v){return normalizeServicio(v)==="mensual"?35:350;}
 function svcDuration(v){const s=normalizeServicio(v);return s==="mensual"?30:s==="anual"?365:0;}
 function isValidEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function classRangeLabel(fi){
@@ -293,7 +293,7 @@ function usePagination(items,pageSize){
 
 const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
-const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:30,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
+const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -2242,7 +2242,7 @@ export default function App(){
               <input type="number" value={confirm.montoRenovacion??confirm.montoDefault??""} 
                 onChange={e=>setConfirm(prev=>({...prev,montoRenovacion:e.target.value}))}
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}
-                placeholder={String(confirm.montoDefault||30)}/>
+                placeholder={String(confirm.montoDefault||35)}/>
             </div>
             <div>
               <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
