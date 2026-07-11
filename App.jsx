@@ -1113,7 +1113,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         )}
         <Field label="Recibe la venta" t={t}>
           <select style={S.input} value={vendedorPermitido(form.vendedor)} onChange={e=>setForm({...form,vendedor:e.target.value,transferido:e.target.value===""})}>
-            <option value="">Cristian (directo)</option>
+            <option value="">Cristian</option>
             <option value="Bahiano">Bahiano</option>
             <option value="Luigi">Luigi</option>
             <option value="Jeremy">Jeremy</option>
@@ -1349,7 +1349,7 @@ export default function App(){
   const fechaIngresoDesdeFormulario = f => dateOnly(f?.fecha_inicio)||toISODate(getToday());
   const cajaRecibeDirecto = v => {
     const r=String(v||"").trim().toLowerCase();
-    // Valor vacío = Cristian directo. También aceptamos variantes con h/acentos por si vienen de datos viejos.
+    // Valor vacío = Cristian. También aceptamos variantes con h/acentos por si vienen de datos viejos.
     if(!r||r==="cristian"||r==="christian")return "Cristian";
     if(r==="bahiano"||r==="baiano"||r==="bahiana"||r==="baiana")return "Bahiano";
     // Luigi/Jeremy/otros no entran a Caja hasta que se marque recibido.
@@ -1369,6 +1369,8 @@ export default function App(){
       const d=m?.detalle||{};
       if(m?.tipo!=="caja"||d?.concepto!=="movimiento")return false;
       if(ingresoId&&String(d.ingreso_id||"")===String(ingresoId))return true;
+      const mismaVenta=dateOnly(d.fecha)===f&&safeNum(d.monto)===montoNum&&String(d.cliente_id||"")===String(clienteId||"");
+      if(mismaVenta)return true;
       return dateOnly(d.fecha)===f&&String(d.recibe||"")===quien&&safeNum(d.monto)===montoNum&&String(d.cliente_id||"")===String(clienteId||"")&&String(d.origen||"").startsWith(String(origen||"venta").slice(0,8));
     });
     if(yaExiste)return null;
@@ -2032,7 +2034,10 @@ export default function App(){
 
     // Respaldo: si por cualquier motivo no se creó la nota de Caja,
     // una venta/renovación directa de Cristian o Bahiano igual debe aparecer en Caja.
-    const clavesReales=new Set(reales.filter(m=>m.concepto==="movimiento").map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${String(m.detalle?.ingreso_id||"")}`));
+    const movimientosReales=reales.filter(m=>m.concepto==="movimiento");
+    const clavesReales=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${String(m.detalle?.ingreso_id||"")}`));
+    const ingresosRealesCaja=new Set(movimientosReales.map(m=>String(m.detalle?.ingreso_id||"")).filter(Boolean));
+    const ventasRealesCaja=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}`));
     const porCliente=Object.fromEntries((computed||[]).map(c=>[String(c.id),c]));
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
@@ -2045,7 +2050,8 @@ export default function App(){
       const monto=safeNum(i.monto);
       const key=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|${String(i.id||"")}`;
       const keySinIngreso=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|`;
-      if(clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
+      const keyMismaVenta=`${fecha}|${monto}|${String(i.cliente_id||"")}`;
+      if((i.id&&ingresosRealesCaja.has(String(i.id)))||ventasRealesCaja.has(keyMismaVenta)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
       return{
         id:`auto-ingreso-${i.id||fecha}-${i.cliente_id||""}`,
         tipo:"caja",
@@ -2271,7 +2277,7 @@ export default function App(){
               <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
               <select value={vendedorPermitido(vendedorRenovacion)} onChange={e=>setVendedorRenovacion(e.target.value)}
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
-                <option value="">Cristian (directo)</option>
+                <option value="">Cristian</option>
                 <option value="Bahiano">Bahiano</option>
             <option value="Luigi">Luigi</option>
             <option value="Jeremy">Jeremy</option>
