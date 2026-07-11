@@ -26,31 +26,46 @@ function traducirError(msg) {
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{margin:0;background:#f3f0ea;}
+  body{margin:0;background:#eef1f5;color:#101828;}
   button,input,select,textarea{font-family:inherit;}
   button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
   button:not(:disabled):hover{transform:translateY(-1px);}
   button:disabled{cursor:not-allowed;opacity:.55;}
   input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
-  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(178,124,24,.13)!important;border-color:#b27c18!important;}
+  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.12)!important;border-color:#1f4e79!important;background:#fff!important;}
   table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
-  table tbody tr:hover{background:rgba(17,24,39,.025);}
-  ::selection{background:rgba(178,124,24,.24);}
+  table tbody tr:hover{background:rgba(31,78,121,.045)!important;}
+  ::selection{background:rgba(31,78,121,.18);}
   ::-webkit-scrollbar{width:10px;height:10px;}
   ::-webkit-scrollbar-track{background:transparent;}
-  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.32);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
-  ::-webkit-scrollbar-thumb:hover{background:rgba(178,124,24,.52);border:2px solid transparent;background-clip:content-box;}
-  .sc-app-shell{background-image:linear-gradient(180deg,#f5f2ed 0%,#eee9e1 100%);}
-  .sc-dark{background-image:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
-  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.82);border:1px solid rgba(226,221,215,.95);box-shadow:0 10px 28px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
-  .sc-dark .sc-topbar{background:rgba(17,24,39,.82);border-color:#263754;box-shadow:0 12px 30px rgba(0,0,0,.26);}
+  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(31,78,121,.52);border:2px solid transparent;background-clip:content-box;}
+
+  .sc-app-shell{background:
+    radial-gradient(circle at top left, rgba(31,78,121,.08), transparent 34%),
+    linear-gradient(180deg,#f7f8fb 0%,#eef1f5 48%,#e9edf3 100%);}
+  .sc-dark{background:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
+
+  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.92);border:1px solid rgba(209,216,226,.95);box-shadow:0 18px 44px rgba(16,24,40,.075);backdrop-filter:blur(10px);}
+  .sc-dark .sc-topbar{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 16px 40px rgba(0,0,0,.30);}
+
   .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
-  .sc-card-premium:hover{box-shadow:0 16px 38px rgba(16,24,40,.085);border-color:rgba(178,124,24,.34);}
-  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34);border-color:rgba(214,163,55,.34);}
-  .sc-soft-card{background:rgba(255,255,255,.84);border:1px solid rgba(228,221,211,.95);box-shadow:0 14px 36px rgba(16,24,40,.06);}
+  .sc-card-premium:hover{box-shadow:0 18px 42px rgba(16,24,40,.10)!important;border-color:rgba(31,78,121,.24)!important;}
+  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34)!important;border-color:rgba(214,163,55,.34)!important;}
+  .sc-soft-card{background:rgba(255,255,255,.92);border:1px solid rgba(209,216,226,.95);box-shadow:0 18px 42px rgba(16,24,40,.07);}
   .sc-dark .sc-soft-card{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 18px 42px rgba(0,0,0,.30);}
   .sc-section-title{letter-spacing:-.035em;}
-  .sc-action-icon{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;}
+  .sc-action-icon{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;}
+
+  .sc-header img{filter:drop-shadow(0 8px 16px rgba(178,124,24,.18));}
+  .sc-nav button{min-height:42px;}
+  .sc-table-wrap{border:1px solid rgba(209,216,226,.78);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 1px 0 rgba(16,24,40,.02);}
+  .sc-dark .sc-table-wrap{background:#111827;border-color:#263754;}
+  .sc-hist-table{border-collapse:separate!important;border-spacing:0!important;}
+  .sc-hist-table th:first-child, .sc-hist-table td:first-child{padding-left:18px!important;}
+  .sc-hist-table th:last-child, .sc-hist-table td:last-child{padding-right:18px!important;}
+  .sc-tl-item{box-shadow:0 1px 0 rgba(16,24,40,.02);}
+
   @media(max-width:640px){
     .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
     .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
@@ -334,33 +349,34 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#0b1220":"#f2eee7",
+    bg:               dark?"#0b1220":"#eef1f5",
     surface:          dark?"#111827":"#ffffff",
-    cardBg:           dark?"#111827":"#fffdf9",
-    cardBorder:       dark?"#263754":"#e3dbce",
-    cardShadow:       dark?"0 18px 44px rgba(0,0,0,.30)":"0 14px 36px rgba(16,24,40,.060)",
-    text:             dark?"#f7f9fc":"#0f172a",
-    textMuted:        dark?"#9aa7bd":"#64748b",
-    accent:           "#b27c18",
-    accentSoft:       dark?"rgba(214,163,55,.13)":"#fbf3df",
-    accentBorder:     dark?"rgba(214,163,55,.35)":"#e6cf9d",
-    accentGrad:       "linear-gradient(135deg,#d9a43a 0%,#b27c18 100%)",
-    navyGrad:         dark?"linear-gradient(135deg,#d9a43a 0%,#b27c18 100%)":"linear-gradient(135deg,#0f172a 0%,#1e293b 100%)",
-    inputBg:          dark?"#0b1220":"#fffefa",
-    inputBorder:      dark?"#30405c":"#d8d0c4",
-    inputText:        dark?"#f7f9fc":"#0f172a",
-    thBg:             dark?"#0b1220":"#f7f3ed",
-    tdBorder:         dark?"#22304a":"#ece4d9",
-    btnDkBg:          dark?"#d9a43a":"#0f172a",
+    cardBg:           dark?"#111827":"#ffffff",
+    cardBorder:       dark?"#263754":"#d7dee8",
+    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 16px 42px rgba(16,24,40,.070)",
+    text:             dark?"#f7f9fc":"#101828",
+    textMuted:        dark?"#9aa7bd":"#667085",
+    accent:           "#9b6a16",
+    primary:          "#1f4e79",
+    accentSoft:       dark?"rgba(214,163,55,.12)":"#fff7e6",
+    accentBorder:     dark?"rgba(214,163,55,.32)":"#ead7a8",
+    accentGrad:       "linear-gradient(135deg,#d7a33a 0%,#9b6a16 100%)",
+    navyGrad:         dark?"linear-gradient(135deg,#d7a33a 0%,#9b6a16 100%)":"linear-gradient(135deg,#173b5c 0%,#0f2741 100%)",
+    inputBg:          dark?"#0b1220":"#ffffff",
+    inputBorder:      dark?"#30405c":"#cfd7e3",
+    inputText:        dark?"#f7f9fc":"#101828",
+    thBg:             dark?"#0b1220":"#f3f6fa",
+    tdBorder:         dark?"#22304a":"#e6ebf1",
+    btnDkBg:          dark?"#d7a33a":"#173b5c",
     btnDkTx:          dark?"#0f172a":"#fff",
-    btnLtBg:          dark?"#151f31":"#fffefa",
-    btnLtTx:          dark?"#d8e0ef":"#334155",
-    navActBg:         dark?"#d9a43a":"#0f172a",
+    btnLtBg:          dark?"#151f31":"#ffffff",
+    btnLtTx:          dark?"#d8e0ef":"#344054",
+    navActBg:         dark?"#d7a33a":"#173b5c",
     navActTx:         dark?"#0f172a":"#fff",
-    navInBg:          dark?"#111827":"#fffefa",
-    navInTx:          dark?"#d8e0ef":"#334155",
-    navInBr:          dark?"#30405c":"#ded5c8",
-    barBg:            dark?"#1a263a":"#e8e0d4",
+    navInBg:          dark?"#111827":"#ffffff",
+    navInTx:          dark?"#d8e0ef":"#344054",
+    navInBr:          dark?"#30405c":"#d7dee8",
+    barBg:            dark?"#1a263a":"#e6ebf1",
     success:          "#079455",
     danger:           "#d92d20",
     warning:          "#dc8a00",
@@ -369,18 +385,36 @@ function getT(dark){
 }
 function makeS(t){
   return{
-    card: {background:t.cardBg,borderRadius:22,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
-    input:{width:"100%",padding:"12px 14px",borderRadius:13,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:"inset 0 1px 0 rgba(255,255,255,.35)"},
-    label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.08em",textTransform:"uppercase"},
-    table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14},
-    td:   {padding:"14px 16px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
+    card: {
+      background:t.cardBg,
+      borderRadius:18,
+      padding:24,
+      boxShadow:t.cardShadow,
+      border:`1px solid ${t.cardBorder}`,
+      overflow:"hidden"
+    },
+    input:{
+      width:"100%",
+      padding:"11px 13px",
+      borderRadius:11,
+      border:`1px solid ${t.inputBorder}`,
+      fontSize:14,
+      outline:"none",
+      boxSizing:"border-box",
+      background:t.inputBg,
+      color:t.inputText,
+      boxShadow:"0 1px 2px rgba(16,24,40,.035)"
+    },
+    label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
+    table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14,background:t.cardBg},
+    td:   {padding:"13px 16px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
     thRow:{background:t.thBg},
   };
 }
 function makeBtn(t){
-  return function btn(dark=false,gold=false){
-    if(gold)return{padding:"11px 20px",borderRadius:13,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(178,124,24,.22)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#0f172a",boxShadow:t.dark?"0 12px 28px rgba(0,0,0,.24)":"0 10px 24px rgba(178,124,24,.20)"};
-    return{padding:"10px 16px",borderRadius:13,border:`1px solid ${dark?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:760,fontSize:14,background:dark?t.navyGrad:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx,boxShadow:dark?(t.dark?"0 12px 28px rgba(0,0,0,.24)":"0 10px 24px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.5)"};
+  return function btn(active=false,gold=false){
+    if(gold)return{padding:"11px 20px",borderRadius:11,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(155,106,22,.24)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#101828",boxShadow:t.dark?"0 10px 24px rgba(0,0,0,.24)":"0 10px 22px rgba(155,106,22,.18)"};
+    return{padding:"10px 16px",borderRadius:11,border:`1px solid ${active?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:780,fontSize:14,background:active?t.navyGrad:t.btnLtBg,color:active?t.btnDkTx:t.btnLtTx,boxShadow:active?(t.dark?"0 10px 24px rgba(0,0,0,.25)":"0 10px 24px rgba(23,59,92,.16)"):"0 1px 2px rgba(16,24,40,.05)"};
   };
 }
 
@@ -409,10 +443,10 @@ function useSafeBackdropClose(onClose, enabled=true){
 
 function makeNavBtn(t){
   return function navBtn(active){
-    return{padding:"10px 17px",borderRadius:13,cursor:"pointer",fontWeight:820,fontSize:14,
+    return{padding:"10px 17px",borderRadius:11,cursor:"pointer",fontWeight:820,fontSize:14,
       border:active?"1px solid transparent":`1px solid ${t.navInBr}`,
       background:active?t.navyGrad:t.navInBg,color:active?t.navActTx:t.navInTx,
-      boxShadow:active?(t.dark?"0 12px 26px rgba(0,0,0,.26)":"0 9px 22px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.52)"};
+      boxShadow:active?(t.dark?"0 10px 24px rgba(0,0,0,.28)":"0 10px 24px rgba(23,59,92,.16)"):"0 1px 2px rgba(16,24,40,.05)"};
   };
 }
 function badgeStyle(status){
@@ -1038,12 +1072,12 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",minHeight:124,padding:"22px 24px",borderLeft:accent?`4px solid ${t.accent}`:`1px solid ${t.cardBorder}`,display:"flex",flexDirection:"column",justifyContent:"center"}}>
-      <div style={{fontSize:10.5,color:t.textMuted,marginBottom:11,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
-      <div style={{fontSize:28,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.045em",display:"flex",alignItems:"baseline",gap:8,lineHeight:1.05}}>
-        {value}
-        {trend!=null&&<span style={{fontSize:12,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
+    <div className="sc-card-premium" style={{...S.card,minHeight:118,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
+        <div style={{fontSize:10.5,color:t.textMuted,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
+        {trend!=null&&<span style={{fontSize:11,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted,background:trend>0?"rgba(7,148,85,.09)":trend<0?"rgba(217,45,32,.09)":"rgba(100,116,139,.09)",padding:"3px 8px",borderRadius:999}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
+      <div style={{fontSize:30,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.055em",lineHeight:1.02}}>{value}</div>
       {subValue!=null&&<div style={{marginTop:8,fontSize:13,color:t.textMuted,fontWeight:650}}>{subValue}</div>}
       {sub&&<div style={{marginTop:8,fontSize:12.5,color:t.textMuted,lineHeight:1.35}}>{sub}</div>}
     </div>
@@ -1225,7 +1259,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
     return()=>window.removeEventListener("keydown",onKey);
   },[isModal,onCancelar]);
   const inner=(
-    <div className="sc-card-premium" style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:22,padding:30,boxShadow:isModal?(t.dark?"0 34px 90px rgba(0,0,0,.52)":"0 30px 76px rgba(15,23,42,.20)"):t.cardShadow,border:`1px solid ${t.cardBorder}`}}>
+    <div className="sc-card-premium" style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:18,padding:30,boxShadow:isModal?(t.dark?"0 34px 90px rgba(0,0,0,.52)":"0 30px 76px rgba(15,23,42,.20)"):t.cardShadow,border:`1px solid ${t.cardBorder}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:isModal?16:0,borderBottom:isModal?`1px solid ${t.tdBorder}`:undefined}}>
         <div>
           <h3 style={{margin:0,color:t.text,fontSize:20,fontWeight:900,letterSpacing:"-0.03em"}}>{title}</h3>
@@ -2861,10 +2895,10 @@ export default function App(){
       {deudaCliente&&<DeudaModal cliente={deudaCliente} onClose={()=>setDeudaCliente(null)} onConfirm={actualizarDeudaCliente} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
-      <div style={{maxWidth:1380,margin:"0 auto",padding:"28px 32px 44px"}} className="sc-pad">
+      <div style={{maxWidth:1440,margin:"0 auto",padding:"30px 36px 52px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:32,flexWrap:"wrap",padding:"18px 20px",borderRadius:22}}>
+        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:30,flexWrap:"wrap",padding:"16px 18px",borderRadius:18}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.30))":"drop-shadow(0 8px 16px rgba(178,124,24,.14))"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
