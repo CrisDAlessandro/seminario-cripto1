@@ -47,16 +47,18 @@ const MOBILE_CSS = `
     radial-gradient(circle at 14% 0%, rgba(31,78,121,.055), transparent 28%),
     radial-gradient(circle at 86% 8%, rgba(200,145,31,.055), transparent 24%),
     linear-gradient(180deg,#fbfcfe 0%,#f6f8fb 48%,#eef2f6 100%);}
-  .sc-dark{background:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
+  .sc-dark{background:
+    radial-gradient(circle at 14% 0%, rgba(212,162,58,.12), transparent 26%),
+    linear-gradient(180deg,#05070b 0%,#090d14 50%,#05070b 100%);}
 
   .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.98);border:1px solid rgba(226,232,240,.98);box-shadow:0 12px 34px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
-  .sc-dark .sc-topbar{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 16px 40px rgba(0,0,0,.30);}
+  .sc-dark .sc-topbar{background:rgba(13,18,27,.94);border-color:#273244;box-shadow:0 18px 46px rgba(0,0,0,.40);}
 
   .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
   .sc-card-premium:hover{box-shadow:0 16px 38px rgba(16,24,40,.085)!important;border-color:rgba(31,78,121,.22)!important;}
   .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34)!important;border-color:rgba(214,163,55,.34)!important;}
   .sc-soft-card{background:rgba(255,255,255,.96);border:1px solid rgba(224,229,236,.96);box-shadow:0 10px 30px rgba(16,24,40,.055);}
-  .sc-dark .sc-soft-card{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 18px 42px rgba(0,0,0,.30);}
+  .sc-dark .sc-soft-card{background:rgba(13,18,27,.94);border-color:#273244;box-shadow:0 18px 42px rgba(0,0,0,.34);}
   .sc-section-title{letter-spacing:-.035em;}
   .sc-action-icon{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;}
 
@@ -228,7 +230,7 @@ function computeClient(c){
   else if(vencimiento){
     const due=parseISODate(vencimiento);
     dias=diffDays(today,due);
-    if(today>due){const ov=diffDays(due,today);estadoSistema=ov<GRACE_DAYS?"gracia":"vencido";}
+    if(today>due){const ov=diffDays(due,today);estadoSistema=ov<=GRACE_DAYS?"gracia":"vencido";}
   }
   return{...cNorm,isClases,vencimiento,dias,duracion_dias:safeNum(cNorm.duracion_dias),estadoSistema,
     class_range_label:isClases?classRangeLabel(cNorm.fecha_inicio):null,
@@ -352,34 +354,34 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#0b1220":"#f6f8fb",
-    surface:          dark?"#111827":"#ffffff",
-    cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#263754":"#e6ebf1",
-    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 12px 32px rgba(16,24,40,.055)",
-    text:             dark?"#f7f9fc":"#101828",
-    textMuted:        dark?"#9aa7bd":"#667085",
-    accent:           "#c8911f",
-    primary:          "#163a5c",
-    accentSoft:       dark?"rgba(214,163,55,.12)":"#f8f3ea",
-    accentBorder:     dark?"rgba(214,163,55,.32)":"#e7d4aa",
-    accentGrad:       "linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)",
-    navyGrad:         dark?"linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)":"linear-gradient(180deg,#163a5c 0%,#102b45 100%)",
-    inputBg:          dark?"#0b1220":"#ffffff",
-    inputBorder:      dark?"#30405c":"#d8e0ea",
-    inputText:        dark?"#f7f9fc":"#101828",
-    thBg:             dark?"#0b1220":"#f8fafc",
-    tdBorder:         dark?"#22304a":"#eef2f6",
-    btnDkBg:          dark?"#d7a33a":"#173b5c",
-    btnDkTx:          dark?"#0f172a":"#fff",
-    btnLtBg:          dark?"#151f31":"#ffffff",
-    btnLtTx:          dark?"#d8e0ef":"#475467",
-    navActBg:         dark?"#d7a33a":"#173b5c",
-    navActTx:         dark?"#0f172a":"#fff",
-    navInBg:          dark?"#111827":"#ffffff",
-    navInTx:          dark?"#d8e0ef":"#344054",
-    navInBr:          dark?"#30405c":"#dbe3eb",
-    barBg:            dark?"#1a263a":"#edf2f7",
+    bg:               dark?"#05070b":"#f6f8fb",
+    surface:          dark?"#0b0f17":"#ffffff",
+    cardBg:           dark?"#0d121b":"#ffffff",
+    cardBorder:       dark?"#273244":"#e6ebf1",
+    cardShadow:       dark?"0 20px 54px rgba(0,0,0,.42)":"0 12px 32px rgba(16,24,40,.055)",
+    text:             dark?"#f8fafc":"#101828",
+    textMuted:        dark?"#b7c2d3":"#667085",
+    accent:           "#d4a23a",
+    primary:          "#d4a23a",
+    accentSoft:       dark?"rgba(212,162,58,.14)":"#f8f3ea",
+    accentBorder:     dark?"rgba(212,162,58,.40)":"#e7d4aa",
+    accentGrad:       "linear-gradient(180deg,#e0b64c 0%,#c8911f 100%)",
+    navyGrad:         dark?"linear-gradient(180deg,#d4a23a 0%,#b67d17 100%)":"linear-gradient(180deg,#163a5c 0%,#102b45 100%)",
+    inputBg:          dark?"#090d14":"#ffffff",
+    inputBorder:      dark?"#2c394d":"#d8e0ea",
+    inputText:        dark?"#f8fafc":"#101828",
+    thBg:             dark?"#090d14":"#f8fafc",
+    tdBorder:         dark?"#1e293b":"#eef2f6",
+    btnDkBg:          dark?"#d4a23a":"#173b5c",
+    btnDkTx:          dark?"#0b0f17":"#fff",
+    btnLtBg:          dark?"#0b1018":"#ffffff",
+    btnLtTx:          dark?"#e5ebf5":"#475467",
+    navActBg:         dark?"#d4a23a":"#173b5c",
+    navActTx:         dark?"#0b0f17":"#fff",
+    navInBg:          dark?"#0d121b":"#ffffff",
+    navInTx:          dark?"#e5ebf5":"#344054",
+    navInBr:          dark?"#2c394d":"#dbe3eb",
+    barBg:            dark?"#202938":"#edf2f7",
     success:          "#079455",
     danger:           "#d92d20",
     warning:          "#dc8a00",
@@ -486,15 +488,15 @@ function ToastContainer({toasts,remove}){
       {toasts.map(t=>(
         <div key={t.id} style={{
           pointerEvents:"all",
-          background:t.type==="error"?"#1a0a0a":t.type==="success"?"#0a1a0f":"#111827",
-          border:`1px solid ${t.type==="error"?"#7f1d1d":t.type==="success"?"#14532d":"#1e2d45"}`,
-          borderLeft:`4px solid ${t.type==="error"?"#ef4444":t.type==="success"?"#22c55e":"#c8972a"}`,
-          borderRadius:12,padding:"14px 18px",color:"#101828",fontSize:14,fontWeight:500,
-          minWidth:280,maxWidth:380,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",
+          background:t.type==="error"?"#2a0d0d":t.type==="success"?"#062612":"#101828",
+          border:`1px solid ${t.type==="error"?"#991b1b":t.type==="success"?"#1f7a3c":"#334155"}`,
+          borderLeft:`4px solid ${t.type==="error"?"#ef4444":t.type==="success"?"#22c55e":"#d19a32"}`,
+          borderRadius:14,padding:"14px 18px",color:"#f8fafc",fontSize:14,fontWeight:700,
+          minWidth:300,maxWidth:420,boxShadow:"0 18px 44px rgba(2,6,23,0.38)",
           display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
         }}>
-          <span>{t.msg}</span>
-          <button onClick={()=>remove(t.id)} style={{background:"none",border:"none",color:"#8899bb",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
+          <span style={{lineHeight:1.4}}>{t.msg}</span>
+          <button onClick={()=>remove(t.id)} style={{background:"none",border:"none",color:"#d7dee8",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
         </div>
       ))}
     </div>
@@ -1444,7 +1446,7 @@ export default function App(){
   const[filtro,setFiltro]=useState("todos");
   const[form,setForm]=useState(FORM_DEF);
   const[renovarForm,setRenovarForm]=useState({...FORM_DEF,id:null});
-  const dark=false; // modo claro único: se elimina el modo oscuro para mantener estética consistente
+  const[dark,setDark]=useState(false);
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
   const[deudaCliente,setDeudaCliente]=useState(null);
@@ -2834,7 +2836,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className="sc-app-shell" style={{minHeight:"100vh",background:"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
+    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
@@ -2938,6 +2940,9 @@ export default function App(){
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
+            <button onClick={()=>setDark(!dark)} title={dark?"Modo claro":"Modo oscuro"} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15,minWidth:42}}>
+              {dark?"☀":"☾"}
+            </button>
             <button onClick={logout} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:13}}>Salir</button>
           </div>
         </div>
@@ -3327,7 +3332,7 @@ export default function App(){
                 {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
                 <CriticosPanel titulo="Por vencer" badgeBg="#f6efe2" badgeColor="#8a5a12"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
-                  accentBorder={dark?"#876128":"#d19a32"} accentBg={dark?"#101827":"#fffdfa"} accentText={dark?"#fdba74":"#8a5a12"}
+                  accentBorder={dark?"#d4a23a":"#d19a32"} accentBg={dark?"rgba(212,162,58,.08)":"#fffdfa"} accentText={dark?"#e6c66f":"#8a5a12"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3337,8 +3342,8 @@ export default function App(){
                 {/* En gracia: fondo siempre claro (amarillo) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="En gracia" badgeBg="#f5efdd" badgeColor="#7f5f15"
                   clientes={vencimientosCriticos.gracia} {...cGrPag}
-                  accentBorder="#d6b94c" accentBg="#fffef9" accentText="#80620f"
-                  nameColor="#1a0e00"
+                  accentBorder={dark?"#d4a23a":"#d6b94c"} accentBg={dark?"rgba(212,162,58,.075)":"#fffef9"} accentText={dark?"#e6c66f":"#80620f"}
+                  nameColor={dark?t.text:"#1a0e00"}
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
                   onAbrirRenovar={abrirRenovar}
@@ -3347,8 +3352,8 @@ export default function App(){
                 {/* Vencidos: fondo siempre claro (rosa) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="Vencidos" badgeBg="#f8e9e8" badgeColor="#9b3b32"
                   clientes={vencimientosCriticos.vencidos} {...cVePag}
-                  accentBorder="#d65f54" accentBg="#fffafa" accentText="#9b3b32"
-                  nameColor="#1a0000"
+                  accentBorder={dark?"#ef6b5f":"#d65f54"} accentBg={dark?"rgba(239,107,95,.075)":"#fffafa"} accentText={dark?"#ffb3ad":"#9b3b32"}
+                  nameColor={dark?t.text:"#1a0000"}
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
                   onAbrirRenovar={abrirRenovar}
