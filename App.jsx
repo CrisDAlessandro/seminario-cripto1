@@ -1479,8 +1479,28 @@ export default function App(){
   }
   async function eliminarIngreso(id){
     const ing=ingresos.find(i=>i.id===id);
+    const movimientosCajaRelacionados=(cajaMovimientos||[]).filter(m=>{
+      const d=m?.detalle||{};
+      if(m?.tipo!=="caja"||d?.concepto!=="movimiento")return false;
+      if(String(d.ingreso_id||"")===String(id))return true;
+      // Respaldo para movimientos viejos de caja que no tenían ingreso_id guardado:
+      // se remueve solo si parece caja automática de esa misma venta/renovación.
+      const mismoCliente=ing?.cliente_id&&String(d.cliente_id||"")===String(ing.cliente_id);
+      const mismoMonto=safeNum(d.monto)===safeNum(ing?.monto);
+      const origen=String(d.origen||"").toLowerCase();
+      const esAuto=origen.includes("alta")||origen.includes("renov")||origen.includes("recepción")||origen.includes("recepcion")||origen.includes("venta");
+      const mismaFecha=dateOnly(d.fecha)===dateOnly(ing?.fecha_pago);
+      const esRecepcionPosterior=origen.includes("recepción")||origen.includes("recepcion");
+      return mismoCliente&&mismoMonto&&esAuto&&(mismaFecha||esRecepcionPosterior);
+    });
+    const idsCaja=movimientosCajaRelacionados.map(m=>m.id).filter(Boolean).filter(idCaja=>!String(idCaja).startsWith("tmp-"));
+
     const{error}=await supabase.from("ingresos").delete().eq("id",id);
     if(error){toast.error("No se pudo eliminar el ingreso");return;}
+    if(idsCaja.length){
+      const{error:eCaja}=await supabase.from("notas_cliente").delete().in("id",idsCaja);
+      if(eCaja)toast.error("Ingreso eliminado, pero no se pudo quitar de Caja");
+    }
 
     // Si el ingreso borrado correspondía al cliente que sigue activo en Base operativa,
     // se revierte también el efecto operativo de esa carga/renovación: días agregados
@@ -1503,8 +1523,14 @@ export default function App(){
 
     // Actualizar estado local inmediatamente sin recargar
     setIngresos(prev=>prev.filter(i=>i.id!==id));
-    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,rollback:rollbackInfo});
-    toast.success(rollbackInfo?"Ingreso eliminado y renovación revertida":"Ingreso eliminado");
+    if(movimientosCajaRelacionados.length){
+      setCajaMovimientos(prev=>prev.filter(m=>!movimientosCajaRelacionados.some(x=>String(x.id)===String(m.id))));
+    }
+    await logH(user?.email,"eliminó ingreso","ingreso",id,{cliente:ing?.cliente_nombre,monto:ing?.monto,rollback:rollbackInfo,caja_eliminada:movimientosCajaRelacionados.length});
+    if(movimientosCajaRelacionados.length){
+      await logH(user?.email,"eliminó caja automática por ingreso eliminado","Caja diaria",null,{nombre:"Caja diaria",ingreso_id:id,cliente:ing?.cliente_nombre,monto:ing?.monto,cantidad:movimientosCajaRelacionados.length});
+    }
+    toast.success(rollbackInfo?"Ingreso eliminado, caja actualizada y renovación revertida":"Ingreso eliminado y caja actualizada");
   }
   async function editarMontoIngreso(id,nuevoMonto){
     const montoNuevo=safeNum(nuevoMonto);
@@ -1738,16 +1764,20 @@ export default function App(){
   ,[computed]);
 
   async function marcarTransferido(id, cliente){
+    const ingresoRelacionado=[...(ingresos||[])]
+      .filter(i=>String(i.cliente_id||"")===String(id))
+      .sort((a,b)=>String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||""))||String(b.created_at||"").localeCompare(String(a.created_at||"")))[0]||null;
+    const montoRecibido=safeNum(ingresoRelacionado?.monto)||safeNum(cliente?.monto);
     const{error}=await supabase.from("clientes").update({transferido:true}).eq("id",id);
     if(error){toast.error("No se pudo actualizar");return;}
     setClientes(prev=>prev.map(c=>c.id===id?{...c,transferido:true}:c));
-    await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:cliente?.monto,recibe:"Cristian",nombre:cliente?.nombre,clienteId:id,origen:`recepción de ${cliente?.vendedor||"vendedor"}`});
+    await registrarCajaDesdeVenta({fecha:toISODate(getToday()),monto:montoRecibido,recibe:"Cristian",nombre:cliente?.nombre,clienteId:id,origen:`recepción de ${cliente?.vendedor||"vendedor"}`,ingresoId:ingresoRelacionado?.id});
     // Registrar en historial: queda claro quién tomó la venta y cuándo Cristian recibió la plata.
-    const reciboNota={id:`tmp-recibo-${Date.now()}`,cliente_id:id,created_at:new Date().toISOString(),tipo:"pago",contenido:`Cristian recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${cliente?.monto}`,detalle:{vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:cliente?.monto}};
-    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:cliente?.monto});
+    const reciboNota={id:`tmp-recibo-${Date.now()}`,cliente_id:id,created_at:new Date().toISOString(),tipo:"pago",contenido:`Cristian recibió transferencia de ${cliente?.vendedor}. Venta: ${cliente?.nombre} · Monto: USD ${montoRecibido}`,detalle:{vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null}};
+    await logH(user?.email,"recibió transferencia","cliente",id,{nombre:cliente?.nombre,vendedor:cliente?.vendedor,recibe_final:"Cristian",monto:montoRecibido,ingreso_id:ingresoRelacionado?.id||null});
     await logNC(id,user?.email,"pago",reciboNota.contenido,reciboNota.detalle);
     setTransferenciasRecibidas(prev=>[reciboNota,...prev]);
-    toast.success(`✓ ${cliente?.monto} USD recibidos de ${cliente?.vendedor}`);
+    toast.success(`✓ ${montoRecibido} USD recibidos de ${cliente?.vendedor}`);
   }
 
   async function registrarMovimientoCaja(){
