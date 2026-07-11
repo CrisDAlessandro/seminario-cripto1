@@ -1425,16 +1425,23 @@ export default function App(){
       const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
       const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas)]).select().single();
       if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
-      const recibeAlta=ins.vendedor||"Cristian";
-      const pendienteAlta=ventaPendienteTransferencia(ins.vendedor);
+      const recibeAlta=payload.vendedor||ins.vendedor||form.vendedor||"Cristian";
+      const pendienteAlta=ventaPendienteTransferencia(recibeAlta);
 
-      // Nada secundario puede dejar el botón clavado en "Guardando...".
-      // Caja, historial y Drive corren después del alta real.
+      // Actualización local inmediata: evita que Caja dependa de un refetch para saber quién recibió.
+      setClientes(prev=>[{...ins,vendedor:payload.vendedor||"",transferido:!pendienteAlta},...prev.filter(c=>String(c.id)!==String(ins.id))]);
+      if(ingAlta)setIngresos(prev=>[{...ingAlta,cliente_id:ins.id,cliente_nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,fecha_pago:fechaIngresoAlta},...prev.filter(i=>String(i.id)!==String(ingAlta.id))]);
+
+      // La Caja directa de Cristian/Bahiano se crea antes del cierre del formulario.
+      // Luigi queda pendiente y entra recién cuando se marca recibido.
+      if(!eIngAlta){
+        try{
+          await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:recibeAlta,nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
+        }catch(err){console.warn("Caja automática de alta falló",err);}
+      }
+
       void (async()=>{
         try{
-          if(!eIngAlta){
-            await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:recibeAlta,nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
-          }
           await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
           await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta});
           llamarDrive("compartir", ins.email);
@@ -1462,14 +1469,20 @@ export default function App(){
       const fechaRenovacion=toISODate(getToday());
       const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas)]).select().single();
       if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
-      const recibeRenovacion=payload.vendedor||"Cristian";
-      const pendienteRenovacion=ventaPendienteTransferencia(payload.vendedor);
+      const recibeRenovacion=payload.vendedor||renovarForm.vendedor||"Cristian";
+      const pendienteRenovacion=ventaPendienteTransferencia(recibeRenovacion);
+
+      setClientes(prev=>prev.map(c=>String(c.id)===String(renovarForm.id)?{...c,...payload,vendedor:payload.vendedor||"",transferido:!pendienteRenovacion}:c));
+      if(ingRen)setIngresos(prev=>[{...ingRen,cliente_id:renovarForm.id,cliente_nombre:v.nombre,email:v.email,servicio:renovarForm.servicio,monto:renovarForm.monto,fecha_pago:fechaRenovacion},...prev.filter(i=>String(i.id)!==String(ingRen.id))]);
+
+      if(!eIngRen){
+        try{
+          await registrarCajaDesdeVenta({fecha:fechaRenovacion,monto:renovarForm.monto,recibe:recibeRenovacion,nombre:v.nombre,clienteId:renovarForm.id,origen:"renovación",ingresoId:ingRen?.id});
+        }catch(err){console.warn("Caja automática de renovación falló",err);}
+      }
 
       void (async()=>{
         try{
-          if(!eIngRen){
-            await registrarCajaDesdeVenta({fecha:fechaRenovacion,monto:renovarForm.monto,recibe:recibeRenovacion,nombre:v.nombre,clienteId:renovarForm.id,origen:"renovación",ingresoId:ingRen?.id});
-          }
           await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
           await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibe: ${recibeRenovacion}${pendienteRenovacion?" · Pendiente de transferencia a Cristian":""}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion});
           llamarDrive("compartir", v.email);
