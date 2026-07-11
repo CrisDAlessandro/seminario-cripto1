@@ -1392,7 +1392,34 @@ export default function App(){
     const base=limpiarTextoRecepcion(notas).trim();
     const r=String(recibe||"Cristian").trim()||"Cristian";
     const meta=pendiente?`Cobró ${r} · Pendiente de recepción`:`Cobró ${r} · Cobrado`;
-    return base ? `${base} · ${meta}` : meta;
+    // La recepción propia de ESTE ingreso va primero.
+    // Si el cliente tenía una nota vieja tipo "Cobró Luigi · Pendiente", no debe pisar
+    // la caja de una renovación nueva cobrada por Cristian/Bahiano.
+    return base ? `${meta} · ${base}` : meta;
+  }
+  function recepcionActualDesdeIngreso(i){
+    const notas=String(i?.notas||"");
+    const directo=i?.recibe||i?.recibio_venta||i?.vendedor||i?.recibe_final||i?.recibio||"";
+    if(String(directo||"").trim()){
+      const r=String(directo).trim();
+      const pend=ventaPendienteTransferencia(r)||/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(notas);
+      return {recibe:r,pendiente:pend};
+    }
+    const matches=[...notas.matchAll(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/gi)];
+    if(matches.length){
+      const last=matches[matches.length-1];
+      const tail=notas.slice(last.index||0);
+      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(tail) && !/Cobrado|Transferencia recibida por/i.test(tail);
+      return {recibe:last[1],pendiente:pend};
+    }
+    const legacy=[...notas.matchAll(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/gi)];
+    if(legacy.length){
+      const last=legacy[legacy.length-1];
+      const tail=notas.slice(last.index||0);
+      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(tail) && !/Cobrado|Transferencia recibida por/i.test(tail);
+      return {recibe:last[1],pendiente:pend};
+    }
+    return {recibe:"",pendiente:false};
   }
   function formatearNotasIngreso(notas){
     const txt=limpiarTextoRecepcion(notas);
@@ -1420,19 +1447,7 @@ export default function App(){
     const r=String(v||"").trim();
     return !!r && !cajaRecibeDirecto(r);
   };
-  const receptorExplicitoIngreso = i => {
-    const base=i||{};
-    const directo=base.recibe||base.recibio_venta||base.vendedor||base.recibe_final||base.recibio||"";
-    if(String(directo||"").trim())return directo;
-    const notas=String(base.notas||"");
-    // Prioridad: quién cobró originalmente esa venta. Si cobró Luigi,
-    // NO se reconstruye como caja directa aunque luego se haya recibido.
-    const mCobro=notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/i);
-    if(mCobro)return mCobro[1];
-    // Compatibilidad con datos viejos guardados como "recibe: X".
-    const m=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
-    return m?m[1]:"";
-  };
+  const receptorExplicitoIngreso = i => recepcionActualDesdeIngreso(i).recibe;
   function parseFechaRecepcionTexto(txt){
     const t=String(txt||"");
     const m=t.match(/(?:Transferencia recibida por|recib[ií]o transferencia).*?(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
@@ -1454,10 +1469,9 @@ export default function App(){
       const fecha=parseFechaRecepcionTexto(notas)||dateOnly(i?.fecha_pago)||dateOnly(i?.created_at)||toISODate(getToday());
       if(recibe)return {recibe,fecha,origen:"transferencia recibida",nombre:i?.cliente_nombre||""};
     }
-    const receptor=receptorExplicitoIngreso(i);
-    const recibe=cajaRecibeDirecto(receptor);
-    const pendiente=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(notas);
-    if(recibe&&!pendiente){
+    const recActual=recepcionActualDesdeIngreso(i);
+    const recibe=cajaRecibeDirecto(recActual.recibe);
+    if(recibe&&!recActual.pendiente){
       return {recibe,fecha:dateOnly(i?.fecha_pago)||dateOnly(i?.created_at)||toISODate(getToday()),origen:"ingreso automático",nombre:i?.cliente_nombre||""};
     }
     return null;
