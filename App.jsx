@@ -26,7 +26,7 @@ function traducirError(msg) {
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{margin:0;background:#f4f6f8;color:#101828;}
+  body{margin:0;background:#f6f8fb;color:#101828;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
   button,input,select,textarea{font-family:inherit;-webkit-appearance:none;appearance:none;}
   button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
   button:not(:disabled):hover{transform:translateY(-1px);}
@@ -44,15 +44,16 @@ const MOBILE_CSS = `
   ::-webkit-scrollbar-thumb:hover{background:rgba(31,78,121,.52);border:2px solid transparent;background-clip:content-box;}
 
   .sc-app-shell{background:
-    radial-gradient(circle at top left, rgba(31,78,121,.08), transparent 34%),
-    linear-gradient(180deg,#f8fafc 0%,#f3f5f8 45%,#eef2f6 100%);}
+    radial-gradient(circle at 14% 0%, rgba(31,78,121,.055), transparent 28%),
+    radial-gradient(circle at 86% 8%, rgba(200,145,31,.055), transparent 24%),
+    linear-gradient(180deg,#fbfcfe 0%,#f6f8fb 48%,#eef2f6 100%);}
   .sc-dark{background:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
 
-  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.96);border:1px solid rgba(219,226,234,.95);box-shadow:0 10px 30px rgba(16,24,40,.06);backdrop-filter:blur(10px);}
+  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.98);border:1px solid rgba(226,232,240,.98);box-shadow:0 12px 34px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
   .sc-dark .sc-topbar{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 16px 40px rgba(0,0,0,.30);}
 
   .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
-  .sc-card-premium:hover{box-shadow:0 18px 42px rgba(16,24,40,.10)!important;border-color:rgba(31,78,121,.24)!important;}
+  .sc-card-premium:hover{box-shadow:0 16px 38px rgba(16,24,40,.085)!important;border-color:rgba(31,78,121,.22)!important;}
   .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34)!important;border-color:rgba(214,163,55,.34)!important;}
   .sc-soft-card{background:rgba(255,255,255,.96);border:1px solid rgba(224,229,236,.96);box-shadow:0 10px 30px rgba(16,24,40,.055);}
   .sc-dark .sc-soft-card{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 18px 42px rgba(0,0,0,.30);}
@@ -61,7 +62,7 @@ const MOBILE_CSS = `
 
   .sc-header img{filter:drop-shadow(0 8px 16px rgba(178,124,24,.18));}
   .sc-nav button{min-height:42px;}
-  .sc-table-wrap{border:1px solid rgba(224,229,236,.92);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 10px 24px rgba(16,24,40,.035);}
+  .sc-table-wrap{border:1px solid rgba(226,232,240,.96);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 8px 24px rgba(16,24,40,.030);}
   .sc-dark .sc-table-wrap{background:#111827;border-color:#263754;}
   .sc-hist-table{border-collapse:separate!important;border-spacing:0!important;}
   .sc-hist-table th:first-child, .sc-hist-table td:first-child{padding-left:18px!important;}
@@ -227,7 +228,7 @@ function computeClient(c){
   else if(vencimiento){
     const due=parseISODate(vencimiento);
     dias=diffDays(today,due);
-    if(today>due){const ov=diffDays(due,today);estadoSistema=ov<=GRACE_DAYS?"gracia":"vencido";}
+    if(today>due){const ov=diffDays(due,today);estadoSistema=ov<GRACE_DAYS?"gracia":"vencido";}
   }
   return{...cNorm,isClases,vencimiento,dias,duracion_dias:safeNum(cNorm.duracion_dias),estadoSistema,
     class_range_label:isClases?classRangeLabel(cNorm.fecha_inicio):null,
@@ -351,11 +352,11 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#0b1220":"#f4f6f8",
+    bg:               dark?"#0b1220":"#f6f8fb",
     surface:          dark?"#111827":"#ffffff",
     cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#263754":"#e4e7ec",
-    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 10px 28px rgba(16,24,40,.06)",
+    cardBorder:       dark?"#263754":"#e6ebf1",
+    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 12px 32px rgba(16,24,40,.055)",
     text:             dark?"#f7f9fc":"#101828",
     textMuted:        dark?"#9aa7bd":"#667085",
     accent:           "#c8911f",
@@ -365,10 +366,10 @@ function getT(dark){
     accentGrad:       "linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)",
     navyGrad:         dark?"linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)":"linear-gradient(180deg,#163a5c 0%,#102b45 100%)",
     inputBg:          dark?"#0b1220":"#ffffff",
-    inputBorder:      dark?"#30405c":"#d6dde6",
+    inputBorder:      dark?"#30405c":"#d8e0ea",
     inputText:        dark?"#f7f9fc":"#101828",
-    thBg:             dark?"#0b1220":"#f7f8fa",
-    tdBorder:         dark?"#22304a":"#edf1f5",
+    thBg:             dark?"#0b1220":"#f8fafc",
+    tdBorder:         dark?"#22304a":"#eef2f6",
     btnDkBg:          dark?"#d7a33a":"#173b5c",
     btnDkTx:          dark?"#0f172a":"#fff",
     btnLtBg:          dark?"#151f31":"#ffffff",
@@ -389,7 +390,7 @@ function makeS(t){
   return{
     card: {
       background:t.cardBg,
-      borderRadius:16,
+      borderRadius:18,
       padding:24,
       boxShadow:t.cardShadow,
       border:`1px solid ${t.cardBorder}`,
@@ -405,7 +406,7 @@ function makeS(t){
       boxSizing:"border-box",
       background:t.inputBg,
       color:t.inputText,
-      boxShadow:"0 1px 2px rgba(16,24,40,.035)"
+      boxShadow:"0 1px 2px rgba(16,24,40,.025)"
     },
     label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
     table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14,background:t.cardBg},
@@ -415,7 +416,7 @@ function makeS(t){
 }
 function makeBtn(t){
   return function btn(active=false,gold=false){
-    if(gold)return{padding:"11px 20px",borderRadius:12,border:`1px solid ${t.dark?"#725520":"#d8bc7c"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.dark?"#d3a03a":"#cf9a2e",color:"#101828",boxShadow:t.dark?"0 8px 18px rgba(0,0,0,.24)":"0 6px 16px rgba(198,138,34,.18)",appearance:"none"};
+    if(gold)return{padding:"11px 20px",borderRadius:12,border:`1px solid ${t.dark?"#725520":"#d8bc7c"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.dark?"#d3a03a":"#d19a32",color:"#101828",boxShadow:t.dark?"0 8px 18px rgba(0,0,0,.24)":"0 8px 18px rgba(198,138,34,.18)",appearance:"none"};
     return{padding:"10px 16px",borderRadius:12,border:`1px solid ${active?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:780,fontSize:14,background:active?t.navyGrad:t.btnLtBg,color:active?t.btnDkTx:t.btnLtTx,boxShadow:active?(t.dark?"0 8px 18px rgba(0,0,0,.24)":"0 8px 18px rgba(22,58,92,.12)"):"0 1px 2px rgba(16,24,40,.05)",appearance:"none"};
   };
 }
@@ -1048,15 +1049,18 @@ function Pagination({page,totalPages,setPage,sectionRef,t}){
   const btn=makeBtn(t);
   if(totalPages<=1)return null;
   function goTo(n){setPage(n);setTimeout(()=>sectionRef?.current?.scrollIntoView({behavior:"smooth",block:"start"}),50);}
+  const pages=Array.from({length:totalPages},(_,i)=>i+1);
   return(
-    <div style={{marginTop:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-      <div style={{color:t.textMuted,fontSize:13}}>Página {page} de {totalPages}</div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        <button style={{...btn(false),padding:"7px 13px",fontSize:13}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
-        {Array.from({length:totalPages},(_,i)=>i+1).map(n=>(
-          <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13}} onClick={()=>goTo(n)}>{n}</button>
-        ))}
-        <button style={{...btn(false),padding:"7px 13px",fontSize:13}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
+    <div style={{marginTop:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{color:t.textMuted,fontSize:13,whiteSpace:"nowrap"}}>Página {page} de {totalPages}</div>
+      <div style={{display:"flex",alignItems:"center",gap:7,flex:"1 1 auto",justifyContent:"flex-end",minWidth:0,flexWrap:"nowrap"}}>
+        <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
+        <div style={{display:"flex",alignItems:"center",gap:7,overflowX:"auto",overflowY:"hidden",whiteSpace:"nowrap",maxWidth:"min(100%,620px)",padding:"2px 2px 6px",scrollbarWidth:"thin"}}>
+          {pages.map(n=>(
+            <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(n)}>{n}</button>
+          ))}
+        </div>
+        <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
       </div>
     </div>
   );
@@ -1074,7 +1078,7 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div className="sc-card-premium" style={{...S.card,minHeight:118,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`}}>
+    <div className="sc-card-premium" style={{...S.card,minHeight:118,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:"linear-gradient(180deg,#ffffff 0%,#fbfcfe 100%)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
         <div style={{fontSize:10.5,color:t.textMuted,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
         {trend!=null&&<span style={{fontSize:11,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted,background:trend>0?"rgba(7,148,85,.09)":trend<0?"rgba(217,45,32,.09)":"rgba(100,116,139,.09)",padding:"3px 8px",borderRadius:999}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
@@ -2787,23 +2791,23 @@ export default function App(){
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
         <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 18%, rgba(200,145,31,.14), transparent 28%), linear-gradient(180deg,#f8fafc 0%,#eef2f6 100%)",padding:24}}>
-          <div style={{width:430,background:"rgba(255,255,255,.96)",borderRadius:24,padding:40,border:"1px solid #e4e7ec",boxShadow:"0 28px 72px rgba(16,24,40,.14)"}}>
+          <div style={{width:430,background:"rgba(255,255,255,.96)",borderRadius:24,padding:40,border:"1px solid #e4e7ec",boxShadow:"0 28px 74px rgba(16,24,40,.13)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
               <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
-                <div style={{fontSize:22,fontWeight:900,color:"#f0f4ff",letterSpacing:"-0.02em"}}>Seminario Cripto</div>
+                <div style={{fontSize:23,fontWeight:900,color:"#101828",letterSpacing:"-0.025em"}}>Seminario Cripto</div>
                 <div style={{fontSize:13,color:"#667085",marginTop:2}}>Sistema de gestión interno</div>
               </div>
             </div>
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
               <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.04)"}}/>
+                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #d8e0ea",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.035)"}}/>
             </div>
             <div style={{position:"relative",marginBottom:22}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
               <input type={showPwd?"text":"password"} placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.04)"}}/>
+                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #d8e0ea",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.035)"}}/>
               <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#667085",display:"flex",alignItems:"center"}}>
                 {showPwd?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -3433,7 +3437,7 @@ export default function App(){
                             </span>
                           ):"-"}
                         </td>
-                        <td style={S.td}><span style={badgeStyle(c.estado_manual==="finalizado"?"finalizado":"activo")}>{c.estado_manual==="finalizado"?"FINALIZADO":"ACTIVO"}</span></td>
+                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema==="gracia"?"EN GRACIA":c.estadoSistema.toUpperCase()}</span></td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                             {c.servicio==="clases"?(
@@ -3473,7 +3477,7 @@ export default function App(){
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
                         <td style={S.td}>{c.vencimiento!=null?c.dias:"-"}</td>
-                        <td style={S.td}><span style={badgeStyle(c.estado_manual==="finalizado"?"finalizado":"activo")}>{c.estado_manual==="finalizado"?"FINALIZADO":"ACTIVO"}</span></td>
+                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema==="gracia"?"EN GRACIA":c.estadoSistema.toUpperCase()}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -3490,27 +3494,39 @@ export default function App(){
                   {deudores.length>0&&<div style={{color:"#ef4444",fontSize:13,fontWeight:700,marginTop:4}}>Deuda total acumulada: <strong>USD {totalDeuda}</strong></div>}
                 </div>
                 <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
-                  onClick={()=>exportXLSX(deudores,[
+                  onClick={()=>exportXLSX(deudores.map(c=>({...c,dias_desde_pago:c.fecha_inicio?diffDays(parseISODate(c.fecha_inicio),getToday()):""})),[
                     {key:"nombre",label:"Nombre"},{key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
-                    {key:"monto",label:"Monto pagado"},{key:"deuda_restante",label:"Deuda restante"},{key:"notas",label:"Notas"},
+                    {key:"monto",label:"Servicio pagado"},{key:"deuda_restante",label:"Resta"},
+                    {key:"dias_desde_pago",label:"Días desde pago"},{key:"notas",label:"Notas"},
                   ],"deudores_seminario_cripto.xlsx")}>
                   Exportar Excel
                 </button>
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Servicio","Pagado","Resta","Notas","Acción"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Cliente","Servicio pagado","Resta","Días desde pago","Notas","Acción"]} t={t}/></thead>
                   <tbody>
-                    {deudPag.rows.map(c=>(
+                    {deudPag.rows.map(c=>{
+                      const diasDesdePago=c.fecha_inicio?diffDays(parseISODate(c.fecha_inicio),getToday()):null;
+                      const deudaVencida=diasDesdePago!=null&&diasDesdePago>30;
+                      return(
                       <tr key={c.id}>
                         <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
-                        <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>USD {c.monto}</td>
                         <td style={{...S.td,color:"#ef4444",fontWeight:700}}>USD {c.deuda_restante}</td>
+                        <td style={S.td}>
+                          <span style={{display:"inline-flex",alignItems:"center",padding:"4px 10px",borderRadius:999,fontSize:12,fontWeight:800,
+                            background:deudaVencida?"#fef3f2":"#f8fafc",
+                            color:deudaVencida?"#b42318":t.textMuted,
+                            border:`1px solid ${deudaVencida?"#fecdca":t.cardBorder}`}}>
+                            {diasDesdePago!=null?`${diasDesdePago} días`:"-"}
+                          </span>
+                        </td>
                         <td style={S.td}>{c.notas||"-"}</td>
                         <td style={S.td}><button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button></td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 {!deudores.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>Sin deudores registrados.</div>}
@@ -3552,39 +3568,6 @@ export default function App(){
               </div>
               <Pagination page={clasPag.page} totalPages={clasPag.totalPages} setPage={clasPag.setPage} sectionRef={clasesRef} t={t}/>
             </div>
-
-            {/* Alerta deudores vencidos */}
-            {deudoresConAlerta.length>0&&(
-              <div style={{...S.card,marginBottom:24,border:`1px solid ${t.cardBorder}`,background:t.cardBg}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-                  <span style={{fontSize:20}}>🚨</span>
-                  <div>
-                    <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:17}}>Deudas vencidas — requieren atención</h3>
-                    <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
-                      Estos clientes superaron el período de gracia según el monto que abonaron. Considerá pasarlos a plan mensual o gestionar el cobro.
-                    </div>
-                  </div>
-                </div>
-                <div style={{display:"grid",gap:8}}>
-                  {deudoresConAlerta.map(c=>{
-                    const meses=mesesGracia(c.monto);
-                    const diasDesde=diffDays(parseISODate(c.fecha_inicio),getToday());
-                    return(
-                      <div key={c.id} className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:t.dark?"#101827":"#ffffff",border:`1px solid ${t.cardBorder}`,borderLeft:"4px solid #d92d20",gap:10,flexWrap:"wrap"}}>
-                        <div style={{cursor:"pointer"}} onClick={()=>setClienteDetalle(c)}>
-                          <span style={{fontWeight:700,color:t.accent,fontSize:14}}>{c.nombre}</span>
-                          <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · Pagó USD {c.monto} · Debe USD {c.deuda_restante}</span>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <span style={{fontSize:12,color:"#b42318",fontWeight:600}}>{diasDesde} días desde el inicio ({meses} meses de gracia ya vencidos)</span>
-                          <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
             {/* Pendientes de transferencia */}
             {pendientesTransferencia.length>0&&(
