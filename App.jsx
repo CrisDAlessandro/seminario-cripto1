@@ -1365,13 +1365,18 @@ export default function App(){
     if(!cajaFechaHabilitada(f))return null;
     const quien=cajaRecibeDirecto(recibe);
     if(!quien||montoNum<=0)return null;
+    const nombreKey=norm(nombre||"");
     const yaExiste=(cajaMovimientos||[]).some(m=>{
       const d=m?.detalle||{};
       if(m?.tipo!=="caja"||d?.concepto!=="movimiento")return false;
       if(ingresoId&&String(d.ingreso_id||"")===String(ingresoId))return true;
-      const mismaVenta=dateOnly(d.fecha)===f&&safeNum(d.monto)===montoNum&&String(d.cliente_id||"")===String(clienteId||"");
-      if(mismaVenta)return true;
-      return dateOnly(d.fecha)===f&&String(d.recibe||"")===quien&&safeNum(d.monto)===montoNum&&String(d.cliente_id||"")===String(clienteId||"")&&String(d.origen||"").startsWith(String(origen||"venta").slice(0,8));
+      const mismaFechaMonto=dateOnly(d.fecha)===f&&safeNum(d.monto)===montoNum;
+      const mismoCliente=clienteId&&String(d.cliente_id||m.cliente_id||"")===String(clienteId);
+      const mismoNombre=nombreKey&&norm(d.nombre||"")===nombreKey;
+      // Si es la misma venta/ingreso, no importa si el receptor quedó distinto por un dato viejo:
+      // no se debe duplicar en Caja como Cristian + Bahiano.
+      if(mismaFechaMonto&&(mismoCliente||mismoNombre))return true;
+      return mismaFechaMonto&&String(d.recibe||"")===quien&&String(d.origen||"").startsWith(String(origen||"venta").slice(0,8));
     });
     if(yaExiste)return null;
     const eliminadosFecha=(cajaMovimientos||[]).filter(m=>
@@ -2038,10 +2043,15 @@ export default function App(){
     const clavesReales=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${m.recibe}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}|${String(m.detalle?.ingreso_id||"")}`));
     const ingresosRealesCaja=new Set(movimientosReales.map(m=>String(m.detalle?.ingreso_id||"")).filter(Boolean));
     const ventasRealesCaja=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${String(m.detalle?.cliente_id||m.cliente_id||"")}`));
+    const ventasRealesPorNombre=new Set(movimientosReales.map(m=>`${dateOnly(m.fecha)}|${safeNum(m.monto)}|${norm(m.detalle?.nombre||"")}`).filter(k=>!k.endsWith("|")));
     const porCliente=Object.fromEntries((computed||[]).map(c=>[String(c.id),c]));
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
-      const quien=cajaRecibeDirecto(i.recibe||i.recibio_venta||i.vendedor||c.vendedor||"");
+      const receptorExplicito=i.recibe||i.recibio_venta||i.vendedor||c.vendedor||"";
+      // Importante: si el ingreso no trae receptor explícito, NO asumir Cristian.
+      // Esa suposición era la que duplicaba ventas de Bahiano como si Cristian hubiera recibido otra igual.
+      if(!String(receptorExplicito||"").trim())return null;
+      const quien=cajaRecibeDirecto(receptorExplicito);
       if(!quien)return null;
       // Si es venta de vendedor pendiente, no entra hasta marcar recibido.
       if(c.vendedor&&!cajaRecibeDirecto(c.vendedor)&&c.transferido!==true&&String(c.transferido)!=="true")return null;
@@ -2051,7 +2061,8 @@ export default function App(){
       const key=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|${String(i.id||"")}`;
       const keySinIngreso=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|`;
       const keyMismaVenta=`${fecha}|${monto}|${String(i.cliente_id||"")}`;
-      if((i.id&&ingresosRealesCaja.has(String(i.id)))||ventasRealesCaja.has(keyMismaVenta)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
+      const keyMismoNombre=`${fecha}|${monto}|${norm(i.cliente_nombre||c.nombre||"")}`;
+      if((i.id&&ingresosRealesCaja.has(String(i.id)))||ventasRealesCaja.has(keyMismaVenta)||ventasRealesPorNombre.has(keyMismoNombre)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
       return{
         id:`auto-ingreso-${i.id||fecha}-${i.cliente_id||""}`,
         tipo:"caja",
