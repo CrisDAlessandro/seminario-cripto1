@@ -1752,14 +1752,14 @@ export default function App(){
       cliente_id:null,
       usuario_email:user?.email||"—",
       tipo:"caja",
-      contenido:`Día de caja quitado del calendario: ${formatDate(f)}`,
+      contenido:`Día de caja eliminado del calendario: ${formatDate(f)}`,
       detalle:{concepto:"dia_eliminado",fecha:f,total,cantidad:delDia.length}
     };
     const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
     if(error){toast.error("No se pudo quitar el día de caja");return;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
-    await logH(user?.email,"quitó día de caja del calendario","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:f,cantidad:delDia.length,total});
-    toast.success("Día quitado del calendario de caja");
+    await logH(user?.email,"eliminó día de caja del calendario","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:f,cantidad:delDia.length,total});
+    toast.success("Día eliminado del calendario de caja");
   }
 
   async function restaurarDiaCaja(fecha){
@@ -2289,14 +2289,6 @@ export default function App(){
                 </div>
                 <button onClick={registrarMovimientoCaja} style={{...btn(false,true),height:42}}>Agregar a caja</button>
               </div>
-              <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",borderTop:`1px solid ${t.tdBorder}`,paddingTop:14}}>
-                <div>
-                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Quitar una fecha del calendario</label>
-                  <input type="date" value={cajaEliminarFecha} onChange={e=>setCajaEliminarFecha(e.target.value)} style={{...S.input,width:180}}/>
-                </div>
-                <button onClick={()=>askConfirm("Quitar día de caja",`¿Quitar del calendario de caja el ${formatDate(cajaEliminarFecha)}? No se borran los movimientos: quedan en historial, pero esa fecha deja de impactar en caja y arrastres.`,()=>eliminarDiaCaja(cajaEliminarFecha),{danger:true,label:"Quitar fecha"})} style={{...btn(false,false),height:42,color:"#b91c1c"}}>Quitar fecha</button>
-                {cajaDiasEliminados.length>0&&<div style={{fontSize:12,color:t.textMuted}}>Fechas quitadas: {cajaDiasEliminados.map(f=><span key={f} style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:6,padding:"4px 8px",borderRadius:999,background:t.btnLtBg,color:t.btnLtTx}}>{formatDate(f)} <button onClick={()=>restaurarDiaCaja(f)} style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,color:t.accent}}>restaurar</button></span>)}</div>}
-              </div>
             </div>
 
             <div style={S.card}>
@@ -2321,7 +2313,14 @@ export default function App(){
                             </div>
                             <div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{cajaTextoSaldo(saldo)}</div>
                           </div>
-                          <div style={{fontSize:22,fontWeight:900,color:Math.abs(saldo)<0.01?"#10b981":t.accent}}>USD {Math.abs(saldo)}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                            <div style={{fontSize:22,fontWeight:900,color:Math.abs(saldo)<0.01?"#10b981":t.accent}}>USD {Math.abs(saldo)}</div>
+                            <button
+                              title="Eliminar día del calendario"
+                              onClick={()=>askConfirm("Eliminar día de caja",`¿Seguro que querés eliminar del calendario de caja el ${formatDate(r.key)}? No se borran los movimientos del historial, pero ese día deja de impactar en caja y arrastres.`,()=>eliminarDiaCaja(r.key),{danger:true,label:"Eliminar día"})}
+                              style={{border:"none",borderRadius:10,padding:"7px 9px",cursor:"pointer",background:t.btnLtBg,color:"#b91c1c",fontWeight:800}}
+                            >🗑</button>
+                          </div>
                         </div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginTop:12}}>
                           <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Total del día</div><div style={{fontWeight:900}}>USD {r.total}</div></div>
