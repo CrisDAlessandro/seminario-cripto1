@@ -2094,10 +2094,12 @@ export default function App(){
     const virtuales=(ingresos||[]).map(i=>{
       const c=porCliente[String(i.cliente_id)]||{};
       const receptorExplicito=i.recibe||i.recibio_venta||i.vendedor||c.vendedor||"";
-      // Importante: si el ingreso no trae receptor explícito, NO asumir Cristian.
-      // Esa suposición era la que duplicaba ventas de Bahiano como si Cristian hubiera recibido otra igual.
-      if(!String(receptorExplicito||"").trim())return null;
-      const quien=cajaRecibeDirecto(receptorExplicito);
+      // Si el ingreso no trae receptor explícito, puede ser una venta directa de Cristian.
+      // Pero solo asumimos Cristian cuando el cliente tampoco tiene vendedor externo.
+      // Así se recuperan ventas directas que no generaron la nota de Caja, sin duplicar ventas de Bahiano/Luigi/Jeremy.
+      const receptorParaCaja=String(receptorExplicito||"").trim() ? receptorExplicito : (!String(c.vendedor||"").trim() ? "Cristian" : "");
+      if(!String(receptorParaCaja||"").trim())return null;
+      const quien=cajaRecibeDirecto(receptorParaCaja);
       if(!quien)return null;
       // Si es venta de vendedor pendiente, no entra hasta marcar recibido.
       if(c.vendedor&&!cajaRecibeDirecto(c.vendedor)&&c.transferido!==true&&String(c.transferido)!=="true")return null;
