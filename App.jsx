@@ -1211,7 +1211,7 @@ function PieChart({breakdown,title,t}){
 function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
   const btn=makeBtn(t);
   return(
-    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":"#ffffff",borderRadius:14,padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
+    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":accentBg,borderRadius:14,padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 10px 22px rgba(16,24,40,0.08)`}
       onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
       <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
@@ -1230,7 +1230,7 @@ function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLab
 function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t}){
   const S=makeS(t);
   return(
-    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280}}>
+    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280,borderTop:`3px solid ${accentBorder}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontSize:15,fontWeight:800,color:t.text}}>{titulo}</div>
         <div style={{minWidth:30,height:30,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:badgeBg,color:badgeColor,fontWeight:800,fontSize:13}}>{clientes.length}</div>
@@ -1440,7 +1440,7 @@ export default function App(){
   const[filtro,setFiltro]=useState("todos");
   const[form,setForm]=useState(FORM_DEF);
   const[renovarForm,setRenovarForm]=useState({...FORM_DEF,id:null});
-  const[dark,setDark]=useState(false);
+  const dark=false; // modo claro único: se elimina el modo oscuro para mantener estética consistente
   const[clienteDetalle,setClienteDetalle]=useState(null);
   const[pagoCliente,setPagoCliente]=useState(null);
   const[deudaCliente,setDeudaCliente]=useState(null);
@@ -2139,7 +2139,7 @@ export default function App(){
       if(c.estadoSistema==="gracia")b.gracia++;
       if(c.estadoSistema==="sacar"||c.estadoSistema==="vencido")b.sacar++;
       if(Number(c.deuda_restante||0)>0)b.deudores++;
-      if(c.servicio==="clases")b.clases++;
+      if(c.servicio==="clases"&&c.estado_manual!=="finalizado")b.clases++;
     });
     // Ingresos totales = marzo + abril + mayo + todos los meses siguientes.
     // Se calcula agrupando primero por mes y luego sumando esos mensuales,
@@ -2825,7 +2825,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
+    <div className="sc-app-shell" style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
@@ -2920,7 +2920,6 @@ export default function App(){
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
-            <button onClick={()=>setDark(!dark)} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15}}>{dark?"☀":"☾"}</button>
             <button onClick={logout} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:13}}>Salir</button>
           </div>
         </div>
@@ -3286,7 +3285,7 @@ export default function App(){
                 ["Ingresos totales",`USD ${resumen.ingresos}`,true,null,null],
               ].map(([l,v,a,onClick,subVal])=>(
                 <div key={l} onClick={onClick||undefined}
-                  style={{...S.card,borderTop:a?`3px solid ${t.accent}`:l==="Vencen esta semana"&&vencenEstaSemana>0?`3px solid #f59e0b`:undefined,cursor:onClick?"pointer":undefined,transition:"box-shadow 0.15s"}}
+                  style={{...S.card,borderTop:a?`3px solid ${t.accent}`:l==="Vencen esta semana"&&vencenEstaSemana>0?`3px solid #d19a32`:undefined,cursor:onClick?"pointer":undefined,transition:"box-shadow 0.15s, transform 0.15s",minHeight:112}}
                   onMouseEnter={e=>{if(onClick)e.currentTarget.style.boxShadow="0 4px 20px rgba(0,0,0,0.15)";}}
                   onMouseLeave={e=>{if(onClick)e.currentTarget.style.boxShadow=S.card.boxShadow;}}>
                   <div style={{fontSize:11,color:t.textMuted,marginBottom:6,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
@@ -3310,7 +3309,7 @@ export default function App(){
                 {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
                 <CriticosPanel titulo="Por vencer" badgeBg="#f6efe2" badgeColor="#8a5a12"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
-                  accentBorder={dark?"#876128":"#d9b16f"} accentBg={dark?"#101827":"#fffdfa"} accentText={dark?"#fdba74":"#8a5a12"}
+                  accentBorder={dark?"#876128":"#d19a32"} accentBg={dark?"#101827":"#fffdfa"} accentText={dark?"#fdba74":"#8a5a12"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3320,7 +3319,7 @@ export default function App(){
                 {/* En gracia: fondo siempre claro (amarillo) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="En gracia" badgeBg="#f5efdd" badgeColor="#7f5f15"
                   clientes={vencimientosCriticos.gracia} {...cGrPag}
-                  accentBorder="#ddd1a4" accentBg="#fffef9" accentText="#7f5f15"
+                  accentBorder="#d6b94c" accentBg="#fffef9" accentText="#80620f"
                   nameColor="#1a0e00"
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3330,7 +3329,7 @@ export default function App(){
                 {/* Vencidos: fondo siempre claro (rosa) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="Vencidos" badgeBg="#f8e9e8" badgeColor="#9b3b32"
                   clientes={vencimientosCriticos.vencidos} {...cVePag}
-                  accentBorder="#e0b5b0" accentBg="#fffafa" accentText="#9b3b32"
+                  accentBorder="#d65f54" accentBg="#fffafa" accentText="#9b3b32"
                   nameColor="#1a0000"
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3420,7 +3419,7 @@ export default function App(){
                             </span>
                           ):"-"}
                         </td>
-                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
+                        <td style={S.td}><span style={badgeStyle(c.estado_manual==="finalizado"?"finalizado":"activo")}>{c.estado_manual==="finalizado"?"FINALIZADO":"ACTIVO"}</span></td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                             {c.servicio==="clases"?(
@@ -3460,7 +3459,7 @@ export default function App(){
                         <td style={S.td}>{svcLabel(c.servicio)}</td>
                         <td style={S.td}>{c.vencimiento?formatDate(c.vencimiento):"-"}</td>
                         <td style={S.td}>{c.vencimiento!=null?c.dias:"-"}</td>
-                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
+                        <td style={S.td}><span style={badgeStyle(c.estado_manual==="finalizado"?"finalizado":"activo")}>{c.estado_manual==="finalizado"?"FINALIZADO":"ACTIVO"}</span></td>
                       </tr>
                     ))}
                   </tbody>
@@ -3518,7 +3517,7 @@ export default function App(){
                         <td style={S.td}>{formatDate(c.fecha_inicio)}</td>
                         <td style={S.td}>{monthLabel(monthKey(c.fecha_inicio))}</td>
                         <td style={{...S.td,color:t.accent,fontWeight:700}}>USD {c.monto}</td>
-                        <td style={S.td}><span style={badgeStyle(c.estadoSistema)}>{c.estadoSistema.toUpperCase()}</span></td>
+                        <td style={S.td}><span style={badgeStyle(c.estado_manual==="finalizado"?"finalizado":"activo")}>{c.estado_manual==="finalizado"?"FINALIZADO":"ACTIVO"}</span></td>
                         <td style={S.td}>{c.notas||"-"}</td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
