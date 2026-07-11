@@ -26,26 +26,31 @@ function traducirError(msg) {
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{margin:0;}
+  body{margin:0;background:#f3f0ea;}
   button,input,select,textarea{font-family:inherit;}
-  button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease;}
+  button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
   button:not(:disabled):hover{transform:translateY(-1px);}
   button:disabled{cursor:not-allowed;opacity:.55;}
   input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
-  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(201,151,42,.14)!important;border-color:#c9972a!important;}
-  table tbody tr{transition:background .14s ease;}
-  table tbody tr:hover{background:rgba(201,151,42,.035);}
-  ::selection{background:rgba(201,151,42,.25);}
+  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(178,124,24,.13)!important;border-color:#b27c18!important;}
+  table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
+  table tbody tr:hover{background:rgba(17,24,39,.025);}
+  ::selection{background:rgba(178,124,24,.24);}
   ::-webkit-scrollbar{width:10px;height:10px;}
   ::-webkit-scrollbar-track{background:transparent;}
-  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
-  ::-webkit-scrollbar-thumb:hover{background:rgba(201,151,42,.55);border:2px solid transparent;background-clip:content-box;}
-  .sc-app-shell{background-image:none;}
-  .sc-topbar{position:relative;z-index:1;background:#ffffff;border:1px solid rgba(226,221,215,.95);box-shadow:0 8px 24px rgba(16,24,40,.045);}
-  .sc-dark .sc-topbar{background:#111827;border-color:#263754;box-shadow:0 10px 28px rgba(0,0,0,.26);}
-  .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;}
-  .sc-card-premium:hover{box-shadow:0 14px 30px rgba(16,24,40,.075);border-color:rgba(201,151,42,.34);}
-  .sc-dark .sc-card-premium:hover{box-shadow:0 16px 34px rgba(0,0,0,.32);border-color:rgba(201,151,42,.32);}
+  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.32);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(178,124,24,.52);border:2px solid transparent;background-clip:content-box;}
+  .sc-app-shell{background-image:linear-gradient(180deg,#f5f2ed 0%,#eee9e1 100%);}
+  .sc-dark{background-image:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
+  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.82);border:1px solid rgba(226,221,215,.95);box-shadow:0 10px 28px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
+  .sc-dark .sc-topbar{background:rgba(17,24,39,.82);border-color:#263754;box-shadow:0 12px 30px rgba(0,0,0,.26);}
+  .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
+  .sc-card-premium:hover{box-shadow:0 16px 38px rgba(16,24,40,.085);border-color:rgba(178,124,24,.34);}
+  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34);border-color:rgba(214,163,55,.34);}
+  .sc-soft-card{background:rgba(255,255,255,.84);border:1px solid rgba(228,221,211,.95);box-shadow:0 14px 36px rgba(16,24,40,.06);}
+  .sc-dark .sc-soft-card{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 18px 42px rgba(0,0,0,.30);}
+  .sc-section-title{letter-spacing:-.035em;}
+  .sc-action-icon{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;}
   @media(max-width:640px){
     .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
     .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
@@ -329,53 +334,53 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#080d17":"#f4f1eb",
-    surface:          dark?"#101827":"#ffffff",
-    cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#25324a":"#e4ddd2",
-    cardShadow:       dark?"0 14px 34px rgba(0,0,0,.28)":"0 10px 26px rgba(16,24,40,.055)",
-    text:             dark?"#f5f7fb":"#101828",
-    textMuted:        dark?"#98a5bd":"#657187",
-    accent:           "#bd8617",
-    accentSoft:       dark?"rgba(189,134,23,.14)":"#f7ead0",
-    accentBorder:     dark?"rgba(189,134,23,.38)":"#dfbf7d",
-    accentGrad:       "linear-gradient(135deg,#d8a53a 0%,#bd8617 100%)",
-    navyGrad:         dark?"linear-gradient(135deg,#d8a53a 0%,#bd8617 100%)":"linear-gradient(135deg,#111827 0%,#1f2937 100%)",
-    inputBg:          dark?"#0b1220":"#ffffff",
-    inputBorder:      dark?"#2d3b55":"#d6d0c7",
-    inputText:        dark?"#f5f7fb":"#101828",
-    thBg:             dark?"#0b1220":"#f6f2ec",
-    tdBorder:         dark?"#1e2a3f":"#eee7dd",
-    btnDkBg:          dark?"#d8a53a":"#111827",
-    btnDkTx:          dark?"#101828":"#fff",
-    btnLtBg:          dark?"#151f31":"#ffffff",
-    btnLtTx:          dark?"#d4dcee":"#344054",
-    navActBg:         dark?"#d8a53a":"#111827",
-    navActTx:         dark?"#101828":"#fff",
-    navInBg:          dark?"#111827":"#ffffff",
-    navInTx:          dark?"#d4dcee":"#344054",
-    navInBr:          dark?"#2d3b55":"#ded6cb",
-    barBg:            dark?"#1a263a":"#ebe4da",
-    success:          "#12b76a",
-    danger:           "#ef4444",
-    warning:          "#f59e0b",
+    bg:               dark?"#0b1220":"#f2eee7",
+    surface:          dark?"#111827":"#ffffff",
+    cardBg:           dark?"#111827":"#fffdf9",
+    cardBorder:       dark?"#263754":"#e3dbce",
+    cardShadow:       dark?"0 18px 44px rgba(0,0,0,.30)":"0 14px 36px rgba(16,24,40,.060)",
+    text:             dark?"#f7f9fc":"#0f172a",
+    textMuted:        dark?"#9aa7bd":"#64748b",
+    accent:           "#b27c18",
+    accentSoft:       dark?"rgba(214,163,55,.13)":"#fbf3df",
+    accentBorder:     dark?"rgba(214,163,55,.35)":"#e6cf9d",
+    accentGrad:       "linear-gradient(135deg,#d9a43a 0%,#b27c18 100%)",
+    navyGrad:         dark?"linear-gradient(135deg,#d9a43a 0%,#b27c18 100%)":"linear-gradient(135deg,#0f172a 0%,#1e293b 100%)",
+    inputBg:          dark?"#0b1220":"#fffefa",
+    inputBorder:      dark?"#30405c":"#d8d0c4",
+    inputText:        dark?"#f7f9fc":"#0f172a",
+    thBg:             dark?"#0b1220":"#f7f3ed",
+    tdBorder:         dark?"#22304a":"#ece4d9",
+    btnDkBg:          dark?"#d9a43a":"#0f172a",
+    btnDkTx:          dark?"#0f172a":"#fff",
+    btnLtBg:          dark?"#151f31":"#fffefa",
+    btnLtTx:          dark?"#d8e0ef":"#334155",
+    navActBg:         dark?"#d9a43a":"#0f172a",
+    navActTx:         dark?"#0f172a":"#fff",
+    navInBg:          dark?"#111827":"#fffefa",
+    navInTx:          dark?"#d8e0ef":"#334155",
+    navInBr:          dark?"#30405c":"#ded5c8",
+    barBg:            dark?"#1a263a":"#e8e0d4",
+    success:          "#079455",
+    danger:           "#d92d20",
+    warning:          "#dc8a00",
     dark,
   };
 }
 function makeS(t){
   return{
-    card: {background:t.cardBg,borderRadius:18,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
-    input:{width:"100%",padding:"12px 14px",borderRadius:11,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:"none"},
-    label:{display:"block",fontSize:10.5,fontWeight:800,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
+    card: {background:t.cardBg,borderRadius:22,padding:26,boxShadow:t.cardShadow,border:`1px solid ${t.cardBorder}`},
+    input:{width:"100%",padding:"12px 14px",borderRadius:13,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",boxSizing:"border-box",background:t.inputBg,color:t.inputText,boxShadow:"inset 0 1px 0 rgba(255,255,255,.35)"},
+    label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.08em",textTransform:"uppercase"},
     table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14},
-    td:   {padding:"13px 14px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
+    td:   {padding:"14px 16px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
     thRow:{background:t.thBg},
   };
 }
 function makeBtn(t){
   return function btn(dark=false,gold=false){
-    if(gold)return{padding:"11px 20px",borderRadius:12,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(168,111,18,.18)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#101828",boxShadow:t.dark?"0 10px 26px rgba(0,0,0,.22)":"0 10px 22px rgba(201,151,42,.22)"};
-    return{padding:"10px 16px",borderRadius:12,border:`1px solid ${dark?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:750,fontSize:14,background:dark?t.navyGrad:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx,boxShadow:dark?(t.dark?"0 10px 26px rgba(0,0,0,.22)":"0 10px 22px rgba(15,23,42,.12)"):"none"};
+    if(gold)return{padding:"11px 20px",borderRadius:13,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(178,124,24,.22)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#0f172a",boxShadow:t.dark?"0 12px 28px rgba(0,0,0,.24)":"0 10px 24px rgba(178,124,24,.20)"};
+    return{padding:"10px 16px",borderRadius:13,border:`1px solid ${dark?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:760,fontSize:14,background:dark?t.navyGrad:t.btnLtBg,color:dark?t.btnDkTx:t.btnLtTx,boxShadow:dark?(t.dark?"0 12px 28px rgba(0,0,0,.24)":"0 10px 24px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.5)"};
   };
 }
 
@@ -404,21 +409,21 @@ function useSafeBackdropClose(onClose, enabled=true){
 
 function makeNavBtn(t){
   return function navBtn(active){
-    return{padding:"10px 17px",borderRadius:12,cursor:"pointer",fontWeight:800,fontSize:14,
+    return{padding:"10px 17px",borderRadius:13,cursor:"pointer",fontWeight:820,fontSize:14,
       border:active?"1px solid transparent":`1px solid ${t.navInBr}`,
       background:active?t.navyGrad:t.navInBg,color:active?t.navActTx:t.navInTx,
-      boxShadow:active?(t.dark?"0 10px 22px rgba(0,0,0,.24)":"0 8px 18px rgba(15,23,42,.10)"):"none"};
+      boxShadow:active?(t.dark?"0 12px 26px rgba(0,0,0,.26)":"0 9px 22px rgba(15,23,42,.12)"):"0 1px 0 rgba(255,255,255,.52)"};
   };
 }
 function badgeStyle(status){
-  const b={display:"inline-block",padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,letterSpacing:"0.05em",border:"1px solid transparent"};
-  if(status==="activo")  return{...b,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
-  if(status==="gracia")  return{...b,background:"#fef3c7",color:"#92400e",borderColor:"#fde68a"};
-  if(status==="vencido") return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
-  if(status==="clases")  return{...b,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
-  if(status==="finalizado") return{...b,background:"#e5e7eb",color:"#374151",borderColor:"#d1d5db"};
-  if(status==="sacar")   return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
-  return{...b,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
+  const b={display:"inline-flex",alignItems:"center",padding:"4px 10px",borderRadius:999,fontSize:10.5,fontWeight:850,letterSpacing:"0.055em",border:"1px solid transparent",textTransform:"uppercase"};
+  if(status==="activo")  return{...b,background:"#ecfdf3",color:"#067647",borderColor:"#abefc6"};
+  if(status==="gracia")  return{...b,background:"#fffaeb",color:"#b54708",borderColor:"#fedf89"};
+  if(status==="vencido") return{...b,background:"#fef3f2",color:"#b42318",borderColor:"#fecdca"};
+  if(status==="clases")  return{...b,background:"#f4f3ff",color:"#5925dc",borderColor:"#d9d6fe"};
+  if(status==="finalizado") return{...b,background:"#f2f4f7",color:"#344054",borderColor:"#d0d5dd"};
+  if(status==="sacar")   return{...b,background:"#fef3f2",color:"#b42318",borderColor:"#fecdca"};
+  return{...b,background:"#f8fafc",color:"#334155",borderColor:"#d0d5dd"};
 }
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -495,7 +500,7 @@ function ConfirmModal({open,title,message,confirmLabel="Confirmar",danger=false,
   const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
     <div
-      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}}
       onMouseDown={startBackdrop}
       onMouseUp={endBackdrop}
       onClick={e=>e.stopPropagation()}
@@ -534,7 +539,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
   },[clientes,q]);
   const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"72px 24px",zIndex:3000}} {...backdropProps}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"72px 24px",zIndex:3000}} {...backdropProps}>
       <div style={{background:t.cardBg,borderRadius:18,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",overflow:"hidden"}} {...modalProps}>
         <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:t.textMuted,fontSize:17}}>🔍</span>
@@ -737,7 +742,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.82)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.74)",backdropFilter:"blur(4px)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
       <div {...modalProps} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
 
         {/* Header */}
@@ -904,7 +909,7 @@ function DeudaModal({cliente,onClose,onConfirm,t}){
   };
   const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2100}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
       <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onMouseDown={cancelBackdrop} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
         <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Editar deuda</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
@@ -957,7 +962,7 @@ function PagoModal({cliente,onClose,onConfirm,t}){
   };
   const cancelBackdrop=e=>{backdropMouseDown.current=null;e.stopPropagation();};
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.8)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:2000}} onMouseDown={startBackdrop} onMouseUp={endBackdrop} onClick={e=>e.stopPropagation()}>
       <div style={{background:t.cardBg,borderRadius:18,padding:32,border:`1px solid ${t.cardBorder}`,maxWidth:430,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)"}} onMouseDown={cancelBackdrop} onMouseUp={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
         <h3 style={{margin:"0 0 4px",color:t.text,fontSize:18,fontWeight:800}}>Registrar pago de deuda</h3>
         <p style={{margin:"0 0 20px",color:t.textMuted,fontSize:13}}>
@@ -1025,7 +1030,7 @@ function TableHeader({cols,t}){
   const S=makeS(t);
   return(
     <tr style={S.thRow}>
-      {cols.map((h,idx)=>(<th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:850,fontSize:10.5,letterSpacing:"0.085em",textTransform:"uppercase",borderTop:idx===0?`1px solid ${t.tdBorder}`:undefined}}>{h}</th>))}
+      {cols.map((h,idx)=>(<th key={h} style={{textAlign:"left",...S.td,color:t.textMuted,fontWeight:850,fontSize:10.5,letterSpacing:"0.085em",textTransform:"uppercase",borderTop:idx===0?`1px solid ${t.tdBorder}`:undefined,background:t.thBg}}>{h}</th>))}
     </tr>
   );
 }
@@ -1033,9 +1038,9 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,minHeight:128}}>
-      <div style={{fontSize:10.5,color:t.textMuted,marginBottom:12,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
-      <div style={{fontSize:28,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.04em",display:"flex",alignItems:"baseline",gap:8,lineHeight:1.05}}>
+    <div className="sc-card-premium" style={{...S.card,position:"relative",overflow:"hidden",minHeight:124,padding:"22px 24px",borderLeft:accent?`4px solid ${t.accent}`:`1px solid ${t.cardBorder}`,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+      <div style={{fontSize:10.5,color:t.textMuted,marginBottom:11,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
+      <div style={{fontSize:28,fontWeight:900,color:accent?t.accent:t.text,letterSpacing:"-0.045em",display:"flex",alignItems:"baseline",gap:8,lineHeight:1.05}}>
         {value}
         {trend!=null&&<span style={{fontSize:12,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
       </div>
@@ -2740,8 +2745,8 @@ export default function App(){
     return(
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"#080e1a",padding:24}}>
-          <div style={{width:390,background:"#111827",borderRadius:20,padding:36,border:"1px solid #1e2d45",boxShadow:"0 8px 48px rgba(0,0,0,0.7)"}}>
+        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"linear-gradient(180deg,#0b1220 0%,#070b13 100%)",padding:24}}>
+          <div style={{width:390,background:"#111827",borderRadius:24,padding:38,border:"1px solid #263754",boxShadow:"0 24px 70px rgba(0,0,0,0.58)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
               <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
@@ -2784,7 +2789,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif"}}>
+    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
@@ -2856,14 +2861,14 @@ export default function App(){
       {deudaCliente&&<DeudaModal cliente={deudaCliente} onClose={()=>setDeudaCliente(null)} onConfirm={actualizarDeudaCliente} t={t}/>}
       {showRenovar&&<ClienteForm title="Renovar cliente" subtitle="Actualizar plan y registrar nuevo ingreso" form={renovarForm} setForm={setRenovarForm} onGuardar={guardarRenovacion} onCancelar={()=>setShowRenovar(false)} guardando={renovando} isModal t={t}/>}
 
-      <div style={{maxWidth:1360,margin:"0 auto",padding:"24px 28px 38px"}} className="sc-pad">
+      <div style={{maxWidth:1380,margin:"0 auto",padding:"28px 32px 44px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:30,flexWrap:"wrap",padding:"16px 18px",borderRadius:18}}>
+        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:32,flexWrap:"wrap",padding:"18px 20px",borderRadius:22}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.35))":"drop-shadow(0 8px 16px rgba(201,151,42,.18))"}} onError={e=>{e.target.style.display="none";}}/>
+            <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.30))":"drop-shadow(0 8px 16px rgba(178,124,24,.14))"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
-              <h1 style={{margin:0,fontSize:23,fontWeight:950,color:t.text,letterSpacing:"-0.04em",lineHeight:1}}>Seminario Cripto</h1>
+              <h1 style={{margin:0,fontSize:24,fontWeight:950,color:t.text,letterSpacing:"-0.045em",lineHeight:1}}>Seminario Cripto</h1>
               <div className="sc-hide-mobile" style={{color:t.textMuted,fontSize:13,marginTop:5}}>Panel de gestión comercial y operativa</div>
             </div>
           </div>
