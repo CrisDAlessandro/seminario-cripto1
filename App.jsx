@@ -1194,7 +1194,7 @@ function HistorialView({t}){
         <>
           <div className="sc-table-wrap" style={{overflowX:"auto"}}>
             <table className="sc-hist-table" style={S.table}>
-              <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente","Detalle"]} t={t}/></thead>
+              <thead><TableHeader cols={["Fecha y hora","Usuario","Acción","Cliente / sección","Detalle"]} t={t}/></thead>
               <tbody>
                 {pag.rows.map(h=>(
                   <tr key={h.id}>
@@ -1694,7 +1694,7 @@ export default function App(){
     if(error){toast.error("No se pudo registrar el movimiento de caja");return;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
     setCajaForm(prev=>({...prev,monto:""}));
-    await logH(user?.email,"registró movimiento de caja","caja",data?.id||null,{fecha,recibe,monto});
+    await logH(user?.email,"registró movimiento de caja","caja",data?.id||null,{nombre:"Caja diaria",fecha,recibe,monto});
     toast.success("Movimiento de caja registrado");
   }
   async function marcarCajaNeteada(fecha,saldo){
@@ -1710,15 +1710,31 @@ export default function App(){
     const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
     if(error){toast.error("No se pudo marcar la caja como neteada");return;}
     setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
-    await logH(user?.email,"marcó caja neteada","caja",data?.id||null,{fecha:payload.detalle.fecha,saldo_cancelado:saldoReal});
+    await logH(user?.email,"marcó caja neteada","caja",data?.id||null,{nombre:"Caja diaria",fecha:payload.detalle.fecha,saldo_cancelado:saldoReal});
     toast.success("Caja marcada como neteada");
   }
   async function eliminarMovimientoCaja(id){
+    const mov=(cajaMovimientos||[]).find(m=>m.id===id);
     const{error}=await supabase.from("notas_cliente").delete().eq("id",id);
     if(error){toast.error("No se pudo eliminar el movimiento");return;}
     setCajaMovimientos(prev=>prev.filter(m=>m.id!==id));
+    await logH(user?.email,"eliminó movimiento de caja","caja",id,{nombre:"Caja diaria",fecha:mov?.detalle?.fecha,recibe:mov?.detalle?.recibe,monto:mov?.detalle?.monto,concepto:mov?.detalle?.concepto||"movimiento"});
     toast.success("Movimiento eliminado");
   }
+
+  async function eliminarDiaCaja(fecha,registros=[]){
+    const ids=(registros||[]).map(m=>m.id).filter(Boolean);
+    const reales=ids.filter(id=>!String(id).startsWith("tmp-"));
+    if(reales.length){
+      const{error}=await supabase.from("notas_cliente").delete().in("id",reales);
+      if(error){toast.error("No se pudo eliminar el día de caja");return;}
+    }
+    setCajaMovimientos(prev=>prev.filter(m=>!(ids.includes(m.id)||(dateOnly(m.detalle?.fecha)===fecha&&m.tipo==="caja"))));
+    const total=(registros||[]).filter(m=>m.concepto!=="neteada").reduce((a,m)=>a+safeNum(m.monto),0);
+    await logH(user?.email,"eliminó día de caja","caja",null,{nombre:"Caja diaria",fecha,cantidad:ids.length,total});
+    toast.success("Día de caja eliminado");
+  }
+
   async function deshacerCajaNeteada(ids=[]){
     const reales=(ids||[]).filter(Boolean).filter(id=>!String(id).startsWith("tmp-"));
     if(reales.length){
@@ -1726,7 +1742,7 @@ export default function App(){
       if(error){toast.error("No se pudo deshacer el neteo");return;}
     }
     setCajaMovimientos(prev=>prev.filter(m=>!ids.includes(m.id)));
-    await logH(user?.email,"deshizo caja neteada","caja",null,{ids});
+    await logH(user?.email,"deshizo caja neteada","caja",null,{nombre:"Caja diaria",ids});
     toast.success("Caja neteada deshecha");
   }
 
@@ -1890,7 +1906,7 @@ export default function App(){
       const saldoCancelado=neteos.reduce((a,m)=>a+safeNum(m.saldoCancelado),0);
       const saldoFinal=saldoAntesNeteo-saldoCancelado;
       const neteado=neteos.length>0&&Math.abs(saldoFinal)<0.01;
-      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,movimientos,neteos});
+      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,movimientos,neteos,registros:delDia});
       saldo=saldoFinal;
     });
     return rows.sort((a,b)=>b.key.localeCompare(a.key));
@@ -2208,7 +2224,6 @@ export default function App(){
               <div className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:18}}>
                 <div>
                   <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Caja diaria</h3>
-                  <div style={{fontSize:13,color:t.textMuted,marginTop:4}}>Registrá quién recibió cada cobro. La caja calcula mitad y mitad, muestra quién debe transferir y arrastra el saldo si no se netea ese día.</div>
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,alignItems:"end",marginBottom:18}}>
@@ -2266,6 +2281,7 @@ export default function App(){
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoFinal)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
                             {tieneNeteo&&<button onClick={()=>askConfirm("Deshacer caja neteada","¿Deshacer el neteo de este día para que vuelva a calcular y arrastrar el saldo?",()=>deshacerCajaNeteada(r.neteos.map(n=>n.id)),{danger:false,label:"Deshacer"})} style={{...btn(false,false),padding:"8px 12px"}}>Deshacer neteo</button>}
+                            {r.registros?.length>0&&<button onClick={()=>askConfirm("Eliminar día de caja",`¿Eliminar todos los movimientos de caja del ${formatDate(r.key)}? Esto queda registrado en historial.`,()=>eliminarDiaCaja(r.key,r.registros),{danger:true,label:"Eliminar día"})} style={{...btn(false,false),padding:"8px 12px",color:"#b91c1c"}}>Eliminar día</button>}
                           </div>
                         </div>
                         {r.movimientos.length>0&&(
