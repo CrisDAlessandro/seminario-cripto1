@@ -1073,19 +1073,22 @@ function Pagination({page,totalPages,setPage,sectionRef,t}){
   const btn=makeBtn(t);
   if(totalPages<=1)return null;
   function goTo(n){setPage(n);}
-  const pages=Array.from({length:totalPages},(_,i)=>i+1);
+  function compactPages(){
+    if(totalPages<=7)return Array.from({length:totalPages},(_,i)=>i+1);
+    if(page<=4)return [1,2,3,4,5,"ellipsis-right",totalPages];
+    if(page>=totalPages-3)return [1,"ellipsis-left",totalPages-4,totalPages-3,totalPages-2,totalPages-1,totalPages];
+    return [1,"ellipsis-left",page-1,page,page+1,"ellipsis-right",totalPages];
+  }
+  const pages=compactPages();
   return(
-    <div style={{marginTop:18,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      
-      <div style={{display:"flex",alignItems:"center",gap:7,flex:"1 1 auto",justifyContent:"flex-end",minWidth:0,flexWrap:"nowrap"}}>
-        <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
-        <div style={{display:"flex",alignItems:"center",gap:7,overflowX:"auto",overflowY:"hidden",whiteSpace:"nowrap",maxWidth:"min(100%,620px)",padding:"2px 2px 6px",scrollbarWidth:"thin"}}>
-          {pages.map(n=>(
-            <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(n)}>{n}</button>
-          ))}
-        </div>
-        <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
-      </div>
+    <div style={{marginTop:18,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+      <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
+      {pages.map((n,idx)=>typeof n==="string"?(
+        <span key={`${n}-${idx}`} style={{color:t.textMuted,fontWeight:900,padding:"0 2px",lineHeight:"30px"}}>…</span>
+      ):(
+        <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(n)}>{n}</button>
+      ))}
+      <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
     </div>
   );
 }
@@ -3015,7 +3018,7 @@ export default function App(){
                     const actual=w.key===semanaActualKey;
                     const pct=Math.max(4,(w.total/maxSemanaTotal)*100);
                     return(
-                      <div key={w.key} ref={actual?semanaActualRef:null} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:actual?(t.dark?"rgba(245,158,11,0.10)":"#fffbeb"):(t.dark?"#0d1526":"#fff"),boxShadow:actual?"0 10px 32px rgba(245,158,11,0.20)":"none"}}>
+                      <div key={w.key} ref={actual?semanaActualRef:null} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:t.dark?"#0d121b":(actual?"#fffbeb":"#fff"),boxShadow:actual?"0 10px 32px rgba(245,158,11,0.20)":"none"}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
                           <div>
                             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -3031,7 +3034,7 @@ export default function App(){
                         </div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(82px,1fr))",gap:6,marginTop:12,overflowX:"auto"}}>
                           {w.dias.map(d=>(
-                            <div key={d.key} style={{minWidth:82,padding:"7px 8px",borderRadius:10,background:d.total>0?(t.dark?"#1a2540":"#eef7ff"):(t.dark?"#0b1220":"#f8f6f3"),border:`1px solid ${t.tdBorder}`}}>
+                            <div key={d.key} style={{minWidth:82,padding:"7px 8px",borderRadius:10,background:t.dark?"#0b0f17":(d.total>0?"#eef7ff":"#f8f6f3"),border:`1px solid ${t.tdBorder}`}}>
                               <div style={{fontSize:10,color:t.textMuted,fontWeight:700}}>{d.label}</div>
                               <div style={{fontSize:12,fontWeight:900,color:d.total>0?t.text:t.textMuted}}>USD {d.total}</div>
                             </div>
@@ -3068,7 +3071,7 @@ export default function App(){
                     const tieneNeteo=r.neteos.length>0;
                     const necesitaNeteo=Math.abs(r.saldoFinal)>0.01;
                     return(
-                      <div key={r.key} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:actual?(t.dark?"rgba(245,158,11,0.10)":"#fffbeb"):(t.dark?"#0d1526":"#fff")}}>
+                      <div key={r.key} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:t.dark?"#0d121b":(actual?"#fffbeb":"#fff")}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
                           <div>
                             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -3088,10 +3091,10 @@ export default function App(){
                           </div>
                         </div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginTop:12}}>
-                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Total del día</div><div style={{fontWeight:900}}>USD {r.total}</div></div>
-                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Cristian recibió</div><div style={{fontWeight:900}}>USD {r.cristian}</div></div>
-                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Bahiano recibió</div><div style={{fontWeight:900}}>USD {r.bahiano}</div></div>
-                          <div style={{padding:10,borderRadius:12,background:t.dark?"#111827":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Total del día</div><div style={{fontWeight:900}}>USD {r.total}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Cristian recibió</div><div style={{fontWeight:900}}>USD {r.cristian}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Bahiano recibió</div><div style={{fontWeight:900}}>USD {r.bahiano}</div></div>
+                          <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:12}}>
                           <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.neteado?"Este día quedó cerrado y no arrastra saldo.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
@@ -3103,7 +3106,7 @@ export default function App(){
                         {r.movimientos.length>0&&(
                           <div style={{marginTop:10,display:"grid",gap:6}}>
                             {r.movimientos.map(m=>(
-                              <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:12,color:t.textMuted,padding:"6px 8px",borderRadius:10,background:t.dark?"#0b1220":"#fafaf9"}}>
+                              <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:12,color:t.textMuted,padding:"6px 8px",borderRadius:10,background:t.dark?"#0b0f17":"#fafaf9"}}>
                                 <span>{m.recibe} recibió USD {m.monto}</span>
                                 <button onClick={()=>askConfirm("Eliminar movimiento",`¿Eliminar este movimiento de caja de USD ${m.monto}?`,()=>eliminarMovimientoCaja(m.id),{danger:true,label:"Eliminar"})} style={{border:"none",borderRadius:8,padding:"4px 7px",cursor:"pointer",background:t.btnLtBg,color:t.btnLtTx}}>🗑</button>
                               </div>
