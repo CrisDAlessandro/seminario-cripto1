@@ -26,13 +26,15 @@ function traducirError(msg) {
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{margin:0;background:#eef1f5;color:#101828;}
-  button,input,select,textarea{font-family:inherit;}
+  body{margin:0;background:#f4f6f8;color:#101828;}
+  button,input,select,textarea{font-family:inherit;-webkit-appearance:none;appearance:none;}
   button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
   button:not(:disabled):hover{transform:translateY(-1px);}
   button:disabled{cursor:not-allowed;opacity:.55;}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;}
+  input::placeholder,textarea::placeholder{color:#98a2b3;opacity:1;}
   input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
-  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.12)!important;border-color:#1f4e79!important;background:#fff!important;}
+  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.10)!important;border-color:#1f4e79!important;}
   table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
   table tbody tr:hover{background:rgba(31,78,121,.045)!important;}
   ::selection{background:rgba(31,78,121,.18);}
@@ -43,23 +45,23 @@ const MOBILE_CSS = `
 
   .sc-app-shell{background:
     radial-gradient(circle at top left, rgba(31,78,121,.08), transparent 34%),
-    linear-gradient(180deg,#f7f8fb 0%,#eef1f5 48%,#e9edf3 100%);}
+    linear-gradient(180deg,#f8fafc 0%,#f3f5f8 45%,#eef2f6 100%);}
   .sc-dark{background:linear-gradient(180deg,#0b1220 0%,#070b13 100%);}
 
-  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.92);border:1px solid rgba(209,216,226,.95);box-shadow:0 18px 44px rgba(16,24,40,.075);backdrop-filter:blur(10px);}
+  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.96);border:1px solid rgba(219,226,234,.95);box-shadow:0 10px 30px rgba(16,24,40,.06);backdrop-filter:blur(10px);}
   .sc-dark .sc-topbar{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 16px 40px rgba(0,0,0,.30);}
 
   .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
   .sc-card-premium:hover{box-shadow:0 18px 42px rgba(16,24,40,.10)!important;border-color:rgba(31,78,121,.24)!important;}
   .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34)!important;border-color:rgba(214,163,55,.34)!important;}
-  .sc-soft-card{background:rgba(255,255,255,.92);border:1px solid rgba(209,216,226,.95);box-shadow:0 18px 42px rgba(16,24,40,.07);}
+  .sc-soft-card{background:rgba(255,255,255,.96);border:1px solid rgba(224,229,236,.96);box-shadow:0 10px 30px rgba(16,24,40,.055);}
   .sc-dark .sc-soft-card{background:rgba(17,24,39,.90);border-color:#263754;box-shadow:0 18px 42px rgba(0,0,0,.30);}
   .sc-section-title{letter-spacing:-.035em;}
   .sc-action-icon{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;}
 
   .sc-header img{filter:drop-shadow(0 8px 16px rgba(178,124,24,.18));}
   .sc-nav button{min-height:42px;}
-  .sc-table-wrap{border:1px solid rgba(209,216,226,.78);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 1px 0 rgba(16,24,40,.02);}
+  .sc-table-wrap{border:1px solid rgba(224,229,236,.92);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 10px 24px rgba(16,24,40,.035);}
   .sc-dark .sc-table-wrap{background:#111827;border-color:#263754;}
   .sc-hist-table{border-collapse:separate!important;border-spacing:0!important;}
   .sc-hist-table th:first-child, .sc-hist-table td:first-child{padding-left:18px!important;}
@@ -349,34 +351,34 @@ const FORM_DEF={nombre:"",email:"",telefono:"",servicio:"mensual",fecha_inicio:t
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
   return{
-    bg:               dark?"#0b1220":"#eef1f5",
+    bg:               dark?"#0b1220":"#f4f6f8",
     surface:          dark?"#111827":"#ffffff",
     cardBg:           dark?"#111827":"#ffffff",
-    cardBorder:       dark?"#263754":"#d7dee8",
-    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 16px 42px rgba(16,24,40,.070)",
+    cardBorder:       dark?"#263754":"#e4e7ec",
+    cardShadow:       dark?"0 20px 48px rgba(0,0,0,.34)":"0 10px 28px rgba(16,24,40,.06)",
     text:             dark?"#f7f9fc":"#101828",
     textMuted:        dark?"#9aa7bd":"#667085",
-    accent:           "#9b6a16",
-    primary:          "#1f4e79",
-    accentSoft:       dark?"rgba(214,163,55,.12)":"#fff7e6",
-    accentBorder:     dark?"rgba(214,163,55,.32)":"#ead7a8",
-    accentGrad:       "linear-gradient(135deg,#d7a33a 0%,#9b6a16 100%)",
-    navyGrad:         dark?"linear-gradient(135deg,#d7a33a 0%,#9b6a16 100%)":"linear-gradient(135deg,#173b5c 0%,#0f2741 100%)",
+    accent:           "#c8911f",
+    primary:          "#163a5c",
+    accentSoft:       dark?"rgba(214,163,55,.12)":"#f8f3ea",
+    accentBorder:     dark?"rgba(214,163,55,.32)":"#e7d4aa",
+    accentGrad:       "linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)",
+    navyGrad:         dark?"linear-gradient(180deg,#d3a03a 0%,#c68a22 100%)":"linear-gradient(180deg,#163a5c 0%,#102b45 100%)",
     inputBg:          dark?"#0b1220":"#ffffff",
-    inputBorder:      dark?"#30405c":"#cfd7e3",
+    inputBorder:      dark?"#30405c":"#d6dde6",
     inputText:        dark?"#f7f9fc":"#101828",
-    thBg:             dark?"#0b1220":"#f3f6fa",
-    tdBorder:         dark?"#22304a":"#e6ebf1",
+    thBg:             dark?"#0b1220":"#f7f8fa",
+    tdBorder:         dark?"#22304a":"#edf1f5",
     btnDkBg:          dark?"#d7a33a":"#173b5c",
     btnDkTx:          dark?"#0f172a":"#fff",
     btnLtBg:          dark?"#151f31":"#ffffff",
-    btnLtTx:          dark?"#d8e0ef":"#344054",
+    btnLtTx:          dark?"#d8e0ef":"#475467",
     navActBg:         dark?"#d7a33a":"#173b5c",
     navActTx:         dark?"#0f172a":"#fff",
     navInBg:          dark?"#111827":"#ffffff",
     navInTx:          dark?"#d8e0ef":"#344054",
-    navInBr:          dark?"#30405c":"#d7dee8",
-    barBg:            dark?"#1a263a":"#e6ebf1",
+    navInBr:          dark?"#30405c":"#dbe3eb",
+    barBg:            dark?"#1a263a":"#edf2f7",
     success:          "#079455",
     danger:           "#d92d20",
     warning:          "#dc8a00",
@@ -387,7 +389,7 @@ function makeS(t){
   return{
     card: {
       background:t.cardBg,
-      borderRadius:18,
+      borderRadius:16,
       padding:24,
       boxShadow:t.cardShadow,
       border:`1px solid ${t.cardBorder}`,
@@ -396,7 +398,7 @@ function makeS(t){
     input:{
       width:"100%",
       padding:"11px 13px",
-      borderRadius:11,
+      borderRadius:12,
       border:`1px solid ${t.inputBorder}`,
       fontSize:14,
       outline:"none",
@@ -413,8 +415,8 @@ function makeS(t){
 }
 function makeBtn(t){
   return function btn(active=false,gold=false){
-    if(gold)return{padding:"11px 20px",borderRadius:11,border:`1px solid ${t.dark?"rgba(255,255,255,.08)":"rgba(155,106,22,.24)"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.accentGrad,color:"#101828",boxShadow:t.dark?"0 10px 24px rgba(0,0,0,.24)":"0 10px 22px rgba(155,106,22,.18)"};
-    return{padding:"10px 16px",borderRadius:11,border:`1px solid ${active?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:780,fontSize:14,background:active?t.navyGrad:t.btnLtBg,color:active?t.btnDkTx:t.btnLtTx,boxShadow:active?(t.dark?"0 10px 24px rgba(0,0,0,.25)":"0 10px 24px rgba(23,59,92,.16)"):"0 1px 2px rgba(16,24,40,.05)"};
+    if(gold)return{padding:"11px 20px",borderRadius:12,border:`1px solid ${t.dark?"#725520":"#d8bc7c"}`,cursor:"pointer",fontWeight:850,fontSize:14,background:t.dark?"#d3a03a":"#cf9a2e",color:"#101828",boxShadow:t.dark?"0 8px 18px rgba(0,0,0,.24)":"0 6px 16px rgba(198,138,34,.18)",appearance:"none"};
+    return{padding:"10px 16px",borderRadius:12,border:`1px solid ${active?"transparent":t.navInBr}`,cursor:"pointer",fontWeight:780,fontSize:14,background:active?t.navyGrad:t.btnLtBg,color:active?t.btnDkTx:t.btnLtTx,boxShadow:active?(t.dark?"0 8px 18px rgba(0,0,0,.24)":"0 8px 18px rgba(22,58,92,.12)"):"0 1px 2px rgba(16,24,40,.05)",appearance:"none"};
   };
 }
 
@@ -443,10 +445,10 @@ function useSafeBackdropClose(onClose, enabled=true){
 
 function makeNavBtn(t){
   return function navBtn(active){
-    return{padding:"10px 17px",borderRadius:11,cursor:"pointer",fontWeight:820,fontSize:14,
+    return{padding:"10px 17px",borderRadius:12,cursor:"pointer",fontWeight:820,fontSize:14,
       border:active?"1px solid transparent":`1px solid ${t.navInBr}`,
       background:active?t.navyGrad:t.navInBg,color:active?t.navActTx:t.navInTx,
-      boxShadow:active?(t.dark?"0 10px 24px rgba(0,0,0,.28)":"0 10px 24px rgba(23,59,92,.16)"):"0 1px 2px rgba(16,24,40,.05)"};
+      boxShadow:active?(t.dark?"0 8px 18px rgba(0,0,0,.28)":"0 8px 18px rgba(22,58,92,.12)"):"0 1px 2px rgba(16,24,40,.05)",appearance:"none"};
   };
 }
 function badgeStyle(status){
@@ -1209,8 +1211,8 @@ function PieChart({breakdown,title,t}){
 function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
   const btn=makeBtn(t);
   return(
-    <div style={{border:`1px solid ${accentBorder}`,background:accentBg,borderRadius:12,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s"}}
-      onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 2px 12px rgba(0,0,0,0.15)`}
+    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":"#ffffff",borderRadius:14,padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
+      onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 10px 22px rgba(16,24,40,0.08)`}
       onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
       <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
         <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14}}>{cliente.nombre}</div>
@@ -2780,7 +2782,7 @@ export default function App(){
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
         <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"linear-gradient(180deg,#0b1220 0%,#070b13 100%)",padding:24}}>
-          <div style={{width:390,background:"#111827",borderRadius:24,padding:38,border:"1px solid #263754",boxShadow:"0 24px 70px rgba(0,0,0,0.58)"}}>
+          <div style={{width:420,background:"#0f172a",borderRadius:24,padding:40,border:"1px solid #233451",boxShadow:"0 28px 72px rgba(0,0,0,0.56)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
               <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
@@ -2791,12 +2793,12 @@ export default function App(){
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
               <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff"}}/>
+                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#101827",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.18)"}}/>
             </div>
             <div style={{position:"relative",marginBottom:22}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
               <input type={showPwd?"text":"password"} placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"11px 44px 11px 14px",borderRadius:10,border:"1px solid #1e2d45",fontSize:14,outline:"none",boxSizing:"border-box",background:"#0d1526",color:"#f0f4ff"}}/>
+                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#101827",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.18)"}}/>
               <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#8899bb",display:"flex",alignItems:"center"}}>
                 {showPwd?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2812,7 +2814,7 @@ export default function App(){
                 )}
               </span>
             </div>
-            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:15,background:"linear-gradient(135deg,#e8b84b 0%,#c8972a 60%,#a07020 100%)",color:"#0f172a"}}>
+            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:12,border:"1px solid #d7bc7c",cursor:"pointer",fontWeight:800,fontSize:15,background:"#cf9a2e",color:"#0f172a",boxShadow:"0 8px 18px rgba(207,154,46,.22)",appearance:"none"}}>
               Ingresar
             </button>
           </div>
@@ -3306,9 +3308,9 @@ export default function App(){
               </div>
               <div className="sc-criticos" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
                 {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
-                <CriticosPanel titulo="Por vencer" badgeBg="#fff7ed" badgeColor="#9a3412"
+                <CriticosPanel titulo="Por vencer" badgeBg="#f6efe2" badgeColor="#8a5a12"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
-                  accentBorder={dark?"#3a2000":"#fdba74"} accentBg={dark?"#1a1000":"#fff7ed"} accentText={dark?"#fdba74":"#9a3412"}
+                  accentBorder={dark?"#876128":"#d9b16f"} accentBg={dark?"#101827":"#fffdfa"} accentText={dark?"#fdba74":"#8a5a12"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3316,9 +3318,9 @@ export default function App(){
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
                 {/* En gracia: fondo siempre claro (amarillo) → nombre siempre oscuro fijo */}
-                <CriticosPanel titulo="En gracia" badgeBg="#fef3c7" badgeColor="#92400e"
+                <CriticosPanel titulo="En gracia" badgeBg="#f5efdd" badgeColor="#7f5f15"
                   clientes={vencimientosCriticos.gracia} {...cGrPag}
-                  accentBorder="#fde68a" accentBg="#fffbeb" accentText="#92400e"
+                  accentBorder="#ddd1a4" accentBg="#fffef9" accentText="#7f5f15"
                   nameColor="#1a0e00"
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3326,9 +3328,9 @@ export default function App(){
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
                 {/* Vencidos: fondo siempre claro (rosa) → nombre siempre oscuro fijo */}
-                <CriticosPanel titulo="Vencidos" badgeBg="#fee2e2" badgeColor="#991b1b"
+                <CriticosPanel titulo="Vencidos" badgeBg="#f8e9e8" badgeColor="#9b3b32"
                   clientes={vencimientosCriticos.vencidos} {...cVePag}
-                  accentBorder="#fca5a5" accentBg="#fef2f2" accentText="#991b1b"
+                  accentBorder="#e0b5b0" accentBg="#fffafa" accentText="#9b3b32"
                   nameColor="#1a0000"
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
@@ -3540,11 +3542,11 @@ export default function App(){
 
             {/* Alerta deudores vencidos */}
             {deudoresConAlerta.length>0&&(
-              <div style={{...S.card,marginBottom:24,border:`2px solid #ef4444`,background:dark?"#1a0a0a":"#fff5f5"}}>
+              <div style={{...S.card,marginBottom:24,border:`1px solid ${t.cardBorder}`,background:t.cardBg}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                   <span style={{fontSize:20}}>🚨</span>
                   <div>
-                    <h3 style={{margin:0,color:"#ef4444",fontWeight:800,fontSize:17}}>Deudas vencidas — requieren atención</h3>
+                    <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:17}}>Deudas vencidas — requieren atención</h3>
                     <div style={{color:t.textMuted,fontSize:13,marginTop:3}}>
                       Estos clientes superaron el período de gracia según el monto que abonaron. Considerá pasarlos a plan mensual o gestionar el cobro.
                     </div>
@@ -3555,13 +3557,13 @@ export default function App(){
                     const meses=mesesGracia(c.monto);
                     const diasDesde=diffDays(parseISODate(c.fecha_inicio),getToday());
                     return(
-                      <div key={c.id} className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a0a0a":"#fff",border:"1px solid #fca5a5",gap:10,flexWrap:"wrap"}}>
+                      <div key={c.id} className="sc-card-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:t.dark?"#101827":"#ffffff",border:`1px solid ${t.cardBorder}`,borderLeft:"4px solid #d92d20",gap:10,flexWrap:"wrap"}}>
                         <div style={{cursor:"pointer"}} onClick={()=>setClienteDetalle(c)}>
                           <span style={{fontWeight:700,color:t.accent,fontSize:14}}>{c.nombre}</span>
                           <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · Pagó USD {c.monto} · Debe USD {c.deuda_restante}</span>
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <span style={{fontSize:12,color:"#ef4444",fontWeight:600}}>{diasDesde} días desde el inicio ({meses} meses de gracia ya vencidos)</span>
+                          <span style={{fontSize:12,color:"#b42318",fontWeight:600}}>{diasDesde} días desde el inicio ({meses} meses de gracia ya vencidos)</span>
                           <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button>
                         </div>
                       </div>
@@ -3573,24 +3575,24 @@ export default function App(){
 
             {/* Pendientes de transferencia */}
             {pendientesTransferencia.length>0&&(
-              <div ref={pendRef} style={{...S.card,marginBottom:24,border:`2px solid #f59e0b`,background:dark?"#1a1200":"#fffbeb"}}>
+              <div ref={pendRef} style={{...S.card,marginBottom:24,border:`1px solid ${t.cardBorder}`,background:t.cardBg}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
                   <div>
-                    <h3 style={{margin:0,color:"#92400e",fontWeight:800,fontSize:17}}>
+                    <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:17}}>
                       Ventas pendientes de recepción
-                      <span style={{marginLeft:10,background:"#f59e0b",color:"#fff",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px"}}>{pendientesTransferencia.length}</span>
+                      <span style={{marginLeft:10,background:"#f5efdd",color:"#8a5a12",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px",border:"1px solid #e6d4af"}}>{pendientesTransferencia.length}</span>
                     </h3>
                   </div>
                 </div>
                 <div style={{display:"grid",gap:8}}>
                   {pendientesTransferencia.map(c=>(
-                    <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:10,background:dark?"#2a1800":"#fff",border:"1px solid #fde68a",gap:10,flexWrap:"wrap"}}>
+                    <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:t.dark?"#101827":"#ffffff",border:`1px solid ${t.cardBorder}`,borderLeft:"4px solid #c8911f",gap:10,flexWrap:"wrap"}}>
                       <div>
                         <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
                         <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                        <span style={{fontSize:12,fontWeight:700,color:"#92400e",padding:"3px 10px",borderRadius:999,background:"#fef3c7"}}>{c.vendedor}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:"#8a5a12",padding:"3px 10px",borderRadius:999,background:"#f7f0df",border:"1px solid #e7d8b1"}}>{c.vendedor}</span>
                         <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
                         <button style={{...btn(false,true),padding:"6px 14px",fontSize:12}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya transfirió ${c.monto} USD por ${c.nombre}?`,null,{label:"Recibido ✓",showRecibeFinal:true,onConfirmFn:(recibeFinal)=>marcarTransferido(c.id,c,recibeFinal)})}>
                           Marcar recibido
