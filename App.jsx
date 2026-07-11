@@ -1353,6 +1353,8 @@ export default function App(){
   function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas){
     return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notas||""};
   }
+  const CAJA_AUTO_DESDE = "2026-07-11";
+  const cajaFechaHabilitada = fecha => (dateOnly(fecha)||toISODate(getToday())) >= CAJA_AUTO_DESDE;
   const cajaRecibeDirecto = v => {
     const r=String(v||"").trim().toLowerCase();
     // Valor vacío = Cristian directo. También aceptamos variantes con h/acentos por si vienen de datos viejos.
@@ -1368,6 +1370,7 @@ export default function App(){
   async function registrarCajaDesdeVenta({fecha,monto,recibe,nombre,clienteId,origen,ingresoId}){
     const montoNum=Number(monto||0);
     const f=dateOnly(fecha)||toISODate(getToday());
+    if(!cajaFechaHabilitada(f))return null;
     const quien=cajaRecibeDirecto(recibe);
     if(!quien||montoNum<=0)return null;
     const yaExiste=(cajaMovimientos||[]).some(m=>{
@@ -2015,6 +2018,7 @@ export default function App(){
       // Si es venta de vendedor pendiente, no entra hasta marcar recibido.
       if(c.vendedor&&!cajaRecibeDirecto(c.vendedor)&&c.transferido!==true&&String(c.transferido)!=="true")return null;
       const fecha=dateOnly(i.fecha_pago)||dateOnly(i.created_at)||toISODate(getToday());
+      if(!cajaFechaHabilitada(fecha))return null;
       const monto=safeNum(i.monto);
       const key=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|${String(i.id||"")}`;
       const keySinIngreso=`${fecha}|${quien}|${monto}|${String(i.cliente_id||"")}|`;
