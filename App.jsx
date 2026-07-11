@@ -131,7 +131,7 @@ function weekDayLabel(ds){
 // ─── Negocio ──────────────────────────────────────────────────────────────────
 const GRACE_DAYS=3, WARN_DAYS=2;
 const INICIO_INGRESOS_HISTORICOS="2026-03";
-const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10};
+const PAGE={base:10,venc:10,deud:3,clases:3,ing:10,crit:3,hist:15,dorm:10,caja:10};
 
 function safeNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
 function money(v){return `USD ${safeNum(v)}`;}
@@ -1276,7 +1276,7 @@ export default function App(){
 
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
-  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const semanaActualRef=useRef(null);
+  const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const semanaActualRef=useRef(null);const cajaRef=useRef(null);
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -2028,6 +2028,7 @@ export default function App(){
   const deudPag=usePagination(deudores,PAGE.deud);
   const clasPag=usePagination(clasesList,PAGE.clases);
   const ingPag=usePagination(ingFiltrados,PAGE.ing);
+  const cajaPag=usePagination(cajaDiaria,PAGE.caja);
   const cHoyPag=usePagination(vencimientosCriticos.hoy,PAGE.crit);
   const cGrPag=usePagination(vencimientosCriticos.gracia,PAGE.crit);
   const cVePag=usePagination(vencimientosCriticos.vencidos,PAGE.crit);
@@ -2324,13 +2325,13 @@ export default function App(){
               </div>
             </div>
 
-            <div style={S.card}>
+            <div style={S.card} ref={cajaRef}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Calendario de caja</h3>
               {cajaDiaria.length===0?(
                 <div style={{padding:24,textAlign:"center",color:t.textMuted}}>Todavía no hay movimientos de caja.</div>
               ):(
                 <div style={{display:"grid",gap:12}}>
-                  {cajaDiaria.map(r=>{
+                  {cajaPag.rows.map(r=>{
                     const actual=r.key===toISODate(getToday());
                     const saldo=r.saldoFinal;
                     const tieneNeteo=r.neteos.length>0;
@@ -2381,6 +2382,7 @@ export default function App(){
                       </div>
                     );
                   })}
+                  <Pagination page={cajaPag.page} totalPages={cajaPag.totalPages} setPage={cajaPag.setPage} sectionRef={cajaRef} t={t}/>
                 </div>
               )}
             </div>
