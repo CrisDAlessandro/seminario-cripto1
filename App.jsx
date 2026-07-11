@@ -35,6 +35,7 @@ const MOBILE_CSS = `
   input::placeholder,textarea::placeholder{color:#98a2b3;opacity:1;}
   input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
   input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.10)!important;border-color:#1f4e79!important;}
+  .sc-dark input:focus,.sc-dark select:focus,.sc-dark textarea:focus{box-shadow:0 0 0 4px rgba(212,162,58,.18)!important;border-color:#d4a23a!important;}
   table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
   table tbody tr:hover{background:rgba(31,78,121,.045)!important;}
   ::selection{background:rgba(31,78,121,.18);}
@@ -217,15 +218,23 @@ function normalizeServicio(v){
   if(raw==="mensual"||raw==="plan trader"||raw==="trader")return "mensual";
   if(raw==="anual"||raw==="plan inversor"||raw==="inversor")return "anual";
   if(raw==="clases"||raw==="clase")return "clases";
+  if(raw==="publicidad"||raw==="publicitario"||raw==="ads"||raw==="ad")return "publicidad";
   return raw||"mensual";
 }
 function svcLabel(v){
   const s=normalizeServicio(v);
   if(s==="mensual") return "Plan trader";
   if(s==="anual")   return "Plan inversor";
+  if(s==="publicidad") return "Publicidad";
   return "Clases";
 }
-function svcAmount(v){return normalizeServicio(v)==="mensual"?35:350;}
+function svcAmount(v){
+  const s=normalizeServicio(v);
+  if(s==="mensual")return 35;
+  if(s==="anual")return 350;
+  if(s==="publicidad")return 150;
+  return 0;
+}
 function svcDuration(v){const s=normalizeServicio(v);return s==="mensual"?30:s==="anual"?365:0;}
 function isValidEmail(e){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function classRangeLabel(fi){
@@ -237,7 +246,7 @@ function classRangeLabel(fi){
 function resolveDueDate(c){
   if(c.fecha_vencimiento)return c.fecha_vencimiento;
   const dur=Number(c.duracion_dias||0);
-  if(c.servicio==="clases"||!c.fecha_inicio||dur<=0)return null;
+  if(["clases","publicidad"].includes(normalizeServicio(c.servicio))||!c.fecha_inicio||dur<=0)return null;
   return toISODate(addDays(c.fecha_inicio,dur));
 }
 function computeClient(c){
@@ -245,16 +254,18 @@ function computeClient(c){
   const servicio=normalizeServicio(c.servicio);
   const cNorm={...c,servicio};
   const isClases=servicio==="clases";
+  const isPublicidad=servicio==="publicidad";
   const vencimiento=resolveDueDate(c);
   let estadoSistema="activo",dias=null;
   if(isClases){estadoSistema=cNorm.estado_manual==="finalizado"?"finalizado":"clases";}
+  else if(isPublicidad){estadoSistema="publicidad";}
   else if(cNorm.estado_manual==="sacar"){estadoSistema="sacar";}
   else if(vencimiento){
     const due=parseISODate(vencimiento);
     dias=diffDays(today,due);
     if(today>due){const ov=diffDays(due,today);estadoSistema=ov<=GRACE_DAYS?"gracia":"vencido";}
   }
-  return{...cNorm,isClases,vencimiento,dias,duracion_dias:safeNum(cNorm.duracion_dias),estadoSistema,
+  return{...cNorm,isClases,isPublicidad,vencimiento,dias,duracion_dias:safeNum(cNorm.duracion_dias),estadoSistema,
     class_range_label:isClases?classRangeLabel(cNorm.fecha_inicio):null,
     class_end_date:isClases&&cNorm.fecha_inicio?toISODate(addDays(cNorm.fecha_inicio,27)):null};
 }
@@ -262,7 +273,7 @@ function computeClient(c){
 // ─── Analytics ───────────────────────────────────────────────────────────────
 function buildDailySeriesForMonth(ingresos,year,month){
   const end=new Date(year,month+1,0);
-  const rows=Array.from({length:end.getDate()},(_,i)=>({day:i+1,label:String(i+1).padStart(2,"0"),total:0,mensual:0,anual:0,clases:0,ventas:0}));
+  const rows=Array.from({length:end.getDate()},(_,i)=>({day:i+1,label:String(i+1).padStart(2,"0"),total:0,mensual:0,anual:0,clases:0,publicidad:0,ventas:0}));
   ingresos.forEach(i=>{
     if(!i.fecha_pago)return;
     const d=parseISODate(i.fecha_pago);
@@ -276,7 +287,7 @@ function buildDailySeriesForMonth(ingresos,year,month){
   return rows;
 }
 function buildBreakdown(arr){
-  const b={mensual:0,anual:0,clases:0};
+  const b={mensual:0,anual:0,clases:0,publicidad:0};
   arr.forEach(i=>{const servicio=normalizeServicio(i.servicio);if(b[servicio]!==undefined)b[servicio]+=safeNum(i.monto);});
   return b;
 }
@@ -296,16 +307,182 @@ function totalIngresosHistoricosPorMes(ingresos){
 
 // ─── XLSX export ─────────────────────────────────────────────────────────────
 function exportXLSX(rows,cols,filename){
-  function doExport(XLSX){
-    const wsData=[cols.map(c=>c.label),...rows.map(r=>cols.map(c=>{const v=r[c.key];return v==null?"":String(v);}))];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
-    ws["!cols"]=cols.map(c=>({wch:Math.max(c.label.length+2,16)}));
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Datos");XLSX.writeFile(wb,filename);
+  function prettyTitle(name){
+    return String(name||"exportacion.xlsx")
+      .replace(/\.xlsx$/i,"")
+      .replace(/[_-]+/g," ")
+      .replace(/\s+/g," ")
+      .trim()
+      .replace(/\b\w/g,m=>m.toUpperCase())||"Exportación";
   }
-  if(window.XLSX){doExport(window.XLSX);return;}
-  const s=document.createElement("script");
-  s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-  s.onload=()=>doExport(window.XLSX);document.head.appendChild(s);
+  function isNumericCol(key,label){
+    const s=`${key||""} ${label||""}`.toLowerCase();
+    return /(monto|total|deuda|resta|dias|días|pagado|cobrado|ingreso|cantidad|ventas|saldo)/.test(s);
+  }
+  function isDateCol(key,label){
+    const s=`${key||""} ${label||""}`.toLowerCase();
+    return /(fecha|vencimiento|inicio|mes)/.test(s);
+  }
+  function cleanValue(v,col){
+    if(v==null)return "";
+    const key=String(col.key||"").toLowerCase();
+    const label=String(col.label||"").toLowerCase();
+    if(isNumericCol(key,label)){
+      const n=Number(String(v).replace(/[^\d.-]/g,""));
+      if(Number.isFinite(n))return n;
+    }
+    return String(v);
+  }
+  function estimateWidth(col,values){
+    const key=String(col.key||"").toLowerCase();
+    const label=String(col.label||"").toLowerCase();
+    const maxLen=Math.max(
+      String(col.label||"").length,
+      ...values.slice(0,250).map(v=>String(v??"").length)
+    );
+    if(label.includes("email")||key.includes("email"))return Math.min(Math.max(maxLen+4,34),46);
+    if(label.includes("nota")||key.includes("nota")||label.includes("detalle")||key.includes("detalle"))return Math.min(Math.max(maxLen+4,38),64);
+    if(label.includes("nombre")||key.includes("nombre")||label.includes("cliente"))return Math.min(Math.max(maxLen+4,24),38);
+    if(isDateCol(key,label))return 16;
+    if(isNumericCol(key,label))return 15;
+    if(label.includes("servicio")||key.includes("servicio"))return 18;
+    if(label.includes("estado")||key.includes("estado"))return 16;
+    return Math.min(Math.max(maxLen+3,14),32);
+  }
+  function safeSheetName(name){
+    return String(name||"Datos").replace(/[\\/?*[\]:]/g," ").slice(0,31)||"Datos";
+  }
+  function doExport(XLSX){
+    const title=prettyTitle(filename);
+    const now=new Date().toLocaleString("es-AR");
+    const dataRows=(rows||[]).map(r=>(cols||[]).map(c=>cleanValue(r[c.key],c)));
+    const headers=(cols||[]).map(c=>c.label);
+    const wsData=[
+      [title],
+      [`Exportado: ${now} · Registros: ${(rows||[]).length}`],
+      [],
+      headers,
+      ...dataRows
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const lastCol=Math.max(0,(cols||[]).length-1);
+    const lastRow=wsData.length-1;
+    const range=XLSX.utils.decode_range(ws["!ref"]||"A1:A1");
+    range.e.c=lastCol; range.e.r=lastRow;
+    ws["!ref"]=XLSX.utils.encode_range(range);
+    ws["!merges"]=[
+      {s:{r:0,c:0},e:{r:0,c:lastCol}},
+      {s:{r:1,c:0},e:{r:1,c:lastCol}},
+    ];
+    ws["!cols"]=(cols||[]).map((c,idx)=>({wch:estimateWidth(c,dataRows.map(r=>r[idx]))}));
+    ws["!rows"]=[
+      {hpt:30},
+      {hpt:22},
+      {hpt:8},
+      {hpt:24},
+      ...dataRows.map(()=>({hpt:22}))
+    ];
+    ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:3,c:0},e:{r:Math.max(3,lastRow),c:lastCol}})};
+    ws["!freeze"]={xSplit:0,ySplit:4};
+
+    const borderThin={style:"thin",color:{rgb:"E6EBF1"}};
+    const borderDark={style:"thin",color:{rgb:"D0D5DD"}};
+    const titleStyle={
+      font:{bold:true,sz:18,color:{rgb:"F8FAFC"}},
+      fill:{fgColor:{rgb:"0B0F17"}},
+      alignment:{horizontal:"center",vertical:"center"},
+      border:{top:borderDark,bottom:borderDark,left:borderDark,right:borderDark}
+    };
+    const subtitleStyle={
+      font:{bold:true,sz:11,color:{rgb:"D4A23A"}},
+      fill:{fgColor:{rgb:"111827"}},
+      alignment:{horizontal:"center",vertical:"center"},
+      border:{top:borderDark,bottom:borderDark,left:borderDark,right:borderDark}
+    };
+    const headerStyle={
+      font:{bold:true,sz:11,color:{rgb:"0B0F17"}},
+      fill:{fgColor:{rgb:"D4A23A"}},
+      alignment:{horizontal:"center",vertical:"center",wrapText:true},
+      border:{top:borderDark,bottom:borderDark,left:borderDark,right:borderDark}
+    };
+    const baseBodyStyle={
+      font:{sz:10.5,color:{rgb:"101828"}},
+      alignment:{vertical:"center",wrapText:true},
+      border:{top:borderThin,bottom:borderThin,left:borderThin,right:borderThin}
+    };
+    const altFillA={fgColor:{rgb:"FFFFFF"}};
+    const altFillB={fgColor:{rgb:"F8FAFC"}};
+
+    for(let c=0;c<=lastCol;c++){
+      const titleCell=XLSX.utils.encode_cell({r:0,c});
+      const subCell=XLSX.utils.encode_cell({r:1,c});
+      if(!ws[titleCell])ws[titleCell]={t:"s",v:""};
+      if(!ws[subCell])ws[subCell]={t:"s",v:""};
+      ws[titleCell].s=titleStyle;
+      ws[subCell].s=subtitleStyle;
+    }
+
+    headers.forEach((_,c)=>{
+      const cell=ws[XLSX.utils.encode_cell({r:3,c})];
+      if(cell)cell.s=headerStyle;
+    });
+
+    dataRows.forEach((row,ri)=>{
+      row.forEach((_,ci)=>{
+        const addr=XLSX.utils.encode_cell({r:ri+4,c:ci});
+        const cell=ws[addr];
+        if(!cell)return;
+        const col=cols[ci]||{};
+        const key=String(col.key||"").toLowerCase();
+        const label=String(col.label||"").toLowerCase();
+        const numeric=isNumericCol(key,label);
+        const dateLike=isDateCol(key,label);
+        cell.s={
+          ...baseBodyStyle,
+          fill:(ri%2===0)?altFillA:altFillB,
+          alignment:{
+            ...baseBodyStyle.alignment,
+            horizontal:numeric?"right":dateLike?"center":"left"
+          },
+          font:{
+            ...baseBodyStyle.font,
+            bold:key.includes("nombre")||label.includes("nombre")||label.includes("cliente"),
+            color:{rgb:(label.includes("email")||key.includes("email"))?"163A5C":"101828"}
+          }
+        };
+        if(numeric&&cell.t==="n"){
+          const money=/(monto|total|deuda|resta|pagado|cobrado|ingreso|saldo)/.test(`${key} ${label}`);
+          cell.z=money?'"USD" #,##0':'0';
+        }
+      });
+    });
+
+    const wb=XLSX.utils.book_new();
+    wb.Props={Title:title,Subject:"Exportación Seminario Cripto",Author:"Seminario Cripto",CreatedDate:new Date()};
+    XLSX.utils.book_append_sheet(wb,ws,safeSheetName("Datos"));
+    XLSX.writeFile(wb,filename||"exportacion.xlsx");
+  }
+
+  function loadStyledExporter(){
+    const existing=document.querySelector("script[data-xlsx-style='true']");
+    if(existing){
+      existing.addEventListener("load",()=>doExport(window.XLSX));
+      if(window.XLSX)doExport(window.XLSX);
+      return;
+    }
+    const s=document.createElement("script");
+    s.dataset.xlsxStyle="true";
+    s.src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
+    s.onload=()=>doExport(window.XLSX);
+    s.onerror=()=>{
+      const fallback=document.createElement("script");
+      fallback.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      fallback.onload=()=>doExport(window.XLSX);
+      document.head.appendChild(fallback);
+    };
+    document.head.appendChild(s);
+  }
+  loadStyledExporter();
 }
 
 // ─── Historial ────────────────────────────────────────────────────────────────
@@ -482,6 +659,7 @@ function badgeStyle(status){
   if(status==="gracia")  return{...b,background:"#fffaeb",color:"#b54708",borderColor:"#fedf89"};
   if(status==="vencido") return{...b,background:"#fef3f2",color:"#b42318",borderColor:"#fecdca"};
   if(status==="clases")  return{...b,background:"#f4f3ff",color:"#5925dc",borderColor:"#d9d6fe"};
+  if(status==="publicidad")return{...b,background:"#fff7ed",color:"#9a3412",borderColor:"#fedf89"};
   if(status==="finalizado") return{...b,background:"#f2f4f7",color:"#344054",borderColor:"#d0d5dd"};
   if(status==="sacar")   return{...b,background:"#fef3f2",color:"#b42318",borderColor:"#fecdca"};
   return{...b,background:"#f8fafc",color:"#334155",borderColor:"#d0d5dd"};
@@ -938,7 +1116,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
 
           {/* Acciones */}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4,flexWrap:"wrap"}}>
-            <button style={btn(false)} onClick={()=>onEditarDeuda&&onEditarDeuda(cliente)}>Editar deuda</button>
+            {normalizeServicio(cliente.servicio)==="anual"&&<button style={btn(false)} onClick={()=>onEditarDeuda&&onEditarDeuda(cliente)}>Editar deuda</button>}
             <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
             <button style={{...btn(false),background:"rgba(239,68,68,0.1)",color:"#ef4444"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
           </div>
@@ -1140,7 +1318,7 @@ function BarList({items,t}){
 
 function BreakdownCard({title,breakdown,t}){
   const S=makeS(t);
-  const items=[{key:"mensual",label:"Plan trader"},{key:"anual",label:"Plan inversor"},{key:"clases",label:"Clases"}];
+  const items=[{key:"mensual",label:"Plan trader"},{key:"anual",label:"Plan inversor"},{key:"clases",label:"Clases"},{key:"publicidad",label:"Publicidad"}];
   return(
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>{title}</h3>
@@ -1193,6 +1371,7 @@ function LineChart({ingresos,t}){
             {tip.d.mensual>0&&<div style={{color:t.textMuted,fontSize:12}}>Mensual: USD {tip.d.mensual}</div>}
             {tip.d.anual>0&&<div style={{color:t.textMuted,fontSize:12}}>Anual: USD {tip.d.anual}</div>}
             {tip.d.clases>0&&<div style={{color:t.textMuted,fontSize:12}}>Clases: USD {tip.d.clases}</div>}
+            {tip.d.publicidad>0&&<div style={{color:t.textMuted,fontSize:12}}>Publicidad: USD {tip.d.publicidad}</div>}
           </div>
         )}
       </div>
@@ -1204,7 +1383,7 @@ function LineChart({ingresos,t}){
 function PieChart({breakdown,title,t}){
   const S=makeS(t);
   const[hov,setHov]=useState(null);
-  const slices=[{key:"mensual",label:"Plan trader",color:t.accent},{key:"anual",label:"Plan inversor",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"}];
+  const slices=[{key:"mensual",label:"Plan trader",color:t.accent},{key:"anual",label:"Plan inversor",color:"#5b8dee"},{key:"clases",label:"Clases",color:"#34d399"},{key:"publicidad",label:"Publicidad",color:"#f97316"}];
   const total=slices.reduce((a,s)=>a+safeNum(breakdown[s.key]),0);
   if(total===0)return(<div style={S.card}><h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:12}}>{title}</h3><div style={{color:t.textMuted}}>Sin datos disponibles.</div></div>);
   const CX=90,CY=90,R=72,RI=40;let angle=-Math.PI/2;
@@ -1295,7 +1474,9 @@ function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,
 function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando,isModal=false,t}){
   const S=makeS(t);const btn=makeBtn(t);
   const {backdropProps,modalProps}=useSafeBackdropClose(onCancelar,isModal);
-  const isClases=form.servicio==="clases";
+  const isClases=normalizeServicio(form.servicio)==="clases";
+  const isPublicidad=normalizeServicio(form.servicio)==="publicidad";
+  const isAnual=normalizeServicio(form.servicio)==="anual";
   useEffect(()=>{
     if(!isModal)return;
     const onKey=e=>{if(e.key==="Escape")onCancelar?.();};
@@ -1313,30 +1494,31 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
       </div>
       <div className="sc-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
-        <Field label="Nombre y apellido" t={t}>
-          <input autoFocus style={S.input} placeholder="Ej: Luis Pérez" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
+        <Field label={isPublicidad?"Empresa":"Nombre y apellido"} t={t}>
+          <input autoFocus style={S.input} placeholder={isPublicidad?"Ej: Empresa ABC":"Ej: Luis Pérez"} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})}/>
         </Field>
         {/* Servicio al lado del nombre — así el usuario elige clases antes de ver el campo email */}
         <Field label="Servicio" t={t}>
-          <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s),email:s==="clases"?"":form.email});}}>
+          <select style={S.input} value={form.servicio} onChange={e=>{const s=e.target.value;const sinEmail=["clases","publicidad"].includes(normalizeServicio(s));setForm({...form,servicio:s,monto:svcAmount(s),duracion_dias:svcDuration(s),email:sinEmail?"":form.email,deuda_restante:normalizeServicio(s)==="anual"?form.deuda_restante:0});}}>
             <option value="mensual">Plan trader</option>
             <option value="anual">Plan inversor</option>
             <option value="clases">Clases</option>
+            <option value="publicidad">Publicidad</option>
           </select>
         </Field>
         {/* Email solo para planes — clases no lo necesita */}
-        {!isClases&&(
+        {!isClases&&!isPublicidad&&(
           <Field label="Email" t={t}>
             <input style={S.input} placeholder="correo@ejemplo.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
           </Field>
         )}
-        <Field label={isModal?"Fecha de renovación":"Fecha de inicio"} t={t}>
+        <Field label={isPublicidad?"Fecha de pago":isModal?"Fecha de renovación":"Fecha de inicio"} t={t}>
           <input type="date" style={{...S.input,colorScheme:t.dark?"dark":"light",WebkitAppearance:t.dark?"none":undefined,appearance:t.dark?"none":undefined}} value={form.fecha_inicio} onChange={e=>setForm({...form,fecha_inicio:e.target.value})}/>
         </Field>
         <Field label="Monto (USD)" t={t}>
           <input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/>
         </Field>
-        {!isClases&&(
+        {!isClases&&!isPublicidad&&(
           <Field label="Duración (días)" t={t}>
             <input type="number" style={S.input} placeholder="30" value={form.duracion_dias} onChange={e=>setForm({...form,duracion_dias:e.target.value})}/>
           </Field>
@@ -1348,9 +1530,11 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <option value="Luigi">Luigi</option>
           </select>
         </Field>
-        <Field label="Deuda restante (USD)" t={t}>
-          <input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/>
-        </Field>
+        {isAnual&&(
+          <Field label="Deuda restante (USD)" t={t}>
+            <input type="number" style={S.input} placeholder="0" value={form.deuda_restante} onChange={e=>setForm({...form,deuda_restante:e.target.value})}/>
+          </Field>
+        )}
         <Field label="Notas" spanAll t={t}>
           <input style={S.input} placeholder="Observaciones opcionales" value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})}/>
         </Field>
@@ -1564,23 +1748,24 @@ export default function App(){
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f){
-    const nombre=f.nombre.trim();const emailVal=f.email.trim().toLowerCase();
-    if(!nombre){toast.error("Falta el nombre y apellido");return null;}
-    // Email solo requerido para planes — clases no lo necesita
-    if(f.servicio!=="clases"){
+    const servicio=normalizeServicio(f.servicio);
+    const nombre=f.nombre.trim();const emailVal=(f.email||"").trim().toLowerCase();
+    if(!nombre){toast.error(servicio==="publicidad"?"Falta la empresa":"Falta el nombre y apellido");return null;}
+    // Email solo requerido para planes — clases/publicidad no lo necesitan
+    if(!["clases","publicidad"].includes(servicio)){
       if(!emailVal){toast.error("Falta el email");return null;}
       if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
     }
-    if(f.servicio!=="clases"&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
+    if(!["clases","publicidad"].includes(servicio)&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
     const servicio=normalizeServicio(f.servicio);
-    const dur=servicio==="clases"?0:Number(f.duracion_dias||svcDuration(servicio));
+    const dur=["clases","publicidad"].includes(servicio)?0:Number(f.duracion_dias||svcDuration(servicio));
     const vendedor=f.vendedor||"";
-    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:Number(f.deuda_restante||0),
+    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:servicio==="anual"?Number(f.deuda_restante||0):0,
       vendedor,transferido:!ventaPendienteTransferencia(vendedor),
-      fecha_vencimiento:servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
+      fecha_vencimiento:["clases","publicidad"].includes(servicio)||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
   function limpiarTextoRecepcion(txt){
     return String(txt||"")
@@ -1742,7 +1927,7 @@ export default function App(){
   async function guardarCliente(){
     const v=validateForm(form);if(!v)return;
     // Solo validar duplicado de email si hay email y no es clases
-    if(form.servicio!=="clases"&&v.email){
+    if(!["clases","publicidad"].includes(normalizeServicio(form.servicio))&&v.email){
       const dup=clientes.find(c=>c.email?.toLowerCase()===v.email);
       if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
     }
@@ -1771,16 +1956,16 @@ export default function App(){
 
       void (async()=>{
         try{
-          await logH(user?.email,"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
-          await logNC(ins.id,user?.email,"alta",`Cliente dado de alta. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
+          await logH(user?.email,normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
+          await logNC(ins.id,user?.email,"alta",`${normalizeServicio(ins.servicio)==="publicidad"?"Publicidad registrada":"Cliente dado de alta"}. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
           if(pendienteAlta)await registrarVentaPendiente({clienteId:ins.id,ingresoId:ingAlta?.id,nombre:ins.nombre,servicio:ins.servicio,monto:ins.monto,fecha:fechaIngresoAlta,vendedor:recibeAlta,origen:"alta"});
-          llamarDrive("compartir", ins.email);
+          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))llamarDrive("compartir", ins.email);
           refetch();
         }catch(err){console.warn("Alta secundaria falló",err);refetch();}
       })();
 
       setShowForm(false);setForm(FORM_DEF);
-      toast.success(`${v.nombre} agregado correctamente`);
+      toast.success(`${normalizeServicio(form.servicio)==="publicidad"?"Publicidad":"Cliente"} agregado correctamente`);
       refetch();
     }catch(err){
       console.error(err);
@@ -1796,7 +1981,7 @@ export default function App(){
       const payload=buildPayload(renovarForm,v.nombre,v.email);
       const{error:eC}=await supabase.from("clientes").update(payload).eq("id",renovarForm.id);
       if(eC){toast.error("No se pudo renovar el cliente");return;}
-      const fechaRenovacion=toISODate(getToday());
+      const fechaRenovacion=normalizeServicio(renovarForm.servicio)==="publicidad"?dateOnly(renovarForm.fecha_inicio)||toISODate(getToday()):toISODate(getToday());
       const recibeRenovacion=payload.vendedor||renovarForm.vendedor||"Cristian";
       const pendienteRenovacion=ventaPendienteTransferencia(recibeRenovacion);
       const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas,{recibe:recibeRenovacion,pendiente:pendienteRenovacion})]).select().single();
@@ -1816,7 +2001,7 @@ export default function App(){
           await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion,ingreso_id:ingRen?.id||null});
           await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibe: ${recibeRenovacion}${pendienteRenovacion?" · Pendiente de transferencia a Cristian":""}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion,ingreso_id:ingRen?.id||null});
           if(pendienteRenovacion)await registrarVentaPendiente({clienteId:renovarForm.id,ingresoId:ingRen?.id,nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,fecha:fechaRenovacion,vendedor:recibeRenovacion,origen:"renovación"});
-          llamarDrive("compartir", v.email);
+          if(!["clases","publicidad"].includes(normalizeServicio(renovarForm.servicio)))llamarDrive("compartir", v.email);
           refetch();
         }catch(err){console.warn("Renovación secundaria falló",err);refetch();}
       })();
@@ -1835,17 +2020,17 @@ export default function App(){
     const today=getToday();
     const fechaRenovacion=dateOnly(fechaCustom)||toISODate(today);
     const servicio=normalizeServicio(cliente.servicio);
-    const dur=servicio==="clases"?0:svcDuration(servicio);
+    const dur=["clases","publicidad"].includes(servicio)?0:svcDuration(servicio);
     const vencimientoActual=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
     // Regla correcta: renovar suma la duración completa al vencimiento previo.
     // Ejemplo: si estaba vencido hace 10 días y renueva 30, queda con 20 días.
     const baseDate=vencimientoActual||toISODate(today);
-    const nv=servicio==="clases"||dur<=0?null:toISODate(addDays(baseDate,dur));
-    const fb=servicio==="clases"?fechaRenovacion:toISODate(today);
+    const nv=["clases","publicidad"].includes(servicio)||dur<=0?null:toISODate(addDays(baseDate,dur));
+    const fb=["clases","publicidad"].includes(servicio)?fechaRenovacion:toISODate(today);
     const transferido=!ventaPendienteTransferencia(vendedor);
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
     const email=(cliente.email||"").trim().toLowerCase();
-    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:Number(cliente.deuda_restante||0),notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
+    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:servicio==="anual"?Number(cliente.deuda_restante||0):0,notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
     const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(eC){toast.error("No se pudo renovar el cliente");return;}
     setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
@@ -1930,7 +2115,7 @@ export default function App(){
     if(ing?.cliente_id){
       const clienteActivo=clientes.find(c=>c.id===ing.cliente_id);
       const servicio=normalizeServicio(ing.servicio||clienteActivo?.servicio);
-      const dur=servicio==="clases"?0:svcDuration(servicio);
+      const dur=["clases","publicidad"].includes(servicio)?0:svcDuration(servicio);
       if(clienteActivo&&dur>0){
         const vencActual=clienteActivo.fecha_vencimiento||clienteActivo.vencimiento||resolveDueDate(clienteActivo);
         const nuevoVenc=vencActual?toISODate(addDays(vencActual,-dur)):null;
@@ -2060,6 +2245,7 @@ export default function App(){
     toast.success("Vencimiento actualizado");
   }
   async function actualizarDeudaCliente(cliente,montoDeuda){
+    if(normalizeServicio(cliente?.servicio)!=="anual"){toast.error("La deuda solo aplica al plan inversor anual");return;}
     const deudaNueva=Math.max(0,safeNum(montoDeuda));
     const deudaAnterior=safeNum(cliente?.deuda_restante);
     const notasLimpias=String(cliente?.notas||"")
@@ -2120,7 +2306,7 @@ export default function App(){
     const servicio=normalizeServicio(cliente.servicio);
     const va=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
     const fb=va||toISODate(getToday());
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio,fecha_inicio:fb,monto:safeNum(cliente.monto),duracion_dias:servicio==="clases"?0:svcDuration(servicio),deuda_restante:safeNum(cliente.deuda_restante),notas:cliente.notas||"",vendedor:"",transferido:true});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio,fecha_inicio:servicio==="publicidad"?toISODate(getToday()):fb,monto:safeNum(cliente.monto),duracion_dias:["clases","publicidad"].includes(servicio)?0:svcDuration(servicio),deuda_restante:servicio==="anual"?safeNum(cliente.deuda_restante):0,notas:cliente.notas||"",vendedor:"",transferido:true});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -2134,13 +2320,13 @@ export default function App(){
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
   }),[computed,busqueda,filtro]);
-  const deudores=useMemo(()=>computed.filter(c=>Number(c.deuda_restante||0)>0),[computed]);
+  const deudores=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="anual"&&Number(c.deuda_restante||0)>0),[computed]);
   const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases").sort((a,b)=>{
     const af=a.estado_manual!=="finalizado", bf=b.estado_manual!=="finalizado";
     if(af!==bf)return af?-1:1;
     return String(b.fecha_inicio||"").localeCompare(String(a.fecha_inicio||""));
   }),[computed]);
-  const vencimientos=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
+  const vencimientos=useMemo(()=>computed.filter(c=>!["clases","publicidad"].includes(normalizeServicio(c.servicio))).sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
   const vencimientosCriticos=useMemo(()=>{
     const pv=[],g=[],v=[];
     computed.forEach(c=>{
@@ -2185,7 +2371,7 @@ export default function App(){
       if(c.estadoSistema==="activo")b.activos++;
       if(c.estadoSistema==="gracia")b.gracia++;
       if(c.estadoSistema==="sacar"||c.estadoSistema==="vencido")b.sacar++;
-      if(Number(c.deuda_restante||0)>0)b.deudores++;
+      if(normalizeServicio(c.servicio)==="anual"&&Number(c.deuda_restante||0)>0)b.deudores++;
       if(c.servicio==="clases"&&c.estado_manual!=="finalizado")b.clases++;
     });
     // Ingresos totales = marzo + abril + mayo + todos los meses siguientes.
@@ -2493,12 +2679,13 @@ export default function App(){
     ingresosDesdeMarzo.forEach(i=>{
       if(!i.fecha_pago)return;
       const key=monthKey(i.fecha_pago);
-      if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,total:0,vM:0,vA:0,vC:0});
+      if(!map.has(key))map.set(key,{key,mensual:0,anual:0,clases:0,publicidad:0,total:0,vM:0,vA:0,vC:0,vP:0});
       const r=map.get(key);const m=Number(i.monto||0);
       const servicio=normalizeServicio(i.servicio);
       if(servicio==="mensual"){r.mensual+=m;r.vM++;}
       else if(servicio==="anual"){r.anual+=m;r.vA++;}
-      else{r.clases+=m;r.vC++;}
+      else if(servicio==="clases"){r.clases+=m;r.vC++;}
+      else if(servicio==="publicidad"){r.publicidad+=m;r.vP++;}
       r.total+=m;
     });
     return Array.from(map.values()).sort((a,b)=>a.key.localeCompare(b.key));
@@ -3253,7 +3440,7 @@ export default function App(){
                         <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
                           <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
                         </div>
-                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.vM} · Anuales: {r.vA} · Clases: {r.vC}</div>
+                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.vM} · Anuales: {r.vA} · Clases: {r.vC} · Publicidad: {r.vP}</div>
                       </div>
                     );
                   })}
@@ -3289,7 +3476,7 @@ export default function App(){
                   </div>
                   <button style={{...btn(false),padding:"8px 14px",fontSize:13}}
                     onClick={()=>exportXLSX(ingFiltrados,[
-                      {key:"fecha_pago",label:"Fecha"},{key:"cliente_nombre",label:"Nombre"},
+                      {key:"fecha_pago",label:"Fecha"},{key:"cliente_nombre",label:"Nombre / Empresa"},
                       {key:"email",label:"Email"},{key:"servicio",label:"Servicio"},
                       {key:"monto",label:"Monto"},{key:"notas",label:"Notas"},
                     ],"ingresos_seminario_cripto.xlsx")}>
@@ -3299,7 +3486,7 @@ export default function App(){
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Fecha","Nombre","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Fecha","Nombre / Empresa","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
                   <tbody>
                     {ingPag.rows.map(i=>(
                       <tr key={i.id}>
@@ -3422,6 +3609,7 @@ export default function App(){
                   ["Plan trader","mensual",t.accent],
                   ["Plan inversor","anual","#5b8dee"],
                   ["Clases","clases","#a78bfa"],
+                  ["Publicidad","publicidad","#f97316"],
                 ].map(([label,val,color])=>(
                   <button key={val} onClick={()=>setFiltro(val)}
                     style={{padding:"6px 14px",borderRadius:999,border:`2px solid ${filtro===val?color:t.cardBorder}`,background:filtro===val?color:"transparent",color:filtro===val?"#fff":t.textMuted,fontWeight:700,fontSize:12,cursor:"pointer",transition:"all 0.15s"}}>
@@ -3488,7 +3676,7 @@ export default function App(){
                               </>
                             ):(
                               <>
-                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm(normalizeServicio(c.servicio)==="publicidad"?"Registrar publicidad":"Renovar cliente",normalizeServicio(c.servicio)==="publicidad"?`¿Registrar nuevo pago de publicidad para ${c.nombre}?`:`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:normalizeServicio(c.servicio)==="publicidad"?"Registrar":"Renovar",showVendedor:true,showFecha:normalizeServicio(c.servicio)==="publicidad",fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
                                 <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                               </>
                             )}
@@ -3682,7 +3870,7 @@ export default function App(){
                         <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
                           <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
                         </div>
-                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.vM} · Anuales: {r.vA} · Clases: {r.vC}</div>
+                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.vM} · Anuales: {r.vA} · Clases: {r.vC} · Publicidad: {r.vP}</div>
                       </div>
                     );
                   })}
