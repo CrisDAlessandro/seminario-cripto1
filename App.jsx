@@ -26,7 +26,7 @@ function traducirError(msg) {
 const MOBILE_CSS = `
   *{box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{margin:0;background:#f6f8fb;color:#101828;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  body{margin:0;background:#f6f8fb;color:#101828;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}\n  body:has(.sc-dark){background:#05070b!important;}
   button,input,select,textarea{font-family:inherit;-webkit-appearance:none;appearance:none;}
   button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
   button:not(:disabled):hover{transform:translateY(-1px);}
@@ -71,6 +71,12 @@ const MOBILE_CSS = `
   .sc-hist-table th:last-child, .sc-hist-table td:last-child{padding-right:18px!important;}
   .sc-tl-item{box-shadow:0 1px 0 rgba(16,24,40,.02);}
 
+  .sc-dark input[type="date"]{color-scheme:dark;}
+  .sc-dark input[type="date"]::-webkit-calendar-picker-indicator{
+    filter:invert(1) brightness(2.2) contrast(1.15)!important;
+    opacity:1!important;
+  }
+
   @media(max-width:640px){
     .sc-header{flex-direction:column!important;align-items:flex-start!important;gap:12px!important;}
     .sc-nav{width:100%!important;display:grid!important;grid-template-columns:repeat(3,1fr)!important;gap:6px!important;}
@@ -102,7 +108,7 @@ function applyDateColorScheme(dark) {
   let el = document.getElementById("sc-date-scheme");
   if (!el) { el = document.createElement("style"); el.id = "sc-date-scheme"; document.head.appendChild(el); }
   el.textContent = dark
-    ? `input[type="date"]{color-scheme:dark;}input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);}`
+    ? `input[type="date"]{color-scheme:dark;}input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(2.2) contrast(1.15)!important;opacity:1!important;}`
     : `input[type="date"]{color-scheme:light;}`;
 }
 
@@ -1080,7 +1086,7 @@ function TableHeader({cols,t}){
 function MetricCard({title,value,sub,accent,trend,subValue,t}){
   const S=makeS(t);
   return(
-    <div className="sc-card-premium" style={{...S.card,minHeight:118,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:"linear-gradient(180deg,#ffffff 0%,#fbfcfe 100%)"}}>
+    <div className="sc-card-premium" style={{...S.card,minHeight:118,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between",borderTop:accent?`3px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:t.dark?"linear-gradient(180deg,#0d121b 0%,#090d14 100%)":"linear-gradient(180deg,#ffffff 0%,#fbfcfe 100%)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
         <div style={{fontSize:10.5,color:t.textMuted,fontWeight:850,letterSpacing:"0.085em",textTransform:"uppercase"}}>{title}</div>
         {trend!=null&&<span style={{fontSize:11,fontWeight:850,color:trend>0?t.success:trend<0?t.danger:t.textMuted,background:trend>0?"rgba(7,148,85,.09)":trend<0?"rgba(217,45,32,.09)":"rgba(100,116,139,.09)",padding:"3px 8px",borderRadius:999}}>{trend>0?"↑":trend<0?"↓":"→"} {Math.abs(trend)}%</span>}
@@ -2836,7 +2842,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
+    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:dark?"radial-gradient(circle at 14% 0%, rgba(212,162,58,.12), transparent 26%), linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)":"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
