@@ -540,26 +540,36 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
   function infoPago(i){
     const c=clienteDeIngreso(i);
-    const vendedor=i?.vendedor||i?.recibe||c?.vendedor||"";
-
-    // La verdad operativa manda sobre el ingreso histórico:
-    // si el cliente todavía aparece en Ventas pendientes de recepción,
-    // el historial NO puede decir que Cristian ya recibió la transferencia,
-    // aunque el ingreso viejo haya quedado con transferido=true por una carga anterior.
-    const clientePendiente=!!(c?.vendedor&&c.vendedor!==""&&c.transferido!==true&&String(c.transferido)!=="true");
-    const ingresoTransferido=i?.transferido===true||String(i?.transferido)==="true";
-    const clienteTransferido=c?.transferido===true||String(c?.transferido)==="true";
-    const transferido=clientePendiente?false:(ingresoTransferido||clienteTransferido);
-
-    const recibe=vendedor||"Cristian";
-    const estadoTransferencia=vendedor
-      ? (transferido?"Cristian ya recibió la transferencia":"Pendiente de transferencia a Cristian")
-      : "Cobrado directo por Cristian";
-    return{vendedor,recibe,transferido,estadoTransferencia};
+    const notas=String(i?.notas||"");
+    const cobroOriginal=(notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/i)||[])[1]
+      || (notas.match(/(?:recibe|recibió|recibio)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i)||[])[1]
+      || i?.vendedor||i?.recibe||c?.vendedor||"Cristian";
+    const recibe=cobroOriginal==="Baiano"?"Bahiano":cobroOriginal;
+    const recibidoFinal=(notas.match(/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i)||[])[1];
+    const finalNormalizado=recibidoFinal==="Baiano"?"Bahiano":recibidoFinal;
+    const directoRecibe=(()=>{const r=String(recibe||"").trim().toLowerCase(); if(!r||r==="cristian"||r==="christian")return "Cristian"; if(r==="bahiano"||r==="baiano"||r==="bahiana"||r==="baiana")return "Bahiano"; return null;})();
+    const esPendiente=!!recibe&&!directoRecibe;
+    const transferido=!!finalNormalizado || (!esPendiente && !!directoRecibe);
+    const estadoTransferencia=esPendiente
+      ? (finalNormalizado?`Transferencia recibida por ${finalNormalizado}`:"Pendiente de recepción")
+      : `Cobrado por ${directoRecibe||recibe}`;
+    return{vendedor:esPendiente?recibe:"",recibe,transferido,estadoTransferencia,recibeFinal:finalNormalizado||directoRecibe||recibe};
   }
   function receptorPago(i){
     const info=infoPago(i);
     return `Quién se quedó con la venta: ${info.recibe} · ${info.estadoTransferencia}`;
+  }
+  function notasPagoLegibles(notas){
+    const txt=String(notas||"")
+      .replace(/pendiente_transferencia\s*:\s*true/gi,"Pendiente de recepción")
+      .replace(/pendiente_transferencia\s*:\s*false/gi,"Cobrado")
+      .replace(/recibe\s*:\s*/gi,"Cobró ")
+      .replace(/recibio\s*:\s*/gi,"Cobró ")
+      .replace(/recibió\s*:\s*/gi,"Cobró ")
+      .replace(/_/g," ")
+      .replace(/\s*·\s*/g," · ")
+      .trim();
+    return txt||"—";
   }
   const timelineCompleto=useMemo(()=>{
     const notas=(timeline||[]).map(n=>({...n,__kind:"nota"}));
@@ -593,8 +603,8 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
           created_at:i.fecha_transferencia||i.updated_at||i.fecha_pago||i.created_at||new Date().toISOString(),
           usuario_email:i.usuario_email||"Sistema",
           tipo:"pago",
-          contenido:`Cristian recibió transferencia de ${info.vendedor}. Venta: ${i.cliente_nombre||cliente.nombre} · Monto: USD ${safeNum(i.monto)}`,
-          detalle:{ingreso_id:i.id,vendedor:info.vendedor,recibe_final:"Cristian",monto:safeNum(i.monto)},
+          contenido:`${info.recibeFinal||"Cristian"} recibió transferencia de ${info.vendedor}. Venta: ${i.cliente_nombre||cliente.nombre} · Monto: USD ${safeNum(i.monto)}`,
+          detalle:{ingreso_id:i.id,vendedor:info.vendedor,recibe_final:info.recibeFinal||"Cristian",monto:safeNum(i.monto)},
           __kind:"transferencia"
         });
       }
@@ -776,7 +786,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                       <td style={S.td}>{svcLabel(i.servicio)}</td>
                       <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
                       <td style={{...S.td,fontSize:12,color:t.textMuted}}>{receptorPago(i)}</td>
-                      <td style={S.td}>{i.notas||"—"}</td>
+                      <td style={S.td}>{notasPagoLegibles(i.notas)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -1202,7 +1212,18 @@ function HistorialView({t}){
       if(d.concepto)partes.push(`Concepto: ${d.concepto}`);
       return partes.length?partes.join(" · "):"—";
     }
-    return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>`${k}: ${v}`).join(" · ")||"—";
+    const labels={
+      email:"Email",servicio:"Servicio",monto:"Monto",recibe:"Cobró",recibio_venta:"Cobró",recibe_final:"Recibió finalmente",vendedor:"Vendedor",
+      pendiente_transferencia:"Estado",ingreso_id:"Ingreso",fecha_recepcion:"Fecha de recepción",caja_id:"Caja",pendiente_id:"Pendiente",
+      nota:"Nota",cliente:"Cliente",rollback:"Reversión",caja_eliminada:"Caja eliminada",origen:"Origen",venta:"Venta"
+    };
+    return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>{
+      let valor=v;
+      if(k==="pendiente_transferencia")valor=v?"Pendiente de recepción":"Cobrado";
+      if(k==="fecha_recepcion")valor=formatDate(v);
+      if(typeof valor==="object"&&valor!==null)valor=Object.entries(valor).map(([kk,vv])=>`${labels[kk]||kk}: ${vv}`).join(", ");
+      return `${labels[k]||k.replace(/_/g," ")}: ${valor}`;
+    }).join(" · ")||"—";
   }
   return(
     <div ref={ref} style={S.card}>
@@ -1356,16 +1377,32 @@ export default function App(){
       vendedor,transferido:!ventaPendienteTransferencia(vendedor),
       fecha_vencimiento:servicio==="clases"||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
+  function limpiarTextoRecepcion(txt){
+    return String(txt||"")
+      .replace(/pendiente_transferencia\s*:\s*true/gi,"Pendiente de recepción")
+      .replace(/pendiente_transferencia\s*:\s*false/gi,"Cobrado")
+      .replace(/recibe\s*:\s*/gi,"Cobró ")
+      .replace(/recibio\s*:\s*/gi,"Cobró ")
+      .replace(/recibió\s*:\s*/gi,"Cobró ")
+      .replace(/_/g," ")
+      .replace(/\s*·\s*/g," · ")
+      .trim();
+  }
   function notaConRecepcion(notas, recibe, pendiente){
-    const base=String(notas||"").trim();
+    const base=limpiarTextoRecepcion(notas).trim();
     const r=String(recibe||"Cristian").trim()||"Cristian";
-    const meta=`recibe: ${r} · pendiente_transferencia: ${pendiente?"true":"false"}`;
+    const meta=pendiente?`Cobró ${r} · Pendiente de recepción`:`Cobró ${r} · Cobrado`;
     return base ? `${base} · ${meta}` : meta;
+  }
+  function formatearNotasIngreso(notas){
+    const txt=limpiarTextoRecepcion(notas);
+    if(!txt)return "-";
+    return txt;
   }
   function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,recepcion={}){
     const notasFinal=recepcion&&recepcion.recibe
       ? notaConRecepcion(notas, recepcion.recibe, !!recepcion.pendiente)
-      : (notas||"");
+      : limpiarTextoRecepcion(notas||"");
     return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notasFinal};
   }
   const CAJA_AUTO_DESDE = "2026-07-11";
@@ -1388,6 +1425,11 @@ export default function App(){
     const directo=base.recibe||base.recibio_venta||base.vendedor||base.recibe_final||base.recibio||"";
     if(String(directo||"").trim())return directo;
     const notas=String(base.notas||"");
+    // Prioridad: quién cobró originalmente esa venta. Si cobró Luigi,
+    // NO se reconstruye como caja directa aunque luego se haya recibido.
+    const mCobro=notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/i);
+    if(mCobro)return mCobro[1];
+    // Compatibilidad con datos viejos guardados como "recibe: X".
     const m=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
     return m?m[1]:"";
   };
@@ -1944,6 +1986,18 @@ export default function App(){
       await logH(user?.email,"registró caja por transferencia recibida","Caja diaria",cajaCreada?.id||null,{nombre:"Caja diaria",fecha:fechaRecepcion,recibe:recibeCaja,monto:montoRecibido,venta:cliente?.nombre||ingresoRelacionado?.cliente_nombre||"",vendedor:vendedorOriginal,ingreso_id:ingresoRelacionado?.id||cliente?.ingreso_id||null,pendiente_id:cliente?.pendiente_id||null});
     }
 
+    // Dejar marcado el ingreso original como recibido, sin cambiar quién cobró originalmente.
+    // Esto evita que renovaciones posteriores pisen pendientes anteriores y deja el detalle legible.
+    if(ingresoRelacionado?.id){
+      const notasBase=String(ingresoRelacionado.notas||"");
+      const marca=`Transferencia recibida por ${recibeCaja} el ${formatDate(fechaRecepcion)}`;
+      const notasActualizadas=notasBase.toLowerCase().includes("transferencia recibida por")
+        ? limpiarTextoRecepcion(notasBase)
+        : `${limpiarTextoRecepcion(notasBase)} · ${marca}`.trim();
+      supabase.from("ingresos").update({notas:notasActualizadas}).eq("id",ingresoRelacionado.id).then(()=>{});
+      setIngresos(prev=>prev.map(i=>String(i.id)===String(ingresoRelacionado.id)?{...i,notas:notasActualizadas}:i));
+    }
+
     const reciboNota={
       id:`tmp-recibo-${Date.now()}`,
       cliente_id:id,
@@ -2303,7 +2357,9 @@ export default function App(){
       const keyMismaVenta=`${fecha}|${monto}|${String(i.cliente_id||"")}`;
       const keyMismoNombre=`${fecha}|${monto}|${normCajaText(i.cliente_nombre||c.nombre||"")}`;
       if(i.id){
-        if(ingresosRealesCaja.has(String(i.id))||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
+        // Con ingreso_id, cada ingreso/renovación es independiente. No deduplicar por cliente+fecha+monto,
+        // porque dos renovaciones de la misma persona el mismo día pueden ser ventas distintas.
+        if(ingresosRealesCaja.has(String(i.id))||clavesReales.has(key))return null;
       }else if(ventasRealesCaja.has(keyMismaVenta)||ventasRealesPorNombre.has(keyMismoNombre)||clavesReales.has(key)||clavesReales.has(keySinIngreso))return null;
       return{
         id:`auto-ingreso-${i.id||fecha}-${i.cliente_id||""}`,
@@ -2962,7 +3018,7 @@ export default function App(){
                             {money(i.monto)}
                           </button>
                         </td>
-                        <td style={S.td}>{i.notas||"-"}</td>
+                        <td style={S.td}>{formatearNotasIngreso(i.notas)}</td>
                         <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button></td>
                       </tr>
                     ))}
