@@ -1407,17 +1407,19 @@ export default function App(){
     }
     const matches=[...notas.matchAll(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/gi)];
     if(matches.length){
-      const last=matches[matches.length-1];
-      const tail=notas.slice(last.index||0);
-      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(tail) && !/Cobrado|Transferencia recibida por/i.test(tail);
-      return {recibe:last[1],pendiente:pend};
+      const actual=matches[0];
+      const nextIndex=matches[1]?.index ?? notas.length;
+      const segmento=notas.slice(actual.index||0,nextIndex);
+      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(segmento) && !/Cobrado|Transferencia recibida por/i.test(segmento);
+      return {recibe:actual[1],pendiente:pend};
     }
     const legacy=[...notas.matchAll(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/gi)];
     if(legacy.length){
-      const last=legacy[legacy.length-1];
-      const tail=notas.slice(last.index||0);
-      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(tail) && !/Cobrado|Transferencia recibida por/i.test(tail);
-      return {recibe:last[1],pendiente:pend};
+      const actual=legacy[0];
+      const nextIndex=legacy[1]?.index ?? notas.length;
+      const segmento=notas.slice(actual.index||0,nextIndex);
+      const pend=/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:\s*true/i.test(segmento) && !/Cobrado|Transferencia recibida por/i.test(segmento);
+      return {recibe:actual[1],pendiente:pend};
     }
     return {recibe:"",pendiente:false};
   }
