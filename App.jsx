@@ -488,7 +488,7 @@ function ToastContainer({toasts,remove}){
           background:t.type==="error"?"#1a0a0a":t.type==="success"?"#0a1a0f":"#111827",
           border:`1px solid ${t.type==="error"?"#7f1d1d":t.type==="success"?"#14532d":"#1e2d45"}`,
           borderLeft:`4px solid ${t.type==="error"?"#ef4444":t.type==="success"?"#22c55e":"#c8972a"}`,
-          borderRadius:12,padding:"14px 18px",color:"#f0f4ff",fontSize:14,fontWeight:500,
+          borderRadius:12,padding:"14px 18px",color:"#101828",fontSize:14,fontWeight:500,
           minWidth:280,maxWidth:380,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",
           display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
         }}>
@@ -1474,8 +1474,8 @@ export default function App(){
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
 
-  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,showRecibeFinal=false,montoDefault=null,onConfirmFn=null}={}){
-    setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,montoDefault,montoRenovacion:montoDefault,recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
+  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,showRecibeFinal=false,showFecha=false,montoDefault=null,fechaDefault=null,onConfirmFn=null}={}){
+    setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -1789,8 +1789,9 @@ export default function App(){
       setRenovando(false);
     }
   }
-  async function renovarRapido(cliente, vendedor="", montoCustom){
+  async function renovarRapido(cliente, vendedor="", montoCustom, fechaCustom=null){
     const today=getToday();
+    const fechaRenovacion=dateOnly(fechaCustom)||toISODate(today);
     const servicio=normalizeServicio(cliente.servicio);
     const dur=servicio==="clases"?0:svcDuration(servicio);
     const vencimientoActual=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
@@ -1798,7 +1799,7 @@ export default function App(){
     // Ejemplo: si estaba vencido hace 10 días y renueva 30, queda con 20 días.
     const baseDate=vencimientoActual||toISODate(today);
     const nv=servicio==="clases"||dur<=0?null:toISODate(addDays(baseDate,dur));
-    const fb=toISODate(today);
+    const fb=servicio==="clases"?fechaRenovacion:toISODate(today);
     const transferido=!ventaPendienteTransferencia(vendedor);
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
     const email=(cliente.email||"").trim().toLowerCase();
@@ -1808,14 +1809,14 @@ export default function App(){
     setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
     const recibeRapida=vendedor||"Cristian";
     const pendienteRapida=ventaPendienteTransferencia(vendedor);
-    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,toISODate(today),cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
+    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,fb,cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
     const{data:ingRapida,error:eI}=await supabase.from("ingresos").insert([ingreso]).select().single();
     if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
     setIngresos(prev=>[{...(ingRapida||ingreso),id:ingRapida?.id||`tmp-${Date.now()}`},...prev]);
-    await registrarCajaDesdeVenta({fecha:toISODate(today),monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
+    await registrarCajaDesdeVenta({fecha:fb,monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
     await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
     await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${recibeRapida}${pendienteRapida?" · Pendiente de transferencia a Cristian":""}`,{servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
-    if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:toISODate(today),vendedor:recibeRapida,origen:"renovación rápida"});
+    if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:fb,vendedor:recibeRapida,origen:"renovación rápida"});
     toast.success(servicio==="clases"?`✓ ${cliente.nombre} renovado — clases registradas`:`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
     llamarDrive("compartir",email);
   }
@@ -2092,7 +2093,11 @@ export default function App(){
     return okB&&okF;
   }),[computed,busqueda,filtro]);
   const deudores=useMemo(()=>computed.filter(c=>Number(c.deuda_restante||0)>0),[computed]);
-  const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases"),[computed]);
+  const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases").sort((a,b)=>{
+    const af=a.estado_manual!=="finalizado", bf=b.estado_manual!=="finalizado";
+    if(af!==bf)return af?-1:1;
+    return String(b.fecha_inicio||"").localeCompare(String(a.fecha_inicio||""));
+  }),[computed]);
   const vencimientos=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)!=="clases").sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
   const vencimientosCriticos=useMemo(()=>{
     const pv=[],g=[],v=[];
@@ -2781,25 +2786,25 @@ export default function App(){
     return(
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"linear-gradient(180deg,#0b1220 0%,#070b13 100%)",padding:24}}>
-          <div style={{width:420,background:"#0f172a",borderRadius:24,padding:40,border:"1px solid #233451",boxShadow:"0 28px 72px rgba(0,0,0,0.56)"}}>
+        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 18%, rgba(200,145,31,.14), transparent 28%), linear-gradient(180deg,#f8fafc 0%,#eef2f6 100%)",padding:24}}>
+          <div style={{width:430,background:"rgba(255,255,255,.96)",borderRadius:24,padding:40,border:"1px solid #e4e7ec",boxShadow:"0 28px 72px rgba(16,24,40,.14)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
               <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain"}} onError={e=>{e.target.style.display="none";}}/>
               <div>
                 <div style={{fontSize:22,fontWeight:900,color:"#f0f4ff",letterSpacing:"-0.02em"}}>Seminario Cripto</div>
-                <div style={{fontSize:13,color:"#8899bb",marginTop:2}}>Sistema de gestión interno</div>
+                <div style={{fontSize:13,color:"#667085",marginTop:2}}>Sistema de gestión interno</div>
               </div>
             </div>
             <div style={{marginBottom:14}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Email</label>
               <input placeholder="correo@ejemplo.com" value={emailLogin} onChange={e=>setEmailLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#101827",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.18)"}}/>
+                style={{width:"100%",padding:"12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.04)"}}/>
             </div>
             <div style={{position:"relative",marginBottom:22}}>
-              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#8899bb",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#667085",marginBottom:5,letterSpacing:"0.06em",textTransform:"uppercase"}}>Contraseña</label>
               <input type={showPwd?"text":"password"} placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()}
-                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#101827",color:"#f8fafc",boxShadow:"0 1px 2px rgba(0,0,0,.18)"}}/>
-              <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#8899bb",display:"flex",alignItems:"center"}}>
+                style={{width:"100%",padding:"12px 44px 12px 14px",borderRadius:12,border:"1px solid #263754",fontSize:14,outline:"none",boxSizing:"border-box",background:"#ffffff",color:"#101828",boxShadow:"0 1px 2px rgba(16,24,40,.04)"}}/>
+              <span onClick={()=>setShowPwd(!showPwd)} style={{position:"absolute",right:12,bottom:11,cursor:"pointer",color:"#667085",display:"flex",alignItems:"center"}}>
                 {showPwd?(
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
@@ -2814,7 +2819,7 @@ export default function App(){
                 )}
               </span>
             </div>
-            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:12,border:"1px solid #d7bc7c",cursor:"pointer",fontWeight:800,fontSize:15,background:"#cf9a2e",color:"#0f172a",boxShadow:"0 8px 18px rgba(207,154,46,.22)",appearance:"none"}}>
+            <button onClick={login} style={{width:"100%",padding:"13px",borderRadius:12,border:"1px solid #d7bc7c",cursor:"pointer",fontWeight:800,fontSize:15,background:"#cf9a2e",color:"#0f172a",boxShadow:"0 10px 22px rgba(207,154,46,.22)",appearance:"none"}}>
               Ingresar
             </button>
           </div>
@@ -2825,18 +2830,19 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className="sc-app-shell" style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
+    <div className="sc-app-shell" style={{minHeight:"100vh",background:"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
           const montoActual=confirm.montoRenovacion;
           const vendedorActual=vendedorRenovacion;
+          const fechaActual=confirm.fechaRenovacion||toISODate(getToday());
           if(confirm.showRecibeFinal){
             const recibeFinal=confirm.recibeFinal;
             if(!["Cristian","Bahiano"].includes(recibeFinal)){toast.error("Elegí quién recibió la plata");return;}
             confirm.onConfirmFn?confirm.onConfirmFn(recibeFinal):confirm.onConfirm?.();
           }else{
-            confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual):confirm.onConfirm();
+            confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual,fechaActual):confirm.onConfirm();
           }
           setConfirm(null);setVendedorRenovacion("");
         }}
@@ -2850,6 +2856,14 @@ export default function App(){
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}
                 placeholder={String(confirm.montoDefault||35)}/>
             </div>
+            {confirm.showFecha&&(
+              <div>
+                <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Fecha de inicio</label>
+                <input type="date" value={confirm.fechaRenovacion||toISODate(getToday())}
+                  onChange={e=>setConfirm(prev=>({...prev,fechaRenovacion:e.target.value}))}
+                  style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}/>
+              </div>
+            )}
             <div>
               <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>¿Quién recibe la plata?</label>
               <select value={vendedorPermitido(vendedorRenovacion)} onChange={e=>setVendedorRenovacion(e.target.value)}
@@ -3424,7 +3438,7 @@ export default function App(){
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                             {c.servicio==="clases"?(
                               <>
-                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
                                 <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"7px 11px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
                               </>
                             ):(
@@ -3521,7 +3535,7 @@ export default function App(){
                         <td style={S.td}>{c.notas||"-"}</td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
-                            <button title="Renovación rápida" style={{...btn(true),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}>✔</button>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
                             {c.estado_manual==="finalizado"?(
                               <span style={{fontSize:12,color:t.textMuted,fontWeight:700}}>Consolidada</span>
                             ):(
