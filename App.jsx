@@ -2154,22 +2154,28 @@ export default function App(){
     const movimientosOcultos=realesRaw.filter(m=>m.concepto==="movimiento_oculto"||m.concepto==="movimiento_eliminado");
     const estaOculto=m=>movimientosOcultos.some(o=>{
       const d=o.detalle||{};
+      // Ocultar solo el movimiento exacto que el usuario quiso sacar.
+      // El fix anterior era demasiado amplio: si coincidían fecha/monto/recibe,
+      // podía ocultar movimientos válidos y dejar la Caja vacía.
       if(d.target_id&&String(d.target_id)===String(m.id))return true;
       const mismaFecha=dateOnly(d.fecha)===dateOnly(m.fecha);
       const mismoMonto=safeNum(d.monto)===safeNum(m.monto);
       if(!mismaFecha||!mismoMonto)return false;
-      const dCliente=String(d.cliente_id||"");
-      const mCliente=String(m.detalle?.cliente_id||m.cliente_id||"");
-      if(dCliente&&mCliente&&dCliente===mCliente)return true;
+      const dRecibe=String(d.recibe||"");
+      const mRecibe=String(m.detalle?.recibe||m.recibe||"");
+      if(dRecibe&&mRecibe&&dRecibe!==mRecibe)return false;
       const dIngreso=String(d.ingreso_id||"");
       const mIngreso=String(m.detalle?.ingreso_id||"");
       if(dIngreso&&mIngreso&&dIngreso===mIngreso)return true;
+      const dCliente=String(d.cliente_id||"");
+      const mCliente=String(m.detalle?.cliente_id||m.cliente_id||"");
+      if(dCliente&&mCliente&&dCliente===mCliente)return true;
       const dNombre=normCajaText(d.nombre||"");
       const mNombre=normCajaText(m.detalle?.nombre||"");
       if(dNombre&&mNombre&&dNombre===mNombre)return true;
-      const dRecibe=String(d.recibe||"");
-      const mRecibe=String(m.detalle?.recibe||m.recibe||"");
-      return !!dRecibe&&!!mRecibe&&dRecibe===mRecibe;
+      // Si el registro oculto no tiene ingreso/cliente/nombre, no lo usamos
+      // para ocultar por coincidencia genérica. Así no borra toda la Caja.
+      return false;
     });
 
     const reales=realesRaw.filter(m=>m.concepto!=="movimiento_oculto"&&m.concepto!=="movimiento_eliminado"&&!estaOculto(m));
