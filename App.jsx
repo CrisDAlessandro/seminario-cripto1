@@ -1270,6 +1270,7 @@ export default function App(){
   const[transferenciasRecibidas,setTransferenciasRecibidas]=useState([]);
   const[cajaMovimientos,setCajaMovimientos]=useState([]);
   const[cajaForm,setCajaForm]=useState({fecha:toISODate(getToday()),recibe:"Cristian",monto:""});
+  const[cajaEliminarFecha,setCajaEliminarFecha]=useState(toISODate(getToday()));
 
   const toast=useToast();
 
@@ -1743,17 +1744,35 @@ export default function App(){
     toast.success("Movimiento eliminado");
   }
 
-  async function eliminarDiaCaja(fecha,registros=[]){
-    const ids=(registros||[]).map(m=>m.id).filter(Boolean);
+  async function eliminarDiaCaja(fecha){
+    const f=dateOnly(fecha)||toISODate(getToday());
+    const delDia=(cajaMovimientos||[]).filter(m=>dateOnly(m.detalle?.fecha)===f&&m.tipo==="caja"&&m.detalle?.concepto!=="dia_eliminado");
+    const total=delDia.filter(m=>m.detalle?.concepto!=="neteada").reduce((a,m)=>a+safeNum(m.detalle?.monto),0);
+    const payload={
+      cliente_id:null,
+      usuario_email:user?.email||"—",
+      tipo:"caja",
+      contenido:`Día de caja quitado del calendario: ${formatDate(f)}`,
+      detalle:{concepto:"dia_eliminado",fecha:f,total,cantidad:delDia.length}
+    };
+    const{data,error}=await supabase.from("notas_cliente").insert([payload]).select().single();
+    if(error){toast.error("No se pudo quitar el día de caja");return;}
+    setCajaMovimientos(prev=>[data||{...payload,id:`tmp-caja-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    await logH(user?.email,"quitó día de caja del calendario","Caja diaria",data?.id||null,{nombre:"Caja diaria",fecha:f,cantidad:delDia.length,total});
+    toast.success("Día quitado del calendario de caja");
+  }
+
+  async function restaurarDiaCaja(fecha){
+    const f=dateOnly(fecha)||toISODate(getToday());
+    const ids=(cajaMovimientos||[]).filter(m=>dateOnly(m.detalle?.fecha)===f&&m.tipo==="caja"&&m.detalle?.concepto==="dia_eliminado").map(m=>m.id).filter(Boolean);
     const reales=ids.filter(id=>!String(id).startsWith("tmp-"));
     if(reales.length){
       const{error}=await supabase.from("notas_cliente").delete().in("id",reales);
-      if(error){toast.error("No se pudo eliminar el día de caja");return;}
+      if(error){toast.error("No se pudo restaurar el día");return;}
     }
-    setCajaMovimientos(prev=>prev.filter(m=>!(ids.includes(m.id)||(dateOnly(m.detalle?.fecha)===fecha&&m.tipo==="caja"))));
-    const total=(registros||[]).filter(m=>m.concepto!=="neteada").reduce((a,m)=>a+safeNum(m.monto),0);
-    await logH(user?.email,"eliminó día de caja","Caja diaria",null,{nombre:"Caja diaria",fecha,cantidad:ids.length,total});
-    toast.success("Día de caja eliminado");
+    setCajaMovimientos(prev=>prev.filter(m=>!ids.includes(m.id)));
+    await logH(user?.email,"restauró día de caja","Caja diaria",null,{nombre:"Caja diaria",fecha:f});
+    toast.success("Día restaurado en calendario de caja");
   }
 
   async function deshacerCajaNeteada(ids=[]){
@@ -1899,8 +1918,8 @@ export default function App(){
   useEffect(()=>{
     if(activeView==="semanal")setTimeout(()=>semanaActualRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),80);
   },[activeView,semanaActualKey]);
-  const cajaDiaria=useMemo(()=>{
-    const movs=(cajaMovimientos||[]).map(m=>{
+  const cajaBaseMovs=useMemo(()=>
+    (cajaMovimientos||[]).map(m=>{
       const d=m.detalle||{};
       const concepto=d.concepto||"movimiento";
       const fecha=dateOnly(d.fecha)||dateOnly(m.created_at)||toISODate(getToday());
@@ -1908,9 +1927,14 @@ export default function App(){
       const monto=safeNum(d.monto);
       const saldoCancelado=safeNum(d.saldo_cancelado);
       return{...m,concepto,fecha,recibe,monto,saldoCancelado};
-    }).filter(m=>m.fecha);
+    }).filter(m=>m.fecha)
+  ,[cajaMovimientos]);
+  const cajaDiasEliminados=useMemo(()=>Array.from(new Set(cajaBaseMovs.filter(m=>m.concepto==="dia_eliminado").map(m=>m.fecha))).sort((a,b)=>b.localeCompare(a)),[cajaBaseMovs]);
+  const cajaDiaria=useMemo(()=>{
+    const eliminados=new Set(cajaDiasEliminados);
+    const movs=cajaBaseMovs.filter(m=>m.concepto!=="dia_eliminado"&&!eliminados.has(m.fecha));
     const keys=new Set(movs.map(m=>m.fecha));
-    keys.add(toISODate(getToday()));
+    if(!eliminados.has(toISODate(getToday())))keys.add(toISODate(getToday()));
     const sortedKeys=Array.from(keys).sort();
     let saldo=0;
     const rows=[];
@@ -1931,7 +1955,7 @@ export default function App(){
       saldo=saldoFinal;
     });
     return rows.sort((a,b)=>b.key.localeCompare(a.key));
-  },[cajaMovimientos]);
+  },[cajaBaseMovs,cajaDiasEliminados]);
   const cajaHoy=useMemo(()=>cajaDiaria.find(r=>r.key===toISODate(getToday())),[cajaDiaria]);
   const cajaSaldoActual=cajaDiaria.length?cajaDiaria[0].saldoFinal:0;
   function cajaTextoSaldo(saldo){
@@ -2265,6 +2289,14 @@ export default function App(){
                 </div>
                 <button onClick={registrarMovimientoCaja} style={{...btn(false,true),height:42}}>Agregar a caja</button>
               </div>
+              <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",borderTop:`1px solid ${t.tdBorder}`,paddingTop:14}}>
+                <div>
+                  <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Quitar una fecha del calendario</label>
+                  <input type="date" value={cajaEliminarFecha} onChange={e=>setCajaEliminarFecha(e.target.value)} style={{...S.input,width:180}}/>
+                </div>
+                <button onClick={()=>askConfirm("Quitar día de caja",`¿Quitar del calendario de caja el ${formatDate(cajaEliminarFecha)}? No se borran los movimientos: quedan en historial, pero esa fecha deja de impactar en caja y arrastres.`,()=>eliminarDiaCaja(cajaEliminarFecha),{danger:true,label:"Quitar fecha"})} style={{...btn(false,false),height:42,color:"#b91c1c"}}>Quitar fecha</button>
+                {cajaDiasEliminados.length>0&&<div style={{fontSize:12,color:t.textMuted}}>Fechas quitadas: {cajaDiasEliminados.map(f=><span key={f} style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:6,padding:"4px 8px",borderRadius:999,background:t.btnLtBg,color:t.btnLtTx}}>{formatDate(f)} <button onClick={()=>restaurarDiaCaja(f)} style={{border:"none",background:"transparent",cursor:"pointer",fontWeight:800,color:t.accent}}>restaurar</button></span>)}</div>}
+              </div>
             </div>
 
             <div style={S.card}>
@@ -2302,7 +2334,6 @@ export default function App(){
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoFinal)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
                             {tieneNeteo&&<button onClick={()=>askConfirm("Deshacer caja neteada","¿Deshacer el neteo de este día para que vuelva a calcular y arrastrar el saldo?",()=>deshacerCajaNeteada(r.neteos.map(n=>n.id)),{danger:false,label:"Deshacer"})} style={{...btn(false,false),padding:"8px 12px"}}>Deshacer neteo</button>}
-                            {r.registros?.length>0&&<button onClick={()=>askConfirm("Eliminar día de caja",`¿Eliminar todos los movimientos de caja del ${formatDate(r.key)}? Esto queda registrado en historial.`,()=>eliminarDiaCaja(r.key,r.registros),{danger:true,label:"Eliminar día"})} style={{...btn(false,false),padding:"8px 12px",color:"#b91c1c"}}>Eliminar día</button>}
                           </div>
                         </div>
                         {r.movimientos.length>0&&(
