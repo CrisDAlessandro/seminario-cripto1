@@ -47,9 +47,7 @@ const MOBILE_CSS = `
     radial-gradient(circle at 14% 0%, rgba(31,78,121,.055), transparent 28%),
     radial-gradient(circle at 86% 8%, rgba(200,145,31,.055), transparent 24%),
     linear-gradient(180deg,#fbfcfe 0%,#f6f8fb 48%,#eef2f6 100%);}
-  .sc-dark{background:
-    radial-gradient(circle at 14% 0%, rgba(212,162,58,.12), transparent 26%),
-    linear-gradient(180deg,#05070b 0%,#090d14 50%,#05070b 100%);}
+  .sc-dark{background:linear-gradient(180deg,#05070b 0%,#090d14 50%,#05070b 100%);}
 
   .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.98);border:1px solid rgba(226,232,240,.98);box-shadow:0 12px 34px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
   .sc-dark .sc-topbar{background:rgba(13,18,27,.94);border-color:#273244;box-shadow:0 18px 46px rgba(0,0,0,.40);}
@@ -70,6 +68,12 @@ const MOBILE_CSS = `
   .sc-hist-table th:first-child, .sc-hist-table td:first-child{padding-left:18px!important;}
   .sc-hist-table th:last-child, .sc-hist-table td:last-child{padding-right:18px!important;}
   .sc-tl-item{box-shadow:0 1px 0 rgba(16,24,40,.02);}
+
+  .sc-dark .sc-search-input,
+  .sc-dark .sc-search-input:focus{
+    border-color:#d4a23a!important;
+    box-shadow:0 0 0 4px rgba(212,162,58,.18), inset 0 0 0 1px rgba(212,162,58,.22)!important;
+  }
 
   .sc-dark input[type="date"]{
     color-scheme:dark!important;
@@ -600,9 +604,9 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
       <div style={{background:t.cardBg,borderRadius:18,border:`1px solid ${t.cardBorder}`,width:"100%",maxWidth:560,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",overflow:"hidden"}} {...modalProps}>
         <div style={{padding:"16px 20px",borderBottom:`1px solid ${t.tdBorder}`,display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:t.dark?t.accent:t.textMuted,fontSize:17}}>🔍</span>
-          <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
+          <input ref={ref} className="sc-search-input" value={q} onChange={e=>setQ(e.target.value)}
             placeholder="Nombre o email..."
-            style={{flex:1,border:`2px solid ${t.dark?"#d4a23a":"#163a5c"}`,outline:"none",background:t.inputBg,color:t.text,fontSize:15,borderRadius:12,padding:"10px 12px",boxShadow:t.dark?"0 0 0 4px rgba(212,162,58,.20), inset 0 0 0 1px rgba(212,162,58,.18)":"0 0 0 3px rgba(22,58,92,.08)"}}/>
+            style={{flex:1,border:`2px solid ${t.dark?"#d4a23a":"#163a5c"}`,outline:"none",background:t.inputBg,color:t.text,fontSize:15,borderRadius:12,padding:"10px 12px",boxShadow:t.dark?"0 0 0 4px rgba(212,162,58,.18), inset 0 0 0 1px rgba(212,162,58,.22)":"0 0 0 3px rgba(22,58,92,.08)"}}/>
           {/* × button instead of Esc label */}
           <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:t.textMuted,fontSize:20,lineHeight:1,padding:"0 2px",display:"flex",alignItems:"center"}}>×</button>
         </div>
@@ -1254,14 +1258,14 @@ function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLab
 function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,setPage,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,sectionRef,t}){
   const S=makeS(t);
   return(
-    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:280,borderTop:`3px solid ${accentBorder}`}}>
+    <div style={{...S.card,display:"flex",flexDirection:"column",minHeight:330,borderTop:`3px solid ${accentBorder}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontSize:15,fontWeight:800,color:t.text}}>{titulo}</div>
         <div style={{minWidth:30,height:30,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:badgeBg,color:badgeColor,fontWeight:800,fontSize:13}}>{clientes.length}</div>
       </div>
-      <div style={{flex:1}}>
+      <div style={{flex:1,minHeight:184}}>
         {clientes.length?(
-          <div style={{display:"grid",gap:8}}>
+          <div style={{display:"grid",gap:8,minHeight:184,alignContent:"start"}}>
             {rows.map(c=>(<ClienteCard key={c.id} cliente={c} accentBorder={accentBorder} accentBg={accentBg} accentText={accentText} nameColor={nameColor} dateLabel={dateLabel} onRenovarRapido={onRenovarRapido} onAbrirRenovar={onAbrirRenovar} onEliminar={onEliminar} onVerDetalle={onVerDetalle} t={t}/>))}
           </div>
         ):(
@@ -2810,7 +2814,7 @@ export default function App(){
     return(
       <>
         <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
-        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 18%, rgba(212,162,58,.16), transparent 28%), linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)",padding:24}}>
+        <div style={{display:"flex",minHeight:"100vh",alignItems:"center",justifyContent:"center",background:"linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)",padding:24}}>
           <div style={{width:430,background:"rgba(13,18,27,.96)",borderRadius:24,padding:40,border:"1px solid #273244",boxShadow:"0 32px 86px rgba(0,0,0,.48)"}}>
             <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:32}}>
               <img src={LOGO_SRC} alt="Logo" style={{width:50,height:50,objectFit:"contain",filter:"drop-shadow(0 10px 22px rgba(212,162,58,.22))"}} onError={e=>{e.target.style.display="none";}}/>
@@ -2854,7 +2858,7 @@ export default function App(){
 
   // ── App ───────────────────────────────────────────────────────────────────
   return(
-    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:dark?"radial-gradient(circle at 14% 0%, rgba(212,162,58,.12), transparent 26%), linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)":"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
+    <div className={dark?"sc-app-shell sc-dark":"sc-app-shell"} style={{minHeight:"100vh",background:dark?"linear-gradient(180deg,#05070b 0%,#090d14 48%,#05070b 100%)":"linear-gradient(180deg,#f8fafc 0%,#f3f6f9 42%,#edf2f7 100%)",color:t.text,fontFamily:"'Inter','Segoe UI',Arial,sans-serif",letterSpacing:"-0.005em"}}>
       <ToastContainer toasts={toast.toasts} remove={toast.remove}/>
       {confirm&&<ConfirmModal open={!!confirm} title={confirm.title} message={confirm.message} confirmLabel={confirm.label} danger={confirm.danger}
         onConfirm={()=>{
