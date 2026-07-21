@@ -2264,7 +2264,39 @@ export default function App(){
     refetch();
   }
 
+  async function marcarSaldoAnualImpago(cliente){
+    if(normalizeServicio(cliente?.servicio)!=="anual"||safeNum(cliente?.deuda_restante)<=0){
+      toast.error("Esta acción solo aplica a anuales con deuda pendiente");
+      return;
+    }
+    const fechaHoy=toISODate(getToday());
+    const deudaAnterior=safeNum(cliente.deuda_restante);
+    const notaImpago=`Saldo anual impago dado de baja el ${formatDate(fechaHoy)}. Se pasa a Plan trader mensual sin deuda. Ajustar vencimiento manualmente según crédito tomado.`;
+    const notasBase=String(cliente.notas||"").trim();
+    const payload={
+      servicio:"mensual",
+      monto:35,
+      duracion_dias:30,
+      deuda_restante:0,
+      estado_manual:"activo",
+      fecha_inicio:fechaHoy,
+      fecha_vencimiento:toISODate(addDays(fechaHoy,30)),
+      notas:notasBase?`${notasBase} · ${notaImpago}`:notaImpago
+    };
+    const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    if(error){toast.error("No se pudo pasar el cliente a mensual");return;}
+    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...payload}:c));
+    setClienteDetalle(prev=>prev&&String(prev.id)===String(cliente.id)?{...prev,...payload}:prev);
+    setDeudaCliente(null);
+    setPagoCliente(null);
+    await logH(user?.email,"marcó saldo anual impago","cliente",cliente.id,{nombre:cliente.nombre,deuda_anterior:deudaAnterior,nuevo_servicio:"mensual",monto:35,fecha_inicio:fechaHoy,fecha_vencimiento:payload.fecha_vencimiento});
+    await logNC(cliente.id,user?.email,"estado",`Saldo anual impago: se eliminó deuda de USD ${deudaAnterior} y se pasó a Plan trader mensual. Ajustar vencimiento manualmente según crédito.`,{deuda_anterior:deudaAnterior,nuevo_servicio:"mensual",monto:35,fecha_inicio:fechaHoy,fecha_vencimiento:payload.fecha_vencimiento});
+    toast.success(`${cliente.nombre} pasó a mensual y salió de deudores`);
+    refetch();
+  }
+
   async function registrarPagoParcial(cliente,monto,recibePago="Cristian"){
+    if(normalizeServicio(cliente?.servicio)!=="anual"){toast.error("La deuda solo aplica al plan inversor anual");return;}
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
     if(monto>safeNum(cliente.deuda_restante)){toast.error(`El monto supera la deuda actual (USD ${cliente.deuda_restante})`);return;}
     const recibe=String(recibePago||"Cristian").trim();
@@ -3733,7 +3765,7 @@ export default function App(){
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Cliente","Servicio pagado","Resta","Días desde pago","Notas","Acción"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Cliente","Servicio pagado","Resta","Días desde pago","Notas","Acciones"]} t={t}/></thead>
                   <tbody>
                     {deudPag.rows.map(c=>{
                       const diasDesdePago=c.fecha_inicio?diffDays(parseISODate(c.fecha_inicio),getToday()):null;
@@ -3752,7 +3784,16 @@ export default function App(){
                           </span>
                         </td>
                         <td style={S.td}>{c.notas||"-"}</td>
-                        <td style={S.td}><button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button></td>
+                        <td style={S.td}>
+                          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                            <button style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>setPagoCliente(c)}>Registrar pago</button>
+                            <button
+                              title="No paga el saldo anual restante y se pasa a mensual"
+                              style={{...btn(false),padding:"6px 12px",fontSize:12}}
+                              onClick={()=>askConfirm("Pasar anual a mensual",`¿Marcar como impago el saldo restante de ${c.nombre}? Se elimina la deuda, pasa a Plan trader mensual y no se registra ningún ingreso nuevo. Después podés ajustar manualmente el vencimiento según el crédito tomado.`,()=>marcarSaldoAnualImpago(c),{label:"Pasar a mensual"})}
+                            >Impago</button>
+                          </div>
+                        </td>
                       </tr>
                       );
                     })}
