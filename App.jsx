@@ -930,7 +930,36 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
       }
       return rows;
     });
-    return [...notas,...pagos].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+    const merged=[...notas,...pagos].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+    const kept=[];
+    merged.forEach(x=>{
+      const contenido=String(x.contenido||"")
+        .replace(/ingreso_id\s*:?\s*\d+/gi,"")
+        .replace(/\s+/g," ")
+        .trim()
+        .toLowerCase();
+      const d=x.detalle||{};
+      const key=[
+        x.tipo,
+        contenido,
+        String(d.servicio||"").toLowerCase(),
+        String(safeNum(d.monto)),
+        String(d.recibe||d.recibio_venta||"").toLowerCase(),
+        String(d.pendiente_transferencia??"")
+      ].join("|");
+      const dup=kept.find(k=>{
+        const kd=k.detalle||{};
+        const kc=String(k.contenido||"")
+          .replace(/ingreso_id\s*:?\s*\d+/gi,"")
+          .replace(/\s+/g," ")
+          .trim()
+          .toLowerCase();
+        const kk=[k.tipo,kc,String(kd.servicio||"").toLowerCase(),String(safeNum(kd.monto)),String(kd.recibe||kd.recibio_venta||"").toLowerCase(),String(kd.pendiente_transferencia??"")].join("|");
+        return kk===key&&minutesBetweenDates(x.created_at,k.created_at)<=10;
+      });
+      if(!dup)kept.push(x);
+    });
+    return kept;
   },[timeline,pagosTotales,allClientes,mismoNombre]);
   const tlTotal=Math.max(1,Math.ceil(timelineCompleto.length/TL_PAGE));
   const tlRows=useMemo(()=>{const s=(tlPage-1)*TL_PAGE;return timelineCompleto.slice(s,s+TL_PAGE);},[timelineCompleto,tlPage]);
@@ -1688,6 +1717,7 @@ export default function App(){
   const baseRef=useRef(null);const vencRef=useRef(null);
   const deudRef=useRef(null);const clasesRef=useRef(null);
   const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const semanaActualRef=useRef(null);const cajaRef=useRef(null);
+  const actionLocks=useRef(new Set());
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -1724,9 +1754,10 @@ export default function App(){
     setClientes(data||[]);setLoading(false);
   }
   async function fetchIngresos(){
-    const{data,error}=await supabase.from("ingresos").select("*").order("fecha_pago",{ascending:false});
+    const{data,error}=await supabase.from("ingresos").select("*").order("fecha_pago",{ascending:false}).order("created_at",{ascending:false});
     if(error){toast.error("No se pudieron cargar los ingresos");return;}
-    setIngresos(data||[]);
+    // No pisar ingresos recién insertados si el refetch vuelve viejo: se mergea y luego se limpia duplicado.
+    setIngresos(prev=>dedupeIngresosDuplicados([...(data||[]),...(prev||[])]));
   }
   async function fetchTransferenciasRecibidas(){
     const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","pago").order("created_at",{ascending:false});
@@ -1741,7 +1772,8 @@ export default function App(){
   async function fetchCajaMovimientos(){
     const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","caja").order("created_at",{ascending:false});
     if(error){setCajaMovimientos([]);return;}
-    setCajaMovimientos(data||[]);
+    // No pisar caja recién creada si el refetch vuelve viejo.
+    setCajaMovimientos(prev=>dedupeCajaMovimientosDuplicados([...(data||[]),...(prev||[])]));
   }
   async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas(),fetchVentasPendientesNotas(),fetchCajaMovimientos()]);}
   useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();fetchVentasPendientesNotas();fetchCajaMovimientos();limpiarHistorial();},[]);
@@ -1777,6 +1809,78 @@ export default function App(){
       .replace(/_/g," ")
       .replace(/\s*·\s*/g," · ")
       .trim();
+  }
+
+  function minutesBetweenDates(a,b){
+    const da=a?new Date(a):null, db=b?new Date(b):null;
+    if(!da||!db||Number.isNaN(da.getTime())||Number.isNaN(db.getTime()))return 999999;
+    return Math.abs(da.getTime()-db.getTime())/60000;
+  }
+  function ingresoDupKey(i){
+    return [
+      String(i?.cliente_id||i?.cliente_nombre||"").trim().toLowerCase(),
+      dateOnly(i?.fecha_pago)||"",
+      normalizeServicio(i?.servicio),
+      String(safeNum(i?.monto)),
+      limpiarTextoRecepcion(i?.notas||"").toLowerCase()
+    ].join("|");
+  }
+  function dedupeIngresosDuplicados(arr=[]){
+    const kept=[];
+    (arr||[]).forEach(i=>{
+      const key=ingresoDupKey(i);
+      const creado=i?.created_at||i?.updated_at||i?.fecha_pago;
+      const dup=kept.find(k=>ingresoDupKey(k)===key&&minutesBetweenDates(creado,k?.created_at||k?.updated_at||k?.fecha_pago)<=10);
+      if(!dup)kept.push(i);
+    });
+    return kept;
+  }
+  function cajaDupKey(m){
+    const d=m?.detalle||{};
+    return [
+      dateOnly(d.fecha)||"",
+      String(d.recibe||"").trim().toLowerCase(),
+      String(safeNum(d.monto)),
+      String(d.cliente_id||d.nombre||"").trim().toLowerCase(),
+      String(d.origen||"").trim().toLowerCase()
+    ].join("|");
+  }
+  function dedupeCajaMovimientosDuplicados(arr=[]){
+    const kept=[];
+    (arr||[]).forEach(m=>{
+      const d=m?.detalle||{};
+      if(m?.tipo!=="caja"||d?.concepto!=="movimiento"){kept.push(m);return;}
+      const key=cajaDupKey(m);
+      const creado=m?.created_at||d?.fecha;
+      const dup=kept.find(k=>{
+        const kd=k?.detalle||{};
+        return k?.tipo==="caja"&&kd?.concepto==="movimiento"&&cajaDupKey(k)===key&&minutesBetweenDates(creado,k?.created_at||kd?.fecha)<=10;
+      });
+      if(!dup)kept.push(m);
+    });
+    return kept;
+  }
+  async function buscarIngresoDuplicadoServidor({clienteId,servicio,monto,fecha,notas}){
+    const f=dateOnly(fecha)||toISODate(getToday());
+    const m=Number(monto||0);
+    const local=(ingresos||[]).find(i=>
+      String(i.cliente_id||"")===String(clienteId||"")&&
+      dateOnly(i.fecha_pago)===f&&
+      normalizeServicio(i.servicio)===normalizeServicio(servicio)&&
+      safeNum(i.monto)===safeNum(m)&&
+      limpiarTextoRecepcion(i.notas||"").toLowerCase()===limpiarTextoRecepcion(notas||"").toLowerCase()
+    );
+    if(local)return local;
+    const{data,error}=await supabase.from("ingresos")
+      .select("*")
+      .eq("cliente_id",clienteId)
+      .eq("fecha_pago",f)
+      .eq("servicio",normalizeServicio(servicio))
+      .eq("monto",m)
+      .order("created_at",{ascending:false})
+      .limit(5);
+    if(error)return null;
+    return (data||[]).find(i=>limpiarTextoRecepcion(i.notas||"").toLowerCase()===limpiarTextoRecepcion(notas||"").toLowerCase())||null;
   }
   function notaConRecepcion(notas, recibe, pendiente){
     const base=limpiarTextoRecepcion(notas).trim();
@@ -1891,6 +1995,16 @@ export default function App(){
       return String(d.ingreso_id||"")===String(ingresoId);
     });
     if(yaExiste)return null;
+    const dupLocal=(cajaMovimientos||[]).some(m=>{
+      const d=m?.detalle||{};
+      if(m?.tipo!=="caja"||d?.concepto!=="movimiento")return false;
+      return cajaDupKey({detalle:{fecha:f,recibe:quien,monto:montoNum,cliente_id:clienteId||null,nombre:nombre||"",origen:origen||"venta"}})===cajaDupKey(m)&&minutesBetweenDates(new Date().toISOString(),m?.created_at||d?.fecha)<=10;
+    });
+    if(dupLocal)return null;
+    if(ingresoId){
+      const{data:cx}=await supabase.from("notas_cliente").select("*").eq("tipo","caja").eq("detalle->>concepto","movimiento").eq("detalle->>ingreso_id",String(ingresoId)).limit(1);
+      if(cx?.length)return cx[0];
+    }
     const eliminadosFecha=(cajaMovimientos||[]).filter(m=>
       m?.tipo==="caja"&&
       dateOnly(m?.detalle?.fecha)===f&&
@@ -2022,31 +2136,53 @@ export default function App(){
     const servicio=normalizeServicio(cliente.servicio);
     const dur=["clases","publicidad"].includes(servicio)?0:svcDuration(servicio);
     const vencimientoActual=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
-    // Regla correcta: renovar suma la duración completa al vencimiento previo.
-    // Ejemplo: si estaba vencido hace 10 días y renueva 30, queda con 20 días.
     const baseDate=vencimientoActual||toISODate(today);
     const nv=["clases","publicidad"].includes(servicio)||dur<=0?null:toISODate(addDays(baseDate,dur));
     const fb=["clases","publicidad"].includes(servicio)?fechaRenovacion:toISODate(today);
-    const transferido=!ventaPendienteTransferencia(vendedor);
     const monto=montoCustom&&Number(montoCustom)>0?Number(montoCustom):Number(cliente.monto||0);
     const email=(cliente.email||"").trim().toLowerCase();
-    const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:servicio==="anual"?Number(cliente.deuda_restante||0):0,notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
-    const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
-    if(eC){toast.error("No se pudo renovar el cliente");return;}
-    setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
     const recibeRapida=vendedor||"Cristian";
     const pendienteRapida=ventaPendienteTransferencia(vendedor);
-    const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,fb,cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
-    const{data:ingRapida,error:eI}=await supabase.from("ingresos").insert([ingreso]).select().single();
-    if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
-    setIngresos(prev=>[{...(ingRapida||ingreso),id:ingRapida?.id||`tmp-${Date.now()}`},...prev]);
-    await registrarCajaDesdeVenta({fecha:fb,monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
-    await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
-    await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${recibeRapida}${pendienteRapida?" · Pendiente de transferencia a Cristian":""}`,{servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
-    if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:fb,vendedor:recibeRapida,origen:"renovación rápida"});
-    toast.success(servicio==="clases"?`✓ ${cliente.nombre} renovado — clases registradas`:`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);refetch();
-    llamarDrive("compartir",email);
+    const lockKey=`renovar:${cliente.id}:${servicio}:${fb}:${monto}:${recibeRapida}`;
+    if(actionLocks.current.has(lockKey)){
+      toast.error("Esa renovación ya se está procesando");
+      return;
+    }
+    actionLocks.current.add(lockKey);
+    try{
+      const transferido=!ventaPendienteTransferencia(vendedor);
+      const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:servicio==="anual"?Number(cliente.deuda_restante||0):0,notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
+      const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,fb,cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
+      const duplicado=await buscarIngresoDuplicadoServidor({clienteId:cliente.id,servicio,monto,fecha:fb,notas:ingreso.notas});
+      if(duplicado){
+        const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+        if(eC){toast.error("La renovación ya estaba registrada, pero no se pudo actualizar el cliente");return;}
+        setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
+        setIngresos(prev=>dedupeIngresosDuplicados([duplicado,...prev]));
+        await registrarCajaDesdeVenta({fecha:fb,monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:duplicado.id});
+        toast.success("La renovación ya existía. La contabilicé una sola vez y evité duplicar el ingreso.");
+        refetch();
+        return;
+      }
+
+      const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+      if(eC){toast.error("No se pudo renovar el cliente");return;}
+      setClientes(prev=>prev.map(c=>c.id===cliente.id?{...c,...payload,id:cliente.id}:c));
+      const{data:ingRapida,error:eI}=await supabase.from("ingresos").insert([ingreso]).select().single();
+      if(eI){toast.error("Cliente renovado, pero no se pudo registrar el ingreso");refetch();return;}
+      setIngresos(prev=>dedupeIngresosDuplicados([{...(ingRapida||ingreso),id:ingRapida?.id||`tmp-${Date.now()}`},...prev]));
+      await registrarCajaDesdeVenta({fecha:fb,monto,recibe:recibeRapida,nombre:cliente.nombre,clienteId:cliente.id,origen:"renovación rápida",ingresoId:ingRapida?.id});
+      await logH(user?.email,"renovó rápido cliente","cliente",cliente.id,{nombre:cliente.nombre,servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
+      await logNC(cliente.id,user?.email,"renovación",`Renovación rápida. Servicio: ${svcLabel(servicio)} · Monto: USD ${monto} · Recibe: ${recibeRapida}${pendienteRapida?" · Pendiente de transferencia a Cristian":""}`,{servicio,monto,recibe:recibeRapida,pendiente_transferencia:pendienteRapida,ingreso_id:ingRapida?.id||null});
+      if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:fb,vendedor:recibeRapida,origen:"renovación rápida"});
+      toast.success(servicio==="clases"?`✓ ${cliente.nombre} renovado — clases registradas`:`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);
+      refetch();
+      if(!["clases","publicidad"].includes(servicio))llamarDrive("compartir",email);
+    }finally{
+      actionLocks.current.delete(lockKey);
+    }
   }
+
   async function eliminarClienteConfirmado(cliente){
     // Baja operativa: elimina al cliente activo y revoca acceso, pero NO borra ingresos históricos.
     // Antes de borrar el cliente, se desvinculan sus ingresos para evitar cascadas por clave foránea.
