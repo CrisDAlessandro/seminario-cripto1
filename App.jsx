@@ -830,6 +830,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const [timeline,setTimeline]=useState([]);
   const [loadingTL,setLoadingTL]=useState(true);
   const [tlPage,setTlPage]=useState(1);
+  function localMinutesBetweenDates(a,b){
+    const da=a?new Date(a):null, db=b?new Date(b):null;
+    if(!da||!db||Number.isNaN(da.getTime())||Number.isNaN(db.getTime()))return 999999;
+    return Math.abs(da.getTime()-db.getTime())/60000;
+  }
   useEffect(()=>{
     const onKey=e=>{if(e.key==="Escape")onClose?.();};
     window.addEventListener("keydown",onKey);
@@ -955,7 +960,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
           .trim()
           .toLowerCase();
         const kk=[k.tipo,kc,String(kd.servicio||"").toLowerCase(),String(safeNum(kd.monto)),String(kd.recibe||kd.recibio_venta||"").toLowerCase(),String(kd.pendiente_transferencia??"")].join("|");
-        return kk===key&&minutesBetweenDates(x.created_at,k.created_at)<=10;
+        return kk===key&&localMinutesBetweenDates(x.created_at,k.created_at)<=10;
       });
       if(!dup)kept.push(x);
     });
