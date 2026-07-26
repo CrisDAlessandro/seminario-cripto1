@@ -2888,24 +2888,38 @@ export default function App(){
 
     function infoRecepcion(i){
       const cliente=i.cliente_id?clientesPorId.get(String(i.cliente_id)):null;
-      const vendedor=String(i.vendedor||i.recibe||i.recibio_venta||i.recibe_venta||cliente?.vendedor||"").trim();
-      const esVendedor=VENDEDORES.includes(vendedor);
-      if(!esVendedor)return{recibido:true,fecha:i.fecha_pago};
+      const info=recepcionActualDesdeIngreso(i);
+      const receptor=String(info.recibe||i.vendedor||i.recibe||i.recibio_venta||i.recibe_venta||cliente?.vendedor||"").trim();
 
-      // Si sigue en pendientes de recepción, todavía NO cuenta en ninguna semana.
-      const clientePendiente=cliente&&cliente.vendedor===vendedor&&cliente.transferido!==true&&String(cliente.transferido)!=="true";
-      if(clientePendiente)return{recibido:false,fecha:null};
+      // Regla correcta semanal:
+      // - Cristian/Bahiano cuentan SIEMPRE por fecha de pago del ingreso.
+      // - No depende de caja neteada.
+      // - No depende del estado actual del cliente, porque el cliente puede haber cambiado después.
+      // - Solo Luigi queda fuera hasta marcar recibido.
+      if(!ventaPendienteTransferencia(receptor)){
+        return{recibido:true,fecha:i.fecha_pago};
+      }
 
-      // Si ya se marcó recibido, cuenta en la semana en que Cristian recibió la transferencia.
+      // Para Luigi, buscar la recepción real. Primero por ingreso_id; después fallback legacy.
       const notas=notasPorCliente.get(String(i.cliente_id||""))||[];
       const monto=safeNum(i.monto);
-      const nota=notas.find(n=>{
+      const ingresoId=String(i.id||"");
+      const nota=notas.find(n=>String(n.detalle?.ingreso_id||"")===ingresoId)||notas.find(n=>{
         const d=n.detalle||{};
-        const mismoVendedor=!d.vendedor||String(d.vendedor)===vendedor;
+        const mismoVendedor=!d.vendedor||String(d.vendedor)===receptor;
         const mismoMonto=!d.monto||safeNum(d.monto)===monto;
         return mismoVendedor&&mismoMonto;
-      })||notas[0];
-      return{recibido:true,fecha:nota?.created_at||i.fecha_pago};
+      })||null;
+
+      if(nota){
+        return{recibido:true,fecha:dateOnly(nota.detalle?.fecha)||nota.created_at||i.fecha_pago};
+      }
+
+      if(info.pendiente){
+        return{recibido:false,fecha:null};
+      }
+
+      return{recibido:true,fecha:i.fecha_pago};
     }
 
     ingresosDesdeMarzo.forEach(i=>{
