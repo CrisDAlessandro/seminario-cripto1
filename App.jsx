@@ -1380,6 +1380,13 @@ function LineChart({ingresos,t}){
   const pathD=pts.map((p,i)=>`${i===0?"M":"L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
   const areaD=`${pathD} L ${pts[pts.length-1].x.toFixed(1)} ${(PT+cH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(PT+cH).toFixed(1)} Z`;
   const yT=[0,.25,.5,.75,1].map(f=>({val:Math.round(maxVal*f),y:PT+cH-f*cH}));
+  function handleChartMove(e){
+    const rect=e.currentTarget.getBoundingClientRect();
+    const xSvg=((e.clientX-rect.left)/Math.max(rect.width,1))*W;
+    const clamped=Math.min(Math.max(xSvg,PL),W-PR);
+    const idx=Math.round(((clamped-PL)/Math.max(cW,1))*Math.max(data.length-1,1));
+    setTip(pts[Math.max(0,Math.min(pts.length-1,idx))]);
+  }
   return(
     <div>
       <div style={{marginBottom:16}}>
@@ -1388,13 +1395,13 @@ function LineChart({ingresos,t}){
         </select>
       </div>
       <div style={{position:"relative",width:"100%",overflowX:"auto"}}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",display:"block"}}>
+        <svg viewBox={`0 0 ${W} ${H}`} onMouseMove={handleChartMove} onMouseLeave={()=>setTip(null)} style={{width:"100%",display:"block",cursor:"crosshair"}}>
           <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={t.accent} stopOpacity=".22"/><stop offset="100%" stopColor={t.accent} stopOpacity=".01"/></linearGradient></defs>
           {yT.map(tk=>(<g key={tk.val}><line x1={PL} y1={tk.y} x2={W-PR} y2={tk.y} stroke={t.tdBorder} strokeWidth="1"/><text x={PL-6} y={tk.y+4} textAnchor="end" fontSize="11" fill={t.textMuted}>{tk.val}</text></g>))}
           {pts.filter((_,i)=>i%5===0||i===pts.length-1).map(p=>(<text key={p.d.day} x={p.x} y={H-6} textAnchor="middle" fontSize="11" fill={t.textMuted}>{p.d.label}</text>))}
           <path d={areaD} fill="url(#ag)"/>
           <path d={pathD} fill="none" stroke={t.accent} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-          {pts.map(p=>(<rect key={p.d.day} x={p.x-cW/data.length/2} y={PT} width={cW/data.length} height={cH} fill="transparent" onMouseEnter={()=>setTip(p)} onMouseLeave={()=>setTip(null)}/>))}
+          <rect x={PL} y={PT} width={cW} height={cH} fill="transparent" pointerEvents="all"/>
           {tip&&<circle cx={tip.x} cy={tip.y} r="5" fill={t.accent} stroke={t.cardBg} strokeWidth="2"/>}
         </svg>
         {tip&&(
@@ -2834,19 +2841,14 @@ export default function App(){
     bkTotal:buildBreakdown(ingresosDesdeMarzo)
   }),[ingresosDesdeMarzo,curMI,ingMes]);
 
-  // Promedio de ventas nuevas por día del mes actual
-  // = total nuevos clientes (planes) este mes / días transcurridos del mes
+  // Promedio real de ventas/pagos por día del mes actual.
+  // Cuenta todos los ingresos registrados, no solo clientes nuevos.
   const ventaPromedioDia=useMemo(()=>{
-    const nuevosDelMes=curMI.filter(i=>{
-      if(normalizeServicio(i.servicio)!=="mensual"&&normalizeServicio(i.servicio)!=="anual")return false;
-      const anteriores=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
-      return anteriores.length===0;
-    });
-    const diasTranscurridos=today.getDate(); // día actual del mes
+    const diasTranscurridos=today.getDate();
     if(diasTranscurridos===0)return 0;
-    const promedio=nuevosDelMes.length/diasTranscurridos;
+    const promedio=curMI.length/diasTranscurridos;
     return Math.round(promedio*100)/100;
-  },[curMI,ingresos,today]);
+  },[curMI,today]);
   const resumenMensual=useMemo(()=>{
     const map=new Map();
     ingresosDesdeMarzo.forEach(i=>{
@@ -3504,7 +3506,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="nuevos planes ÷ días con ventas" t={t}/>
+              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="ventas registradas ÷ días transcurridos" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
@@ -3519,20 +3521,13 @@ export default function App(){
             {(()=>{
               const hoy=getToday();
               const data=resumenConTrend.map(r=>{
-                const ingMesR=ingresos.filter(i=>
-                  i.fecha_pago&&monthKey(i.fecha_pago)===r.key&&
-                  (normalizeServicio(i.servicio)==="mensual"||normalizeServicio(i.servicio)==="anual")
-                );
-                const nuevos=ingMesR.filter(i=>{
-                  const ant=ingresos.filter(j=>j.cliente_id===i.cliente_id&&j.fecha_pago<i.fecha_pago);
-                  return ant.length===0;
-                });
-                // Para el mes actual usar días transcurridos, para meses pasados usar días del mes
+                const ventasMes=(r.vM||0)+(r.vA||0)+(r.vC||0)+(r.vP||0);
+                // Para el mes actual usar días transcurridos, para meses pasados usar días del mes.
                 const [y,m]=r.key.split("-");
                 const esMesActual=r.key===curMK;
                 const dias=esMesActual?hoy.getDate():new Date(Number(y),Number(m),0).getDate();
-                const vpd=dias>0?Math.round((nuevos.length/dias)*100)/100:0;
-                return{key:r.key,nuevos:nuevos.length,dias,vpd,esMesActual};
+                const vpd=dias>0?Math.round((ventasMes/dias)*100)/100:0;
+                return{key:r.key,ventas:ventasMes,dias,vpd,esMesActual};
               });
               const maxVpd=Math.max(...data.map(d=>d.vpd),0.01);
               return(
@@ -3548,7 +3543,7 @@ export default function App(){
                               {monthLabel(d.key)}{d.esMesActual?" ★":""}
                             </span>
                             <div style={{display:"flex",alignItems:"center",gap:12}}>
-                              <span style={{color:t.textMuted,fontSize:12}}>{d.nuevos} ventas en {d.dias} días</span>
+                              <span style={{color:t.textMuted,fontSize:12}}>{d.ventas} ventas en {d.dias} días</span>
                               <strong style={{color:d.vpd>=2.5?"#22c55e":d.vpd>=1.5?"#f59e0b":"#ef4444",fontSize:15}}>
                                 {d.vpd} v/día
                               </strong>
@@ -3571,25 +3566,23 @@ export default function App(){
               );
             })()}
 
-            {/* Ventas por canal */}
+            {/* Ventas pendientes por canal */}
             {(() => {
-              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0,pendiente:0}}),...[{}]);
-              computed.forEach(c=>{
+              const vendedorStats = VENDEDORES.reduce((acc,v)=>({...acc,[v]:{total:0,count:0}}),...[{}]);
+              pendientesTransferencia.forEach(c=>{
                 if(c.vendedor&&vendedorStats[c.vendedor]){
                   vendedorStats[c.vendedor].total+=safeNum(c.monto);
                   vendedorStats[c.vendedor].count+=1;
-                  if(c.transferido!==true&&String(c.transferido)!=="true")vendedorStats[c.vendedor].pendiente+=safeNum(c.monto);
                 }
               });
-              const hasData=Object.values(vendedorStats).some(v=>v.count>0);
-              if(!hasData)return null;
+              const vendedoresPendientes=VENDEDORES.filter(v=>vendedorStats[v]?.count>0);
+              if(!vendedoresPendientes.length)return null;
               return(
                 <div style={S.card}>
                   <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:18}}>Ventas pendientes de recepción</h3>
                   <div style={{display:"grid",gap:16}}>
-                    {VENDEDORES.map(v=>{
+                    {vendedoresPendientes.map(v=>{
                       const st=vendedorStats[v];
-                      if(st.count===0)return null;
                       return(
                         <div key={v} style={{padding:"14px 16px",borderRadius:12,background:t.dark?"#0d1526":"#f8f6f3",border:`1px solid ${t.cardBorder}`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -3597,9 +3590,8 @@ export default function App(){
                             <span style={{fontWeight:800,color:t.accent,fontSize:15}}>USD {st.total}</span>
                           </div>
                           <div style={{display:"flex",gap:16,fontSize:12,color:t.textMuted}}>
-                            <span>{st.count} cliente{st.count!==1?"s":""}</span>
-                            {st.pendiente>0&&<span style={{color:"#f59e0b",fontWeight:700}}>{st.pendiente} USD pendiente</span>}
-                            {st.pendiente===0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Todo transferido</span>}
+                            <span>{st.count} venta{st.count!==1?"s":""}</span>
+                            <span style={{color:"#f59e0b",fontWeight:700}}>pendiente de recepción</span>
                           </div>
                         </div>
                       );
@@ -3644,7 +3636,7 @@ export default function App(){
               <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} t={t}/>
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="nuevos planes ÷ días con ventas" t={t}/>
+              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="ventas registradas ÷ días transcurridos" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
