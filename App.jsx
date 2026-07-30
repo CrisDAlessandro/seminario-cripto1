@@ -546,7 +546,7 @@ function usePagination(items,pageSize){
   return{page,setPage,totalPages,rows};
 }
 
-const VENDEDORES = ["Bahiano", "Luigi"];
+const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
 const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
 
@@ -866,8 +866,8 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   function infoPago(i){
     const c=clienteDeIngreso(i);
     const notas=String(i?.notas||"");
-    const cobroOriginal=(notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)/i)||[])[1]
-      || (notas.match(/(?:recibe|recibió|recibio)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i)||[])[1]
+    const cobroOriginal=(notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi|Jeremy)/i)||[])[1]
+      || (notas.match(/(?:recibe|recibió|recibio)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi|Jeremy)/i)||[])[1]
       || i?.vendedor||i?.recibe||c?.vendedor||"Cristian";
     const recibe=cobroOriginal==="Baiano"?"Bahiano":cobroOriginal;
     const recibidoFinal=(notas.match(/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i)||[])[1];
@@ -1253,6 +1253,7 @@ function PagoModal({cliente,onClose,onConfirm,t}){
             <option value="Cristian">Cristian</option>
             <option value="Bahiano">Bahiano</option>
             <option value="Luigi">Luigi</option>
+            <option value="Jeremy">Jeremy</option>
           </select>
         </div>
         {montoN>0&&montoN<=deuda&&(
@@ -1569,6 +1570,7 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
             <option value="">Cristian</option>
             <option value="Bahiano">Bahiano</option>
             <option value="Luigi">Luigi</option>
+            <option value="Jeremy">Jeremy</option>
           </select>
         </Field>
         {isAnual&&(
@@ -1910,6 +1912,7 @@ export default function App(){
     if(low==="cristian"||low==="christian")return "Cristian";
     if(low==="bahiano"||low==="baiano"||low==="bahiana"||low==="baiana")return "Bahiano";
     if(low==="luigi")return "Luigi";
+    if(low==="jeremy")return "Jeremy";
     return r;
   }
   function recepcionActualDesdeIngreso(i){
@@ -1922,7 +1925,7 @@ export default function App(){
       return {recibe:directo,pendiente:ventaPendienteTransferencia(directo)&&!/Transferencia recibida por/i.test(notas)};
     }
 
-    const cobro=notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi)\s*·\s*(Cobrado|Pendiente de recepción|Pendiente de transferencia)/i);
+    const cobro=notas.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi|Jeremy)\s*·\s*(Cobrado|Pendiente de recepción|Pendiente de transferencia)/i);
     if(cobro){
       const recibe=normalizarReceptorCaja(cobro[1]);
       const estado=String(cobro[2]||"").toLowerCase();
@@ -1930,7 +1933,7 @@ export default function App(){
       return {recibe,pendiente};
     }
 
-    const legacy=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi)/i);
+    const legacy=notas.match(/(?:recibe|recibió|recibio|quien recibio|quién recibió)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi|Jeremy)/i);
     if(legacy){
       const recibe=normalizarReceptorCaja(legacy[1]);
       const pendiente=(/pendiente_transferencia\s*:?\s*true/i.test(notas)||/Pendiente de recepción|Pendiente de transferencia/i.test(notas))&&!/Transferencia recibida por/i.test(notas);
@@ -2448,7 +2451,7 @@ export default function App(){
     if(!monto||monto<=0){toast.error("Ingresá un monto válido");return;}
     if(monto>safeNum(cliente.deuda_restante)){toast.error(`El monto supera la deuda actual (USD ${cliente.deuda_restante})`);return;}
     const recibe=String(recibePago||"Cristian").trim();
-    if(!["Cristian","Bahiano","Luigi"].includes(recibe)){toast.error("Elegí quién recibió el pago");return;}
+    if(!["Cristian","Bahiano","Luigi","Jeremy"].includes(recibe)){toast.error("Elegí quién recibió el pago");return;}
     const nuevaDeuda=Math.max(0,safeNum(cliente.deuda_restante)-monto);
     const fechaHoy=toISODate(getToday());
     const pendienteDeRecepcion=ventaPendienteTransferencia(recibe);
@@ -3289,6 +3292,7 @@ export default function App(){
                 <option value="">Cristian</option>
                 <option value="Bahiano">Bahiano</option>
                 <option value="Luigi">Luigi</option>
+            <option value="Jeremy">Jeremy</option>
               </select>
             </div>
           </div>
