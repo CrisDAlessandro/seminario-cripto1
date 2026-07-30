@@ -36,6 +36,31 @@ const MOBILE_CSS = `
   input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
   input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.10)!important;border-color:#1f4e79!important;}
   .sc-dark input:focus,.sc-dark select:focus,.sc-dark textarea:focus{box-shadow:0 0 0 4px rgba(212,162,58,.18)!important;border-color:#d4a23a!important;}
+  .sc-dark select{
+    color-scheme:dark!important;
+    background-color:#050a12!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+    transition:border-color .12s ease, box-shadow .12s ease!important;
+  }
+  .sc-dark select:focus{
+    background-color:#050a12!important;
+    border-color:#d4a23a!important;
+    box-shadow:0 0 0 4px rgba(212,162,58,.18)!important;
+  }
+  .sc-dark select option,
+  .sc-dark select optgroup,
+  .sc-dark option{
+    background-color:#050a12!important;
+    color:#f8fafc!important;
+  }
+  .sc-dark select option:checked,
+  .sc-dark select option:hover,
+  .sc-dark option:checked{
+    background:#d4a23a!important;
+    background-color:#d4a23a!important;
+    color:#0b0f17!important;
+  }
   table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
   table tbody tr:hover{background:rgba(31,78,121,.045)!important;}
   ::selection{background:rgba(31,78,121,.18);}
@@ -606,7 +631,10 @@ function makeS(t){
       outline:"none",
       boxSizing:"border-box",
       background:t.inputBg,
+      backgroundColor:t.inputBg,
+      backgroundClip:"padding-box",
       color:t.inputText,
+      colorScheme:t.dark?"dark":"light",
       boxShadow:"0 1px 2px rgba(16,24,40,.025)"
     },
     label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
