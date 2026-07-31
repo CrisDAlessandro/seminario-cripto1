@@ -3133,7 +3133,9 @@ export default function App(){
     // apareciendo como pendientes: ya fueron absorbidos por la caja posterior neteada.
     let inicioTramo=0;
     rows.forEach((r,idx)=>{
-      if(r.neteado){
+      // Cualquier neteo cargado en un día cierra el arrastre anterior,
+      // aunque después ese mismo día se reabra por nuevos movimientos.
+      if((r.neteos||[]).length>0){
         for(let j=inicioTramo;j<idx;j++){
           if(!rows[j].neteado&&Math.abs(rows[j].saldoFinal)>0.01){
             rows[j].cerradoPorNeteoPosterior=true;
