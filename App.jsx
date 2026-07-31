@@ -3124,9 +3124,25 @@ export default function App(){
       const saldoCancelado=neteos.reduce((a,m)=>a+safeNum(m.saldoCancelado),0);
       const saldoFinal=saldoAntesNeteo-saldoCancelado;
       const neteado=neteos.length>0&&Math.abs(saldoFinal)<0.01;
-      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,movimientos,neteos,registros:delDia});
+      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,cerradoPorNeteoPosterior:false,movimientos,neteos,registros:delDia});
       saldo=saldoFinal;
     });
+
+    // Si una caja posterior queda neteada, ese neteo también cierra todo el arrastre anterior
+    // que venía acumulado hasta ese día. Por eso los días previos del tramo no deben seguir
+    // apareciendo como pendientes: ya fueron absorbidos por la caja posterior neteada.
+    let inicioTramo=0;
+    rows.forEach((r,idx)=>{
+      if(r.neteado){
+        for(let j=inicioTramo;j<idx;j++){
+          if(!rows[j].neteado&&Math.abs(rows[j].saldoFinal)>0.01){
+            rows[j].cerradoPorNeteoPosterior=true;
+          }
+        }
+        inicioTramo=idx+1;
+      }
+    });
+
     return rows.sort((a,b)=>b.key.localeCompare(a.key));
   },[cajaBaseMovs,cajaDiasEliminados]);
   const cajaHoy=useMemo(()=>cajaDiaria.find(r=>r.key===toISODate(getToday())),[cajaDiaria]);
@@ -3475,9 +3491,10 @@ export default function App(){
                 <div style={{display:"grid",gap:12}}>
                   {cajaPag.rows.map(r=>{
                     const actual=r.key===toISODate(getToday());
-                    const saldo=r.saldoFinal;
+                    const saldo=r.cerradoPorNeteoPosterior?0:r.saldoFinal;
                     const tieneNeteo=r.neteos.length>0;
-                    const necesitaNeteo=Math.abs(r.saldoFinal)>0.01;
+                    const neteadoVisual=r.neteado||r.cerradoPorNeteoPosterior;
+                    const necesitaNeteo=!r.cerradoPorNeteoPosterior&&Math.abs(r.saldoFinal)>0.01;
                     return(
                       <div key={r.key} style={{padding:16,borderRadius:16,border:actual?`2px solid ${t.accent}`:`1px solid ${t.cardBorder}`,background:t.dark?"#0d121b":(actual?"#fffbeb":"#fff")}}>
                         <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
@@ -3485,7 +3502,7 @@ export default function App(){
                             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                               <strong style={{color:t.text,fontSize:15}}>{formatDate(r.key)}</strong>
                               {actual&&<span style={{background:t.accent,color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>HOY</span>}
-                              {r.neteado&&<span style={{background:"#10b981",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>NETEADA</span>}
+                              {neteadoVisual&&<span style={{background:"#10b981",color:"#fff",borderRadius:999,fontSize:11,fontWeight:800,padding:"3px 9px"}}>NETEADA</span>}
                             </div>
                             <div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{cajaTextoSaldo(saldo)}</div>
                           </div>
@@ -3505,7 +3522,7 @@ export default function App(){
                           <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:12}}>
-                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.neteado?"Este día quedó cerrado y no arrastra saldo.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
+                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.cerradoPorNeteoPosterior?"Este día quedó cerrado por una caja posterior neteada.":r.neteado?"Este día quedó cerrado y no arrastra saldo.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoFinal)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
                             {tieneNeteo&&<button onClick={()=>askConfirm("Deshacer caja neteada","¿Deshacer el neteo de este día para que vuelva a calcular y arrastrar el saldo?",()=>deshacerCajaNeteada(r.neteos.map(n=>n.id)),{danger:false,label:"Deshacer"})} style={{...btn(false,false),padding:"8px 12px"}}>Deshacer neteo</button>}
