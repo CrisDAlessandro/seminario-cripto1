@@ -1638,15 +1638,79 @@ function HistorialView({t}){
   const[loading,setLoading]=useState(true);
   const ref=useRef(null);
   const pag=usePagination(hist,PAGE.hist);
+
+  function recibeDesdeIngreso(i){
+    const txt=String(i?.notas||"");
+    const m=txt.match(/Cobró\s+(Cristian|Bahiano|Baiano|Luigi|Jeremy)/i)
+      || txt.match(/(?:recibe|recibió|recibio)\s*:?\s*(Cristian|Bahiano|Baiano|Luigi|Jeremy)/i);
+    const r=String(m?.[1]||"").trim();
+    if(!r)return "";
+    return r==="Baiano"?"Bahiano":r;
+  }
+  function estadoDesdeIngreso(i,recibe){
+    const txt=String(i?.notas||"");
+    if(/Pendiente de recepción|Pendiente de transferencia|pendiente_transferencia\s*:?\s*true/i.test(txt))return "Pendiente de recepción";
+    if(recibe==="Luigi"||recibe==="Jeremy"){
+      if(/Transferencia recibida por/i.test(txt))return "Recibido";
+      return "Pendiente de recepción";
+    }
+    return "Cobrado";
+  }
+  function ingresoComoHistorial(i){
+    const recibe=recibeDesdeIngreso(i)||"Cristian";
+    const estado=estadoDesdeIngreso(i,recibe);
+    return{
+      id:`ingreso-${i.id}`,
+      created_at:i.created_at||i.fecha_pago||new Date().toISOString(),
+      usuario_email:i.usuario_email||"Sistema",
+      accion:"ingreso registrado",
+      entidad:"cliente",
+      entidad_id:i.cliente_id||null,
+      detalle:{
+        nombre:i.cliente_nombre||i.nombre||"Ingreso",
+        email:i.email||"",
+        monto:safeNum(i.monto),
+        recibe,
+        servicio:normalizeServicio(i.servicio),
+        ingreso_id:i.id,
+        estado
+      }
+    };
+  }
+
   useEffect(()=>{
-    supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(200)
-      .then(({data,error})=>{if(!error)setHist(data||[]);setLoading(false);});
+    let alive=true;
+    async function load(){
+      setLoading(true);
+      const [hRes,iRes]=await Promise.all([
+        supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(200),
+        supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(200)
+      ]);
+      const histBase=hRes.error?[]:(hRes.data||[]);
+      const existentes=new Set(
+        histBase
+          .filter(h=>!String(h.accion||"").toLowerCase().includes("caja"))
+          .map(h=>String(h.detalle?.ingreso_id||""))
+          .filter(Boolean)
+      );
+      const ingresosExtra=(iRes.error?[]:(iRes.data||[]))
+        .filter(i=>i.id&&!existentes.has(String(i.id)))
+        .map(ingresoComoHistorial);
+      const combinado=[...histBase,...ingresosExtra]
+        .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")))
+        .slice(0,200);
+      if(alive){setHist(combinado);setLoading(false);}
+    }
+    load();
+    return()=>{alive=false;};
   },[]);
+
   function badge(accion){
     const b={display:"inline-block",padding:"3px 9px",borderRadius:999,fontSize:11,fontWeight:700,border:"1px solid transparent"};
     if(accion?.includes("eliminó"))return{...b,background:"#fee2e2",color:"#991b1b",borderColor:"#fca5a5"};
     if(accion?.includes("caja"))return{...b,background:"#ecfeff",color:"#155e75",borderColor:"#67e8f9"};
     if(accion?.includes("renovó")||accion?.includes("renovación"))return{...b,background:"#ede9fe",color:"#5b21b6",borderColor:"#c4b5fd"};
+    if(accion?.includes("ingreso"))return{...b,background:"#dcfce7",color:"#166534",borderColor:"#86efac"};
     if(accion?.includes("guardó")||accion?.includes("nuevo"))return{...b,background:"#d1fae5",color:"#065f46",borderColor:"#6ee7b7"};
     if(accion?.includes("pago"))return{...b,background:"#fff7ed",color:"#9a3412",borderColor:"#fdba74"};
     return{...b,background:"#f1f5f9",color:"#334155",borderColor:"#cbd5e1"};
@@ -1674,13 +1738,14 @@ function HistorialView({t}){
     }
     const labels={
       email:"Email",servicio:"Servicio",monto:"Monto",recibe:"Cobró",recibio_venta:"Cobró",recibe_final:"Recibió finalmente",vendedor:"Vendedor",
-      pendiente_transferencia:"Estado",ingreso_id:"Ingreso",fecha_recepcion:"Fecha de recepción",caja_id:"Caja",pendiente_id:"Pendiente",
+      pendiente_transferencia:"Estado",estado:"Estado",ingreso_id:"Ingreso",fecha_recepcion:"Fecha de recepción",caja_id:"Caja",pendiente_id:"Pendiente",
       nota:"Nota",cliente:"Cliente",rollback:"Reversión",caja_eliminada:"Caja eliminada",origen:"Origen",venta:"Venta"
     };
     return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>{
       let valor=v;
       if(k==="pendiente_transferencia")valor=v?"Pendiente de recepción":"Cobrado";
       if(k==="fecha_recepcion")valor=formatDate(v);
+      if(k==="servicio")valor=svcLabel(v);
       if(typeof valor==="object"&&valor!==null)valor=Object.entries(valor).map(([kk,vv])=>`${labels[kk]||kk}: ${vv}`).join(", ");
       return `${labels[k]||k.replace(/_/g," ")}: ${valor}`;
     }).join(" · ")||"—";
@@ -1691,7 +1756,7 @@ function HistorialView({t}){
         <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:20}}>Historial de cambios</h3>
       </div>
       {loading?<Skeleton rows={6} cols={5} t={t}/>:hist.length===0?(
-        <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros en las últimas 24 horas.</div>
+        <div style={{color:t.textMuted,padding:24,textAlign:"center"}}>Sin registros recientes.</div>
       ):(
         <>
           <div className="sc-table-wrap" style={{overflowX:"auto"}}>
@@ -1718,6 +1783,7 @@ function HistorialView({t}){
     </div>
   );
 }
+
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function App(){
@@ -1798,8 +1864,7 @@ export default function App(){
   async function fetchIngresos(){
     const{data,error}=await supabase.from("ingresos").select("*").order("fecha_pago",{ascending:false}).order("created_at",{ascending:false});
     if(error){toast.error("No se pudieron cargar los ingresos");return;}
-    // No pisar ingresos recién insertados si el refetch vuelve viejo: se mergea y luego se limpia duplicado.
-    setIngresos(prev=>dedupeIngresosDuplicados([...(data||[]),...(prev||[])]));
+    setIngresos(dedupeIngresosDuplicados(data||[]));
   }
   async function fetchTransferenciasRecibidas(){
     const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","pago").order("created_at",{ascending:false});
@@ -1814,8 +1879,7 @@ export default function App(){
   async function fetchCajaMovimientos(){
     const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","caja").order("created_at",{ascending:false});
     if(error){setCajaMovimientos([]);return;}
-    // No pisar caja recién creada si el refetch vuelve viejo.
-    setCajaMovimientos(prev=>dedupeCajaMovimientosDuplicados([...(data||[]),...(prev||[])]));
+    setCajaMovimientos(dedupeCajaMovimientosDuplicados(data||[]));
   }
   async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas(),fetchVentasPendientesNotas(),fetchCajaMovimientos()]);}
   useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();fetchVentasPendientesNotas();fetchCajaMovimientos();limpiarHistorial();},[]);
