@@ -3177,28 +3177,58 @@ export default function App(){
     const rows=[];
     sortedKeys.forEach(key=>{
       const delDia=movs.filter(m=>m.fecha===key);
+      const eventos=delDia.slice().sort((a,b)=>{
+        const ta=new Date(a.created_at||`${a.fecha}T00:00:00`).getTime()||0;
+        const tb=new Date(b.created_at||`${b.fecha}T00:00:00`).getTime()||0;
+        if(ta!==tb)return ta-tb;
+        return String(a.id||"").localeCompare(String(b.id||""));
+      });
       const movimientos=delDia.filter(m=>m.concepto!=="neteada");
       const neteos=delDia.filter(m=>m.concepto==="neteada");
-      const cristian=movimientos.filter(m=>m.recibe==="Cristian").reduce((a,m)=>a+safeNum(m.monto),0);
-      const bahiano=movimientos.filter(m=>m.recibe==="Bahiano").reduce((a,m)=>a+safeNum(m.monto),0);
+      const saldoInicialReal=saldo;
+
+      let saldoActual=saldo;
+      let movimientosTramo=[];
+      let huboNeteoEnElDia=false;
+
+      eventos.forEach(ev=>{
+        if(ev.concepto==="neteada"){
+          // El neteo cierra TODO lo anterior hasta ese instante:
+          // días previos + movimientos previos del mismo día.
+          saldoActual=saldoActual-safeNum(ev.saldoCancelado);
+          if(Math.abs(saldoActual)<0.01)saldoActual=0;
+          huboNeteoEnElDia=true;
+          movimientosTramo=[];
+          return;
+        }
+        if(ev.concepto==="movimiento"){
+          const delta=ev.recibe==="Cristian"?safeNum(ev.monto)/2:ev.recibe==="Bahiano"?-(safeNum(ev.monto)/2):0;
+          saldoActual+=delta;
+          movimientosTramo.push(ev);
+        }
+      });
+
+      // Si la caja se reabre el mismo día después de un neteo, el cálculo visible
+      // empieza desde cero y solo toma lo nuevo posterior al último neteo.
+      const movimientosCalculo=huboNeteoEnElDia?movimientosTramo:movimientos;
+      const cristian=movimientosCalculo.filter(m=>m.recibe==="Cristian").reduce((a,m)=>a+safeNum(m.monto),0);
+      const bahiano=movimientosCalculo.filter(m=>m.recibe==="Bahiano").reduce((a,m)=>a+safeNum(m.monto),0);
       const total=cristian+bahiano;
-      const saldoInicial=saldo;
+      const saldoInicial=huboNeteoEnElDia?0:saldoInicialReal;
       const saldoDia=cristian-(total/2);
       const saldoAntesNeteo=saldoInicial+saldoDia;
       const saldoCancelado=neteos.reduce((a,m)=>a+safeNum(m.saldoCancelado),0);
-      const saldoFinal=saldoAntesNeteo-saldoCancelado;
+      const saldoFinal=saldoActual;
       const neteado=neteos.length>0&&Math.abs(saldoFinal)<0.01;
-      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,cerradoPorNeteoPosterior:false,movimientos,neteos,registros:delDia});
+      rows.push({key,cristian,bahiano,total,saldoInicial,saldoDia,saldoAntesNeteo,saldoCancelado,saldoFinal,neteado,cerradoPorNeteoPosterior:false,reabiertaDespuesDeNeteo:huboNeteoEnElDia&&Math.abs(saldoFinal)>0.01,movimientos,neteos,registros:delDia});
       saldo=saldoFinal;
     });
 
-    // Si una caja posterior queda neteada, ese neteo también cierra todo el arrastre anterior
-    // que venía acumulado hasta ese día. Por eso los días previos del tramo no deben seguir
-    // apareciendo como pendientes: ya fueron absorbidos por la caja posterior neteada.
+    // Cualquier neteo cargado en una caja posterior cierra todo el arrastre anterior.
+    // Esto NO se deshace si ese mismo día se reabre por ventas nuevas: desde ese neteo,
+    // todo lo previo ya quedó saldado y el nuevo tramo empieza desde cero.
     let inicioTramo=0;
     rows.forEach((r,idx)=>{
-      // Cualquier neteo cargado en un día cierra el arrastre anterior,
-      // aunque después ese mismo día se reabra por nuevos movimientos.
       if((r.neteos||[]).length>0){
         for(let j=inicioTramo;j<idx;j++){
           if(!rows[j].neteado&&Math.abs(rows[j].saldoFinal)>0.01){
@@ -3588,7 +3618,7 @@ export default function App(){
                           <div style={{padding:10,borderRadius:12,background:t.dark?"#0b0f17":"#f8f6f3",border:`1px solid ${t.tdBorder}`}}><div style={{fontSize:10,color:t.textMuted,fontWeight:800,textTransform:"uppercase"}}>Arrastre previo</div><div style={{fontWeight:900}}>USD {Math.abs(r.saldoInicial)}</div></div>
                         </div>
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:12}}>
-                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.cerradoPorNeteoPosterior?"Este día quedó cerrado por una caja posterior neteada.":r.neteado?"Este día quedó cerrado y no arrastra saldo.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
+                          <div style={{fontSize:13,color:t.textMuted}}>{necesitaNeteo?cajaTextoSaldo(r.saldoFinal):r.cerradoPorNeteoPosterior?"Este día quedó cerrado por una caja posterior neteada.":r.neteado?"Este día quedó cerrado y no arrastra saldo.":r.reabiertaDespuesDeNeteo?"Caja reabierta después del neteo. Solo arrastra los movimientos nuevos.":tieneNeteo?"Hay un neteo cargado, pero el día volvió a quedar con saldo pendiente por movimientos posteriores.":"Este día no dejó saldo pendiente."}</div>
                           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             {necesitaNeteo&&<button onClick={()=>marcarCajaNeteada(r.key,r.saldoFinal)} style={{...btn(false,true),padding:"8px 12px"}}>Marcar caja neteada</button>}
                             {tieneNeteo&&<button onClick={()=>askConfirm("Deshacer caja neteada","¿Deshacer el neteo de este día para que vuelva a calcular y arrastrar el saldo?",()=>deshacerCajaNeteada(r.neteos.map(n=>n.id)),{danger:false,label:"Deshacer"})} style={{...btn(false,false),padding:"8px 12px"}}>Deshacer neteo</button>}
