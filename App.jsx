@@ -3224,20 +3224,17 @@ export default function App(){
       saldo=saldoFinal;
     });
 
-    // Cualquier neteo cargado en una caja posterior cierra todo el arrastre anterior.
-    // Esto NO se deshace si ese mismo día se reabre por ventas nuevas: desde ese neteo,
-    // todo lo previo ya quedó saldado y el nuevo tramo empieza desde cero.
-    let inicioTramo=0;
-    rows.forEach((r,idx)=>{
-      if((r.neteos||[]).length>0){
-        for(let j=inicioTramo;j<idx;j++){
-          if(!rows[j].neteado&&Math.abs(rows[j].saldoFinal)>0.01){
-            rows[j].cerradoPorNeteoPosterior=true;
-          }
+    // Cualquier neteo posterior cierra TODO lo anterior visualmente.
+    // Si el 11/8 queda cerrado por el neteo del 12/8 o 13/8,
+    // entonces el 10/8 también queda cerrado: ese arrastre ya fue absorbido.
+    const ultimoNeteoIdx=rows.reduce((acc,r,idx)=>(r.neteos||[]).length>0?idx:acc,-1);
+    if(ultimoNeteoIdx>0){
+      for(let j=0;j<ultimoNeteoIdx;j++){
+        if(Math.abs(rows[j].saldoFinal)>0.01){
+          rows[j].cerradoPorNeteoPosterior=true;
         }
-        inicioTramo=idx+1;
       }
-    });
+    }
 
     return rows.sort((a,b)=>b.key.localeCompare(a.key));
   },[cajaBaseMovs,cajaDiasEliminados]);
