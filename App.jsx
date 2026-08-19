@@ -579,6 +579,10 @@ async function leerRespuestaJsonSegura(res){
   const txt=await res.text();
   try{return txt?JSON.parse(txt):{};}catch(_){return{ok:false,error:txt||`HTTP ${res.status}`};}
 }
+function driveErrorEsAccesoExistente(msg){
+  const m=String(msg||"").toLowerCase();
+  return /already|exists|existente|ya tiene|already has|permission already|duplicate|duplicado/.test(m);
+}
 async function llamarDrive(accion, email) {
   const validacion=validarEmailAcceso(email);
   if(!validacion.ok)return{ok:false,accion,email:validacion.email,error:validacion.error};
@@ -603,6 +607,10 @@ async function llamarDrive(accion, email) {
         return{ok:true,accion,email:emailFinal,data};
       }
       ultimoError=data.error||data.message||`HTTP ${res.status}`;
+      if(accion==="compartir"&&driveErrorEsAccesoExistente(ultimoError)){
+        console.log(`Drive ✓ ${accion}: ${emailFinal} ya tenía acceso`);
+        return{ok:true,accion,email:emailFinal,data:{...data,already:true}};
+      }
       console.warn(`Drive intento ${intento} falló:`, ultimoError);
     } catch(err) {
       ultimoError=err?.name==="AbortError"?"Timeout al llamar Drive":(err?.message||String(err));
@@ -1895,14 +1903,93 @@ export default function App(){
     setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
   }
 
+  function driveQueueKey(accion,email){
+    return `${accion}:${normalizarEmailAcceso(email)}`;
+  }
+  async function limpiarPendienteDrive(accion,email){
+    const validacion=validarEmailAcceso(email);
+    if(!validacion.ok)return;
+    const key=driveQueueKey(accion,validacion.email);
+    try{
+      const{data}=await supabase.from("notas_cliente").select("id").eq("tipo","drive_pending").eq("detalle->>key",key);
+      const ids=(data||[]).map(x=>x.id).filter(Boolean);
+      if(ids.length)await supabase.from("notas_cliente").delete().in("id",ids);
+    }catch(err){console.warn("No se pudo limpiar cola Drive",err);}
+  }
+  async function encolarPendienteDrive(accion,email,ctx={},error=""){
+    if(accion!=="compartir")return false; // solo se reintenta automáticamente dar acceso; revocar no se reintenta para evitar revocaciones tardías peligrosas.
+    const validacion=validarEmailAcceso(email);
+    if(!validacion.ok)return false;
+    const key=driveQueueKey(accion,validacion.email);
+    try{
+      const{data:existente}=await supabase.from("notas_cliente").select("id").eq("tipo","drive_pending").eq("detalle->>key",key).limit(1);
+      if(existente?.length)return true;
+      const nowIso=new Date().toISOString();
+      await supabase.from("notas_cliente").insert([{
+        cliente_id:null,
+        usuario_email:user?.email||"Sistema",
+        tipo:"drive_pending",
+        contenido:`Acceso Drive pendiente: ${validacion.email}`,
+        detalle:{key,accion,email:validacion.email,ctx,attempts:0,next_at:nowIso,last_error:error||"",created_by:user?.email||"Sistema"}
+      }]);
+      await logH(user?.email,"Drive pendiente","Drive",null,{...ctx,email:validacion.email,accion_drive:accion,error:error||null});
+      return true;
+    }catch(err){
+      console.warn("No se pudo encolar Drive pendiente",err);
+      return false;
+    }
+  }
+  async function procesarPendientesDrive(silencioso=true){
+    try{
+      const ahora=new Date();
+      const{data,error}=await supabase.from("notas_cliente").select("*").eq("tipo","drive_pending").order("created_at",{ascending:true}).limit(25);
+      if(error)return;
+      const pendientes=(data||[]).filter(p=>{
+        const next=p.detalle?.next_at?new Date(p.detalle.next_at):new Date(0);
+        return next<=ahora;
+      });
+      for(const item of pendientes){
+        const d=item.detalle||{};
+        const accion=d.accion||"compartir";
+        const email=d.email||"";
+        const key=d.key||driveQueueKey(accion,email);
+        const lock=`drive-pending:${key}`;
+        if(actionLocks.current.has(lock))continue;
+        actionLocks.current.add(lock);
+        try{
+          const res=await llamarDrive(accion,email);
+          if(res.ok){
+            const{data:iguales}=await supabase.from("notas_cliente").select("id").eq("tipo","drive_pending").eq("detalle->>key",key);
+            const ids=(iguales||[]).map(x=>x.id).filter(Boolean);
+            if(ids.length)await supabase.from("notas_cliente").delete().in("id",ids);
+            await logH(user?.email,"Drive pendiente OK","Drive",null,{...(d.ctx||{}),email:res.email||email,accion_drive:accion,pendiente_id:item.id});
+            if(!silencioso)toast.success(`Acceso Drive enviado a ${res.email||email}`);
+          }else{
+            const attempts=Number(d.attempts||0)+1;
+            const delayMin=Math.min(10,Math.max(1,attempts)); // reintentos progresivos hasta cada 10 min
+            const nextAt=new Date(Date.now()+delayMin*60000).toISOString();
+            await supabase.from("notas_cliente").update({
+              detalle:{...d,attempts,next_at:nextAt,last_error:res.error||"Drive no respondió",last_try:new Date().toISOString()}
+            }).eq("id",item.id);
+          }
+        }finally{
+          actionLocks.current.delete(lock);
+        }
+      }
+    }catch(err){
+      console.warn("Proceso de pendientes Drive falló",err);
+    }
+  }
   async function sincronizarAccesoDrive(accion,email,ctx={},opts={}){
     const res=await llamarDrive(accion,email);
     const accionHist=res.ok?`Drive ${accion} OK`:`falló Drive ${accion}`;
     await logH(user?.email,accionHist,"Drive",null,{...ctx,email:res.email||normalizarEmailAcceso(email),accion_drive:accion,error:res.error||null});
     if(!res.ok){
-      toast.error(`Drive no pudo ${accion==="compartir"?"dar acceso":"revocar acceso"}: ${res.error}`);
+      const encolado=await encolarPendienteDrive(accion,email,ctx,res.error||"");
+      toast.error(`Drive no pudo ${accion==="compartir"?"dar acceso":"revocar acceso"}: ${res.error}${encolado?" · Quedó en cola automática":""}`);
       return false;
     }
+    await limpiarPendienteDrive(accion,email);
     if(opts.showOk)toast.success(accion==="compartir"?"Acceso a cursos sincronizado":"Acceso Drive revocado");
     return true;
   }
@@ -1948,6 +2035,12 @@ export default function App(){
   }
   async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas(),fetchVentasPendientesNotas(),fetchCajaMovimientos()]);}
   useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();fetchVentasPendientesNotas();fetchCajaMovimientos();limpiarHistorial();},[]);
+  useEffect(()=>{
+    if(!user)return;
+    procesarPendientesDrive(true);
+    const id=setInterval(()=>procesarPendientesDrive(true),60000);
+    return()=>clearInterval(id);
+  },[user?.email]);
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f){
