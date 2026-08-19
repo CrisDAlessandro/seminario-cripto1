@@ -532,34 +532,86 @@ async function logNC(clienteId, userEmail, tipo, contenido, detalle){
   }catch(_){return null;}
 }
 
-// ─── Drive helper con reintentos ─────────────────────────────────────────────
+// ─── Drive helper blindado con validación, timeout, reintentos y resultado ─────
+function normalizarEmailAcceso(email){
+  return String(email||"")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g,"")
+    .replace(/\s+/g,"");
+}
+const EMAIL_DOMAIN_FIXES={
+  "gmai.com":"gmail.com",
+  "gmial.com":"gmail.com",
+  "gamil.com":"gmail.com",
+  "gmail.con":"gmail.com",
+  "gmail.co":"gmail.com",
+  "gmail.com.ar":"gmail.com",
+  "hotmial.com":"hotmail.com",
+  "hotmail.con":"hotmail.com",
+  "outlok.com":"outlook.com",
+  "outlook.con":"outlook.com",
+  "yaho.com":"yahoo.com",
+  "yahoo.con":"yahoo.com"
+};
+function validarEmailAcceso(email){
+  const e=normalizarEmailAcceso(email);
+  if(!e)return{ok:false,email:e,error:"Falta el email"};
+  if(!isValidEmail(e))return{ok:false,email:e,error:"El email no es válido"};
+  const [local,domainRaw]=e.split("@");
+  const domain=String(domainRaw||"").toLowerCase();
+  if(EMAIL_DOMAIN_FIXES[domain]){
+    return{ok:false,email:e,error:`El dominio parece mal escrito: ${domain}. Revisá si corresponde ${local}@${EMAIL_DOMAIN_FIXES[domain]}`};
+  }
+  return{ok:true,email:e,error:null};
+}
+async function fetchConTimeout(url,options={},timeoutMs=10000){
+  const controller=new AbortController();
+  const id=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    return await fetch(url,{...options,signal:controller.signal});
+  }finally{
+    clearTimeout(id);
+  }
+}
+async function leerRespuestaJsonSegura(res){
+  const txt=await res.text();
+  try{return txt?JSON.parse(txt):{};}catch(_){return{ok:false,error:txt||`HTTP ${res.status}`};}
+}
 async function llamarDrive(accion, email) {
-  if(!email||!email.includes("@")) return;
+  const validacion=validarEmailAcceso(email);
+  if(!validacion.ok)return{ok:false,accion,email:validacion.email,error:validacion.error};
+  const emailFinal=validacion.email;
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if(!supabaseUrl)return{ok:false,accion,email:emailFinal,error:"Falta VITE_SUPABASE_URL"};
   const url = `${supabaseUrl}/functions/v1/drive-access`;
-  
-  for(let intento = 1; intento <= 3; intento++) {
+  let ultimoError="";
+
+  for(let intento = 1; intento <= 4; intento++) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const res = await fetch(url, {
+      const res = await fetchConTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ accion, email }),
-      });
-      const data = await res.json();
-      if(data.ok) {
-        console.log(`Drive ✓ ${accion}: ${email}`);
-        return; // éxito, salir
+        body: JSON.stringify({ accion, email:emailFinal }),
+      }, 12000);
+      const data = await leerRespuestaJsonSegura(res);
+      if(res.ok&&data.ok) {
+        console.log(`Drive ✓ ${accion}: ${emailFinal}`);
+        return{ok:true,accion,email:emailFinal,data};
       }
-      console.warn(`Drive intento ${intento} falló:`, data.error||data);
+      ultimoError=data.error||data.message||`HTTP ${res.status}`;
+      console.warn(`Drive intento ${intento} falló:`, ultimoError);
     } catch(err) {
+      ultimoError=err?.name==="AbortError"?"Timeout al llamar Drive":(err?.message||String(err));
       console.warn(`Drive intento ${intento} error:`, err);
     }
-    // Esperar antes de reintentar (500ms, 1500ms)
-    if(intento < 3) await new Promise(r => setTimeout(r, intento * 500));
+    if(intento < 4) await new Promise(r => setTimeout(r, intento * 900));
   }
-  console.warn(`Drive: falló después de 3 intentos para ${email}`);
+  console.warn(`Drive: falló después de 4 intentos para ${emailFinal}`);
+  return{ok:false,accion,email:emailFinal,error:ultimoError||"Drive no respondió correctamente"};
 }
 
 // ─── usePagination ────────────────────────────────────────────────────────────
@@ -848,7 +900,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
 
 // ─── Panel detalle cliente — historial unificado por nombre ───────────────────
 const TL_PAGE = 5;
-function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,t}){
+function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,onSincronizarDrive,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
   const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
@@ -1178,6 +1230,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
 
           {/* Acciones */}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4,flexWrap:"wrap"}}>
+            {["mensual","anual"].includes(normalizeServicio(cliente.servicio))&&cliente.email&&<button style={btn(false)} onClick={()=>onSincronizarDrive&&onSincronizarDrive(cliente)}>Reenviar acceso Drive</button>}
             {normalizeServicio(cliente.servicio)==="anual"&&<button style={btn(false)} onClick={()=>onEditarDeuda&&onEditarDeuda(cliente)}>Editar deuda</button>}
             <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
             <button style={{...btn(false),background:"rgba(239,68,68,0.1)",color:"#ef4444"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
@@ -1842,6 +1895,18 @@ export default function App(){
     setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
   }
 
+  async function sincronizarAccesoDrive(accion,email,ctx={},opts={}){
+    const res=await llamarDrive(accion,email);
+    const accionHist=res.ok?`Drive ${accion} OK`:`falló Drive ${accion}`;
+    await logH(user?.email,accionHist,"Drive",null,{...ctx,email:res.email||normalizarEmailAcceso(email),accion_drive:accion,error:res.error||null});
+    if(!res.ok){
+      toast.error(`Drive no pudo ${accion==="compartir"?"dar acceso":"revocar acceso"}: ${res.error}`);
+      return false;
+    }
+    if(opts.showOk)toast.success(accion==="compartir"?"Acceso a cursos sincronizado":"Acceso Drive revocado");
+    return true;
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(()=>{
     supabase.auth.getSession().then(({data})=>setUser(data.session?.user||null));
@@ -1887,12 +1952,12 @@ export default function App(){
   // ── CRUD ──────────────────────────────────────────────────────────────────
   function validateForm(f){
     const servicio=normalizeServicio(f.servicio);
-    const nombre=f.nombre.trim();const emailVal=(f.email||"").trim().toLowerCase();
+    const nombre=f.nombre.trim();const emailVal=normalizarEmailAcceso(f.email);
     if(!nombre){toast.error(servicio==="publicidad"?"Falta la empresa":"Falta el nombre y apellido");return null;}
     // Email solo requerido para planes — clases/publicidad no lo necesitan
     if(!["clases","publicidad"].includes(servicio)){
-      if(!emailVal){toast.error("Falta el email");return null;}
-      if(!isValidEmail(emailVal)){toast.error("El email no es válido");return null;}
+      const emailCheck=validarEmailAcceso(emailVal);
+      if(!emailCheck.ok){toast.error(emailCheck.error);return null;}
     }
     if(!["clases","publicidad"].includes(servicio)&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
     return{nombre,email:emailVal};
@@ -2180,7 +2245,7 @@ export default function App(){
           await logH(user?.email,normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
           await logNC(ins.id,user?.email,"alta",`${normalizeServicio(ins.servicio)==="publicidad"?"Publicidad registrada":"Cliente dado de alta"}. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
           if(pendienteAlta)await registrarVentaPendiente({clienteId:ins.id,ingresoId:ingAlta?.id,nombre:ins.nombre,servicio:ins.servicio,monto:ins.monto,fecha:fechaIngresoAlta,vendedor:recibeAlta,origen:"alta"});
-          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))llamarDrive("compartir", ins.email);
+          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))await sincronizarAccesoDrive("compartir", ins.email,{origen:"alta",cliente_id:ins.id,nombre:ins.nombre,servicio:ins.servicio,ingreso_id:ingAlta?.id||null});
           refetch();
         }catch(err){console.warn("Alta secundaria falló",err);refetch();}
       })();
@@ -2222,7 +2287,7 @@ export default function App(){
           await logH(user?.email,"renovación de cliente","cliente",renovarForm.id,{nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion,ingreso_id:ingRen?.id||null});
           await logNC(renovarForm.id,user?.email,"renovación",`Renovación de plan. Servicio: ${svcLabel(renovarForm.servicio)} · Monto: USD ${renovarForm.monto} · Recibe: ${recibeRenovacion}${pendienteRenovacion?" · Pendiente de transferencia a Cristian":""}`,{servicio:renovarForm.servicio,monto:renovarForm.monto,recibe:recibeRenovacion,pendiente_transferencia:pendienteRenovacion,ingreso_id:ingRen?.id||null});
           if(pendienteRenovacion)await registrarVentaPendiente({clienteId:renovarForm.id,ingresoId:ingRen?.id,nombre:v.nombre,servicio:renovarForm.servicio,monto:renovarForm.monto,fecha:fechaRenovacion,vendedor:recibeRenovacion,origen:"renovación"});
-          if(!["clases","publicidad"].includes(normalizeServicio(renovarForm.servicio)))llamarDrive("compartir", v.email);
+          if(!["clases","publicidad"].includes(normalizeServicio(renovarForm.servicio)))await sincronizarAccesoDrive("compartir", v.email,{origen:"renovación",cliente_id:renovarForm.id,nombre:v.nombre,servicio:renovarForm.servicio,ingreso_id:ingRen?.id||null});
           refetch();
         }catch(err){console.warn("Renovación secundaria falló",err);refetch();}
       })();
@@ -2284,7 +2349,7 @@ export default function App(){
       if(pendienteRapida)await registrarVentaPendiente({clienteId:cliente.id,ingresoId:ingRapida?.id,nombre:cliente.nombre,servicio,monto,fecha:fb,vendedor:recibeRapida,origen:"renovación rápida"});
       toast.success(servicio==="clases"?`✓ ${cliente.nombre} renovado — clases registradas`:`✓ ${cliente.nombre} renovado — vence ${formatDate(nv)}`);
       refetch();
-      if(!["clases","publicidad"].includes(servicio))llamarDrive("compartir",email);
+      if(!["clases","publicidad"].includes(servicio))await sincronizarAccesoDrive("compartir",email,{origen:"renovación rápida",cliente_id:cliente.id,nombre:cliente.nombre,servicio,ingreso_id:ingRapida?.id||null});
     }finally{
       actionLocks.current.delete(lockKey);
     }
@@ -2301,7 +2366,7 @@ export default function App(){
     if(error){toast.error("No se pudo eliminar");refetch();return;}
     await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin borrar ingresos"});
     toast.success(`${cliente.nombre} eliminado. Los ingresos históricos se conservaron.`);
-    llamarDrive("revocar",(cliente.email||"").trim().toLowerCase()); // en paralelo
+    await sincronizarAccesoDrive("revocar",cliente.email,{origen:"baja",cliente_id:cliente.id,nombre:cliente.nombre});
   }
   async function eliminarIngreso(id){
     const ing=ingresos.find(i=>i.id===id);
@@ -2458,19 +2523,18 @@ export default function App(){
   }
   async function actualizarEmail(id, nuevoEmail, emailAnteriorForzado="") {
     const clienteActual = clientes.find(c => c.id === id);
-    const emailAnterior = (emailAnteriorForzado || clienteActual?.email || "").trim().toLowerCase();
-    const emailNuevo = nuevoEmail.trim().toLowerCase();
-    if (emailNuevo && !isValidEmail(emailNuevo)) { toast.error("El email no es válido"); fetchClientes(); return; }
+    const emailAnterior = normalizarEmailAcceso(emailAnteriorForzado || clienteActual?.email || "");
+    const emailNuevo = normalizarEmailAcceso(nuevoEmail);
+    const checkNuevo=emailNuevo?validarEmailAcceso(emailNuevo):{ok:true,email:""};
+    if (!checkNuevo.ok) { toast.error(checkNuevo.error); fetchClientes(); return; }
     if (emailAnterior === emailNuevo) return; // no cambió nada
     const {error} = await supabase.from("clientes").update({email: emailNuevo}).eq("id", id);
     if (error) { toast.error("No se pudo actualizar el email"); fetchClientes(); return; }
     setClientes(prev=>prev.map(c=>c.id===id?{...c,email:emailNuevo}:c));
     setEmailSaved(id); setTimeout(() => setEmailSaved(null), 2000);
-    // Revocar acceso al email anterior y dar acceso al nuevo.
-    // Importante: el email anterior se captura al enfocar el campo, porque el input
-    // actualiza el estado local mientras se escribe.
-    if (emailAnterior && emailAnterior.includes("@")) llamarDrive("revocar", emailAnterior);
-    if (emailNuevo && emailNuevo.includes("@")) llamarDrive("compartir", emailNuevo);
+    // Revocar acceso al email anterior y dar acceso al nuevo con resultado visible.
+    if (emailAnterior && emailAnterior.includes("@")) await sincronizarAccesoDrive("revocar", emailAnterior,{origen:"cambio_email",cliente_id:id,nombre:clienteActual?.nombre||""});
+    if (emailNuevo && emailNuevo.includes("@")) await sincronizarAccesoDrive("compartir", emailNuevo,{origen:"cambio_email",cliente_id:id,nombre:clienteActual?.nombre||""});
     toast.success("Email actualizado y acceso sincronizado");
   }
   async function actualizarNombre(id, nuevoNombre) {
@@ -3464,6 +3528,7 @@ export default function App(){
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
           onNotaGuardada={()=>toast.success("Nota guardada")}
           onEditarDeuda={c=>setDeudaCliente(c)}
+          onSincronizarDrive={c=>sincronizarAccesoDrive("compartir",c.email,{origen:"manual_ficha",cliente_id:c.id,nombre:c.nombre,servicio:c.servicio},{showOk:true})}
           t={t}/>
       )}
       {pagoCliente&&<PagoModal cliente={pagoCliente} onClose={()=>setPagoCliente(null)} onConfirm={registrarPagoParcial} t={t}/>}
