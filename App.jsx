@@ -653,8 +653,23 @@ function hashPersonaId(txt){
   }
   return (h>>>0).toString(36).toUpperCase().padStart(7,"0").slice(-7);
 }
-function clientePublicId(o){
-  const key=personaKeyFromData(o)||`id:${o?.id||"sin-id"}`;
+function personaCanonicalKey(o,allClientes=[]){
+  const email=normalizarEmailAcceso(o?.email||"");
+  const nombre=normPersonaText(o?.nombre||o?.cliente_nombre||"");
+  const relacionados=(allClientes||[]).filter(c=>{
+    const ce=normalizarEmailAcceso(c?.email||"");
+    const cn=normPersonaText(c?.nombre||c?.cliente_nombre||"");
+    return (email&&ce&&ce===email)||(nombre&&cn&&cn===nombre);
+  });
+  const emails=[email,...relacionados.map(c=>normalizarEmailAcceso(c?.email||"")).filter(Boolean)]
+    .filter(Boolean)
+    .sort();
+  if(emails.length)return`email:${emails[0]}`;
+  if(nombre)return`nombre:${nombre}`;
+  return personaKeyFromData(o)||`id:${o?.id||"sin-id"}`;
+}
+function clientePublicId(o,allClientes=[]){
+  const key=personaCanonicalKey(o,allClientes);
   return `SC-${hashPersonaId(key)}`;
 }
 async function fetchConTimeout(url,options={},timeoutMs=10000){
@@ -980,7 +995,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
                 <div>
                   <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</div>
                   <div style={{color:t.textMuted,fontSize:12,marginTop:2}}>
-                    {c.email||"Sin email"} · ID {clientePublicId(c)}
+                    {c.email||"Sin email"} · ID {clientePublicId(c,clientes)}
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1023,26 +1038,36 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
     return()=>window.removeEventListener("keydown",onKey);
   },[onClose]);
 
-  // ID lógico de persona: agrupa por email si existe, si no por nombre normalizado.
-  // Así un cliente que vuelve, o que también toma clases, cae en el mismo perfil histórico.
-  const personaKey = useMemo(()=>personaKeyFromData(cliente),[cliente.id,cliente.nombre,cliente.email]);
-  const personaId = useMemo(()=>clientePublicId(cliente),[cliente.id,cliente.nombre,cliente.email]);
+  // ID lógico de persona: agrupa por email si existe, y también por nombre normalizado.
+  // Si un registro no tiene email pero otro del mismo nombre sí lo tiene, ambos muestran el mismo ID.
+  const personaBaseKey = useMemo(()=>personaKeyFromData(cliente),[cliente.id,cliente.nombre,cliente.email]);
   const mismoNombre = useMemo(()=>
-    (allClientes||[]).filter(c=>personaKeyFromData(c)===personaKey || personaCoincide(c,cliente))
-  ,[allClientes,cliente.id,cliente.nombre,cliente.email,personaKey]);
+    (allClientes||[]).filter(c=>personaKeyFromData(c)===personaBaseKey || personaCoincide(c,cliente))
+  ,[allClientes,cliente.id,cliente.nombre,cliente.email,personaBaseKey]);
+
+  const personaKey = useMemo(()=>personaCanonicalKey(cliente,mismoNombre),[cliente.id,cliente.nombre,cliente.email,mismoNombre]);
+  const personaId = useMemo(()=>clientePublicId(cliente,mismoNombre),[cliente.id,cliente.nombre,cliente.email,mismoNombre]);
+  const personaKeys = useMemo(()=>{
+    const set=new Set([personaBaseKey,personaKey].filter(Boolean));
+    mismoNombre.forEach(c=>{
+      set.add(personaKeyFromData(c));
+      set.add(personaCanonicalKey(c,mismoNombre));
+    });
+    return set;
+  },[personaBaseKey,personaKey,mismoNombre]);
 
   const todosLosIds = useMemo(()=>mismoNombre.map(c=>c.id),[mismoNombre]);
 
-  // Todos los pagos del perfil: por cliente_id, y también por email/nombre para recuperar ingresos viejos
-  // que hayan quedado históricos sin cliente_id.
+  // Todos los pagos del perfil: por cliente_id, por email canónico y por nombre normalizado.
   const pagosTotales=useMemo(()=>
     ingresos.filter(i=>
       todosLosIds.map(String).includes(String(i.cliente_id)) ||
-      personaKeyFromData({nombre:i.cliente_nombre,email:i.email})===personaKey ||
+      personaKeys.has(personaKeyFromData({nombre:i.cliente_nombre,email:i.email})) ||
+      personaKeys.has(personaCanonicalKey({nombre:i.cliente_nombre,email:i.email},mismoNombre)) ||
       personaCoincide({nombre:i.cliente_nombre,email:i.email},cliente)
     )
       .sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))
-  ,[ingresos,todosLosIds,personaKey,cliente.nombre,cliente.email]);
+  ,[ingresos,todosLosIds,personaKeys,mismoNombre,cliente.nombre,cliente.email]);
 
   const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
   const totalDeuda=mismoNombre.reduce((a,c)=>a+safeNum(c.deuda_restante),0);
@@ -2533,10 +2558,10 @@ export default function App(){
 
       void (async()=>{
         try{
-          await logH(user?.email,esReactivacion?"reactivó cliente existente":normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
-          await logNC(ins.id,user?.email,esReactivacion?"reactivación":"alta",`${esReactivacion?"Cliente reactivado sobre el mismo ID":"Cliente dado de alta"}. ID: ${clientePublicId(ins)} · Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
+          await logH(user?.email,esReactivacion?"reactivó cliente existente":normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins,clientes)});
+          await logNC(ins.id,user?.email,esReactivacion?"reactivación":"alta",`${esReactivacion?"Cliente reactivado sobre el mismo ID":"Cliente dado de alta"}. ID: ${clientePublicId(ins,clientes)} · Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins,clientes)});
           if(pendienteAlta)await registrarVentaPendiente({clienteId:ins.id,ingresoId:ingAlta?.id,nombre:ins.nombre,servicio:ins.servicio,monto:ins.monto,fecha:fechaIngresoAlta,vendedor:recibeAlta,origen:esReactivacion?"reactivación":"alta"});
-          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))await sincronizarAccesoDrive("compartir", ins.email,{origen:esReactivacion?"reactivación":"alta",cliente_id:ins.id,nombre:ins.nombre,servicio:ins.servicio,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
+          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))await sincronizarAccesoDrive("compartir", ins.email,{origen:esReactivacion?"reactivación":"alta",cliente_id:ins.id,nombre:ins.nombre,servicio:ins.servicio,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins,clientes)});
           refetch();
         }catch(err){console.warn("Alta/reactivación secundaria falló",err);refetch();}
       })();
@@ -2651,17 +2676,17 @@ export default function App(){
     // Baja operativa sin borrar el registro real: conserva el mismo ID y mantiene ligados
     // ingresos, clases, notas e historial para cuando la persona vuelva.
     const fechaHoy=toISODate(getToday());
-    const notaBaja=`Baja operativa el ${formatDate(fechaHoy)}. Se conserva ID ${clientePublicId(cliente)} e historial para reactivación futura.`;
+    const notaBaja=`Baja operativa el ${formatDate(fechaHoy)}. Se conserva ID ${clientePublicId(cliente,clientes)} e historial para reactivación futura.`;
     const notasBase=String(cliente.notas||"").trim();
     const payload={estado_manual:"baja_operativa",notas:notasBase?`${notasBase} · ${notaBaja}`:notaBaja,vendedor:"",transferido:true};
     const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
     if(error){toast.error("No se pudo dar de baja");refetch();return;}
     setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...payload}:c));
     setClienteDetalle(null);
-    await logH(user?.email,"dio de baja cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin romper ID ni historial",id_cliente:clientePublicId(cliente)});
-    await logNC(cliente.id,user?.email,"estado",notaBaja,{estado:"baja_operativa",id_cliente:clientePublicId(cliente)});
+    await logH(user?.email,"dio de baja cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin romper ID ni historial",id_cliente:clientePublicId(cliente,clientes)});
+    await logNC(cliente.id,user?.email,"estado",notaBaja,{estado:"baja_operativa",id_cliente:clientePublicId(cliente,clientes)});
     toast.success(`${cliente.nombre} dado de baja. El ID y el historial quedan conservados.`);
-    if(!["clases","publicidad"].includes(normalizeServicio(cliente.servicio)))await sincronizarAccesoDrive("revocar",cliente.email,{origen:"baja",cliente_id:cliente.id,nombre:cliente.nombre,id_cliente:clientePublicId(cliente)});
+    if(!["clases","publicidad"].includes(normalizeServicio(cliente.servicio)))await sincronizarAccesoDrive("revocar",cliente.email,{origen:"baja",cliente_id:cliente.id,nombre:cliente.nombre,id_cliente:clientePublicId(cliente,clientes)});
   }
 
   async function eliminarIngreso(id){
@@ -2951,7 +2976,7 @@ export default function App(){
   const filtered=useMemo(()=>computed.filter(c=>{
     if(c.estado_manual==="baja_operativa")return false;
     if(normalizeServicio(c.servicio)==="clases"&&c.estado_manual==="finalizado")return false;
-    const txt=`${c.nombre||""} ${c.email||""} ${clientePublicId(c)}`.toLowerCase();
+    const txt=`${c.nombre||""} ${c.email||""} ${clientePublicId(c,computed)}`.toLowerCase();
     const okB=txt.includes(busqueda.toLowerCase());
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
