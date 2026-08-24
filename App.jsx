@@ -316,6 +316,57 @@ function buildBreakdown(arr){
   arr.forEach(i=>{const servicio=normalizeServicio(i.servicio);if(b[servicio]!==undefined)b[servicio]+=safeNum(i.monto);});
   return b;
 }
+function metodoPagoDesdeIngreso(i){
+  const directo=String(i?.metodo_pago||i?.metodoPago||"").trim();
+  if(directo)return directo;
+  const notas=String(i?.notas||"");
+  const m=notas.match(/Método de pago\s*:\s*([^·\n]+)/i);
+  return (m?.[1]||"Sin especificar").trim();
+}
+function notasConMetodoPago(notas,metodo){
+  const limpio=String(notas||"").replace(/\s*·?\s*Método de pago\s*:\s*[^·\n]+/ig,"").trim();
+  const metodoOk=String(metodo||"").trim();
+  if(!metodoOk)return limpio;
+  return limpio?`${limpio} · Método de pago: ${metodoOk}`:`Método de pago: ${metodoOk}`;
+}
+function buildMetodoPagoBreakdown(arr){
+  const map=new Map();
+  (arr||[]).forEach(i=>{
+    const metodo=metodoPagoDesdeIngreso(i);
+    if(!map.has(metodo))map.set(metodo,{key:metodo,label:metodo,total:0,count:0});
+    const r=map.get(metodo);
+    r.total+=safeNum(i.monto);
+    r.count+=1;
+  });
+  return Array.from(map.values()).sort((a,b)=>b.total-a.total||a.label.localeCompare(b.label));
+}
+function ingresoPersonaKey(i){
+  return i?.cliente_id?`id:${i.cliente_id}`:i?.email?`email:${String(i.email).toLowerCase().trim()}`:`nombre:${String(i?.cliente_nombre||"").toLowerCase().trim()}`;
+}
+function buildAltasRenovacionesMensual(ingresos){
+  const vistos=new Map();
+  const rows=new Map();
+  (ingresos||[])
+    .filter(i=>["mensual","anual"].includes(normalizeServicio(i.servicio))&&i.fecha_pago)
+    .slice()
+    .sort((a,b)=>String(a.fecha_pago||"").localeCompare(String(b.fecha_pago||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")))
+    .forEach(i=>{
+      const mk=monthKey(i.fecha_pago);
+      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,total:0});
+      const r=rows.get(mk);
+      const servicio=normalizeServicio(i.servicio);
+      const pKey=ingresoPersonaKey(i);
+      const ya=vistos.has(pKey);
+      if(servicio==="mensual"){
+        if(ya)r.mensualRenovacion+=1; else r.mensualAlta+=1;
+      }else if(servicio==="anual"){
+        if(ya)r.anualRenovacion+=1; else r.anualAlta+=1;
+      }
+      r.total+=1;
+      vistos.set(pKey,true);
+    });
+  return Array.from(rows.values()).sort((a,b)=>a.key.localeCompare(b.key));
+}
 function esIngresoHistorico(i){
   const key=monthKey(i?.fecha_pago);
   return !!key&&key>=INICIO_INGRESOS_HISTORICOS;
@@ -633,7 +684,9 @@ function usePagination(items,pageSize){
 
 const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
-const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true};
+const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","Western Union"];
+const metodoPagoValido = v => METODOS_PAGO.includes(v) ? v : "";
+const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true,metodo_pago:""};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
 function getT(dark){
@@ -1452,7 +1505,7 @@ function BreakdownCard({title,breakdown,t}){
 }
 
 // ─── Gráfico línea ────────────────────────────────────────────────────────────
-function LineChart({ingresos,t}){
+function LineChart({ingresos,t,selectedMonth,onMonthChange}){
   const today=getToday();
   const availableMonths=useMemo(()=>{
     const keys=new Set();
@@ -1460,7 +1513,7 @@ function LineChart({ingresos,t}){
     keys.add(monthKey(toISODate(today)));
     return Array.from(keys).sort().reverse();
   },[ingresos]);
-  const[sel,setSel]=useState(monthKey(toISODate(today)));
+  const sel=selectedMonth&&availableMonths.includes(selectedMonth)?selectedMonth:monthKey(toISODate(today));
   const[tip,setTip]=useState(null);
   const data=useMemo(()=>{const[y,m]=sel.split("-");return buildDailySeriesForMonth(ingresos,Number(y),Number(m)-1);},[ingresos,sel]);
   const S=makeS(t);
@@ -1480,7 +1533,7 @@ function LineChart({ingresos,t}){
   return(
     <div>
       <div style={{marginBottom:16}}>
-        <select value={sel} onChange={e=>setSel(e.target.value)} style={{...S.input,width:"auto",minWidth:200}}>
+        <select value={sel} onChange={e=>onMonthChange&&onMonthChange(e.target.value)} style={{...S.input,width:"auto",minWidth:200}}>
           {availableMonths.map(k=>(<option key={k} value={k}>{monthLabel(k)}</option>))}
         </select>
       </div>
@@ -1543,6 +1596,69 @@ function PieChart({breakdown,title,t}){
           {paths.map(p=>(<div key={p.key} style={{display:"flex",alignItems:"center",gap:10,opacity:hov&&hov!==p.key?.35:1,transition:"opacity 0.15s"}} onMouseEnter={()=>setHov(p.key)} onMouseLeave={()=>setHov(null)}><div style={{width:11,height:11,borderRadius:3,background:p.color,flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{p.label}</div><div style={{fontSize:12,color:t.textMuted}}>USD {p.val} · {p.pct}%</div></div></div>))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AltasRenovacionesCard({rows,t}){
+  const S=makeS(t);
+  const ultimos=(rows||[]).slice(-8);
+  const max=Math.max(...ultimos.map(r=>r.total),1);
+  return(
+    <div style={S.card}>
+      <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>Altas vs renovaciones por plan</h3>
+      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez y quién vuelve a pagar.</div>
+      {!ultimos.length?<div style={{color:t.textMuted}}>Sin datos disponibles.</div>:(
+        <div style={{display:"grid",gap:13}}>
+          {ultimos.map(r=>{
+            const pct=Math.max((r.total/max)*100,4);
+            return(
+              <div key={r.key}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:13,marginBottom:6,color:t.text}}>
+                  <strong>{monthLabel(r.key)}</strong>
+                  <span style={{color:t.textMuted}}>{r.total} pago{r.total!==1?"s":""}</span>
+                </div>
+                <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden",marginBottom:6}}>
+                  <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:6,fontSize:12,color:t.textMuted}}>
+                  <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
+                  <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+function MetodoPagoCard({items,title,t}){
+  const S=makeS(t);
+  const max=Math.max(...(items||[]).map(i=>i.total),1);
+  return(
+    <div style={S.card}>
+      <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>{title}</h3>
+      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Desglose por método de pago registrado en el ingreso.</div>
+      {!items?.length?<div style={{color:t.textMuted}}>Sin datos disponibles.</div>:(
+        <div style={{display:"grid",gap:12}}>
+          {items.map(i=>{
+            const pct=Math.max((i.total/max)*100,4);
+            return(
+              <div key={i.key}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:13,marginBottom:5}}>
+                  <strong style={{color:t.text}}>{i.label}</strong>
+                  <span style={{color:t.accent,fontWeight:900}}>USD {i.total}</span>
+                </div>
+                <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
+                  <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
+                </div>
+                <div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{i.count} ingreso{i.count!==1?"s":""}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1648,6 +1764,12 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
         </Field>
         <Field label="Monto (USD)" t={t}>
           <input type="number" style={S.input} placeholder="0" value={form.monto} onChange={e=>setForm({...form,monto:e.target.value})}/>
+        </Field>
+        <Field label="Método de pago" t={t}>
+          <select style={S.input} value={metodoPagoValido(form.metodo_pago)} onChange={e=>setForm({...form,metodo_pago:e.target.value})}>
+            <option value="">Seleccionar método</option>
+            {METODOS_PAGO.map(m=><option key={m} value={m}>{m}</option>)}
+          </select>
         </Field>
         {!isClases&&!isPublicidad&&(
           <Field label="Duración (días)" t={t}>
@@ -1899,8 +2021,8 @@ export default function App(){
     return()=>window.removeEventListener("keydown",onKey);
   },[]);
 
-  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,showRecibeFinal=false,showFecha=false,montoDefault=null,fechaDefault=null,onConfirmFn=null}={}){
-    setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
+  function askConfirm(title,message,onConfirm,{danger=false,label="Confirmar",showVendedor=false,showRecibeFinal=false,showFecha=false,montoDefault=null,fechaDefault=null,metodoDefault="",onConfirmFn=null}={}){
+    setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),metodoPago:metodoDefault||"",recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
   }
 
   function driveQueueKey(accion,email){
@@ -2053,13 +2175,15 @@ export default function App(){
       if(!emailCheck.ok){toast.error(emailCheck.error);return null;}
     }
     if(!["clases","publicidad"].includes(servicio)&&Number(f.duracion_dias||0)<=0){toast.error("Falta la duración en días");return null;}
+    if(!metodoPagoValido(f.metodo_pago)){toast.error("Falta el método de pago");return null;}
     return{nombre,email:emailVal};
   }
   function buildPayload(f,nombre,emailVal){
     const servicio=normalizeServicio(f.servicio);
     const dur=["clases","publicidad"].includes(servicio)?0:Number(f.duracion_dias||svcDuration(servicio));
     const vendedor=f.vendedor||"";
-    return{...f,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:servicio==="anual"?Number(f.deuda_restante||0):0,
+    const {metodo_pago, ...fCliente}=f;
+    return{...fCliente,servicio,nombre,email:emailVal,estado_manual:"activo",monto:Number(f.monto||0),duracion_dias:dur,deuda_restante:servicio==="anual"?Number(f.deuda_restante||0):0,
       vendedor,transferido:!ventaPendienteTransferencia(vendedor),
       fecha_vencimiento:["clases","publicidad"].includes(servicio)||dur<=0?null:toISODate(addDays(f.fecha_inicio,dur))};
   }
@@ -2197,10 +2321,11 @@ export default function App(){
     if(!txt)return "-";
     return txt;
   }
-  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,recepcion={}){
-    const notasFinal=recepcion&&recepcion.recibe
+  function buildIng(cid,nombre,emailVal,servicio,monto,fecha,notas,recepcion={},metodoPago=""){
+    const notasBase=recepcion&&recepcion.recibe
       ? notaConRecepcion(notas, recepcion.recibe, !!recepcion.pendiente)
       : limpiarTextoRecepcion(notas||"");
+    const notasFinal=notasConMetodoPago(notasBase,metodoPago);
     return{cliente_id:cid,cliente_nombre:nombre,email:emailVal,servicio:normalizeServicio(servicio),monto:Number(monto||0),fecha_pago:fecha,notas:notasFinal};
   }
   const CAJA_AUTO_DESDE = "2026-07-11";
@@ -2318,7 +2443,7 @@ export default function App(){
       const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
       const recibeAlta=payload.vendedor||ins.vendedor||form.vendedor||"Cristian";
       const pendienteAlta=ventaPendienteTransferencia(recibeAlta);
-      const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas,{recibe:recibeAlta,pendiente:pendienteAlta})]).select().single();
+      const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas,{recibe:recibeAlta,pendiente:pendienteAlta},form.metodo_pago)]).select().single();
       if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
 
       // Actualización local inmediata: evita que Caja dependa de un refetch para saber quién recibió.
@@ -2363,7 +2488,7 @@ export default function App(){
       const fechaRenovacion=normalizeServicio(renovarForm.servicio)==="publicidad"?dateOnly(renovarForm.fecha_inicio)||toISODate(getToday()):toISODate(getToday());
       const recibeRenovacion=payload.vendedor||renovarForm.vendedor||"Cristian";
       const pendienteRenovacion=ventaPendienteTransferencia(recibeRenovacion);
-      const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas,{recibe:recibeRenovacion,pendiente:pendienteRenovacion})]).select().single();
+      const{data:ingRen,error:eIngRen}=await supabase.from("ingresos").insert([buildIng(renovarForm.id,v.nombre,v.email,renovarForm.servicio,renovarForm.monto,fechaRenovacion,renovarForm.notas,{recibe:recibeRenovacion,pendiente:pendienteRenovacion},renovarForm.metodo_pago)]).select().single();
       if(eIngRen){toast.error("Renovación guardada, pero no se pudo registrar el ingreso");}
 
       setClientes(prev=>prev.map(c=>String(c.id)===String(renovarForm.id)?{...c,...payload,vendedor:payload.vendedor||"",transferido:!pendienteRenovacion}:c));
@@ -2395,7 +2520,7 @@ export default function App(){
       setRenovando(false);
     }
   }
-  async function renovarRapido(cliente, vendedor="", montoCustom, fechaCustom=null){
+  async function renovarRapido(cliente, vendedor="", montoCustom, fechaCustom=null, metodoPago=""){
     const today=getToday();
     const fechaRenovacion=dateOnly(fechaCustom)||toISODate(today);
     const servicio=normalizeServicio(cliente.servicio);
@@ -2417,7 +2542,7 @@ export default function App(){
     try{
       const transferido=!ventaPendienteTransferencia(vendedor);
       const payload={nombre:cliente.nombre||"",email,servicio,fecha_inicio:fb,monto,duracion_dias:dur,estado_manual:"activo",deuda_restante:servicio==="anual"?Number(cliente.deuda_restante||0):0,notas:cliente.notas||"",fecha_vencimiento:nv,vendedor:vendedor||"",transferido};
-      const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,fb,cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida});
+      const ingreso=buildIng(cliente.id,cliente.nombre||"",email,servicio,monto,fb,cliente.notas,{recibe:recibeRapida,pendiente:pendienteRapida},metodoPago);
       const duplicado=await buscarIngresoDuplicadoServidor({clienteId:cliente.id,servicio,monto,fecha:fb,notas:ingreso.notas});
       if(duplicado){
         const{error:eC}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
@@ -3079,6 +3204,7 @@ export default function App(){
   }
   const today=getToday();
   const curMK=monthKey(toISODate(today));
+  const[graphMonth,setGraphMonth]=useState(curMK);
   const prevMD=new Date(today.getFullYear(),today.getMonth()-1,1);
   const curMI=useMemo(()=>ingresos.filter(i=>{const d=parseISODate(i.fecha_pago);return d&&d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth();}),[ingresos]);
   const prevMI=useMemo(()=>ingresos.filter(i=>{const d=parseISODate(i.fecha_pago);return d&&d.getFullYear()===prevMD.getFullYear()&&d.getMonth()===prevMD.getMonth();}),[ingresos]);
@@ -3092,6 +3218,24 @@ export default function App(){
     // Total histórico calculado igual que el resumen mensual: marzo 2026 en adelante.
     bkTotal:buildBreakdown(ingresosDesdeMarzo)
   }),[ingresosDesdeMarzo,curMI,ingMes]);
+
+  const graphMonthDate=useMemo(()=>{const[y,m]=String(graphMonth||curMK).split("-").map(Number);return new Date(y||today.getFullYear(),(m||today.getMonth()+1)-1,1);},[graphMonth,curMK,today]);
+  const graphPrevMonth=useMemo(()=>monthKey(toISODate(new Date(graphMonthDate.getFullYear(),graphMonthDate.getMonth()-1,1))),[graphMonthDate]);
+  const graphMI=useMemo(()=>ingresos.filter(i=>i.fecha_pago&&monthKey(i.fecha_pago)===(graphMonth||curMK)),[ingresos,graphMonth,curMK]);
+  const graphPrevMI=useMemo(()=>ingresos.filter(i=>i.fecha_pago&&monthKey(i.fecha_pago)===graphPrevMonth),[ingresos,graphPrevMonth]);
+  const graphIngMes=graphMI.reduce((a,i)=>a+safeNum(i.monto),0);
+  const graphIngMesAnt=graphPrevMI.reduce((a,i)=>a+safeNum(i.monto),0);
+  const graphTrendMes=graphIngMesAnt>0?Math.round(((graphIngMes-graphIngMesAnt)/graphIngMesAnt)*100):null;
+  const graphDias=graphMonth===curMK?today.getDate():new Date(graphMonthDate.getFullYear(),graphMonthDate.getMonth()+1,0).getDate();
+  const graphVentaPromedioDia=graphDias>0?Math.round((graphMI.length/graphDias)*100)/100:0;
+  const graphStats=useMemo(()=>({
+    ingMes:graphIngMes,
+    ventasMes:graphMI.length,
+    bkMes:buildBreakdown(graphMI),
+    bkTotal:buildBreakdown(ingresosDesdeMarzo),
+    metodosMes:buildMetodoPagoBreakdown(graphMI),
+    altasRenovaciones:buildAltasRenovacionesMensual(ingresosDesdeMarzo)
+  }),[graphIngMes,graphMI,ingresosDesdeMarzo]);
 
   // Promedio real de ventas/pagos por día del mes actual.
   // Cuenta todos los ingresos registrados, no solo clientes nuevos.
@@ -3557,7 +3701,9 @@ export default function App(){
             if(!["Cristian","Bahiano"].includes(recibeFinal)){toast.error("Elegí quién recibió la plata");return;}
             confirm.onConfirmFn?confirm.onConfirmFn(recibeFinal):confirm.onConfirm?.();
           }else{
-            confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual,fechaActual):confirm.onConfirm();
+            const metodoActual=confirm.metodoPago||"";
+            if(confirm.showVendedor&&!metodoPagoValido(metodoActual)){toast.error("Falta el método de pago");return;}
+            confirm.onConfirmFn?confirm.onConfirmFn(vendedorActual,montoActual,fechaActual,metodoActual):confirm.onConfirm();
           }
           setConfirm(null);setVendedorRenovacion("");
         }}
@@ -3570,6 +3716,14 @@ export default function App(){
                 onChange={e=>setConfirm(prev=>({...prev,montoRenovacion:e.target.value}))}
                 style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}
                 placeholder={String(confirm.montoDefault||35)}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:11,color:t.textMuted,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Método de pago</label>
+              <select value={metodoPagoValido(confirm.metodoPago)} onChange={e=>setConfirm(prev=>({...prev,metodoPago:e.target.value}))}
+                style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${t.inputBorder}`,fontSize:14,outline:"none",background:t.inputBg,color:t.inputText}}>
+                <option value="">Seleccionar método</option>
+                {METODOS_PAGO.map(m=><option key={m} value={m}>{m}</option>)}
+              </select>
             </div>
             {confirm.showFecha&&(
               <div>
@@ -3803,19 +3957,23 @@ export default function App(){
         {activeView==="graficos"&&(
           <div style={{display:"grid",gap:24}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
-              <MetricCard title="Ingresos del mes" value={money(ingMes)} accent trend={trendMes} sub={trendMes!=null?`vs mes anterior (USD ${ingMesAnt})`:undefined} t={t}/>
-              <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
+              <MetricCard title="Ingresos mes seleccionado" value={money(graphIngMes)} accent trend={graphTrendMes} sub={graphTrendMes!=null?`vs mes anterior (USD ${graphIngMesAnt})`:monthLabel(graphMonth)} t={t}/>
+              <MetricCard title="Ventas mes seleccionado" value={graphStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
-              <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="ventas registradas ÷ días transcurridos" t={t}/>
+              <MetricCard title="Ventas por día" value={`${graphVentaPromedioDia}`} sub="ventas registradas ÷ días del mes" t={t}/>
               <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
             </div>
             <div style={S.card}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:16}}>Fluctuación de ingresos</h3>
-              <LineChart ingresos={ingresos} t={t}/>
+              <LineChart ingresos={ingresos} selectedMonth={graphMonth} onMonthChange={setGraphMonth} t={t}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:24}}>
-              <PieChart breakdown={dashStats.bkMes} title="Ingresos por tipo — mes actual" t={t}/>
-              <PieChart breakdown={dashStats.bkTotal} title="Ingresos totales por tipo" t={t}/>
+              <PieChart breakdown={graphStats.bkMes} title={`Ingresos por tipo — ${monthLabel(graphMonth)}`} t={t}/>
+              <PieChart breakdown={graphStats.bkTotal} title="Ingresos totales por tipo" t={t}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:24}}>
+              <AltasRenovacionesCard rows={graphStats.altasRenovaciones} t={t}/>
+              <MetodoPagoCard items={graphStats.metodosMes} title={`Ingresos por método de pago — ${monthLabel(graphMonth)}`} t={t}/>
             </div>
             {/* Ventas por día — histórico mensual */}
             {(()=>{
@@ -3824,7 +3982,7 @@ export default function App(){
                 const ventasMes=(r.vM||0)+(r.vA||0)+(r.vC||0)+(r.vP||0);
                 // Para el mes actual usar días transcurridos, para meses pasados usar días del mes.
                 const [y,m]=r.key.split("-");
-                const esMesActual=r.key===curMK;
+                const esMesActual=r.key===graphMonth;
                 const dias=esMesActual?hoy.getDate():new Date(Number(y),Number(m),0).getDate();
                 const vpd=dias>0?Math.round((ventasMes/dias)*100)/100:0;
                 return{key:r.key,ventas:ventasMes,dias,vpd,esMesActual};
@@ -4037,7 +4195,7 @@ export default function App(){
                   accentBorder={dark?"#d4a23a":"#d19a32"} accentBg={dark?"rgba(212,162,58,.08)":"#fffdfa"} accentText={dark?"#e6c66f":"#8a5a12"}
                   nameColor={dark?t.text:"#1a0a00"}
                   dateLabel="vence"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -4047,7 +4205,7 @@ export default function App(){
                   accentBorder={dark?"#d4a23a":"#d6b94c"} accentBg={dark?"rgba(212,162,58,.075)":"#fffef9"} accentText={dark?"#e6c66f":"#80620f"}
                   nameColor={dark?t.text:"#1a0e00"}
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -4057,7 +4215,7 @@ export default function App(){
                   accentBorder={dark?"#ef6b5f":"#d65f54"} accentBg={dark?"rgba(239,107,95,.075)":"#fffafa"} accentText={dark?"#ffb3ad":"#9b3b32"}
                   nameColor={dark?t.text:"#1a0000"}
                   dateLabel="venció"
-                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m)=>renovarRapido(c,v,m)})}
+                  onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
                   onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
@@ -4150,12 +4308,12 @@ export default function App(){
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                             {c.servicio==="clases"?(
                               <>
-                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}>✔</button>
                                 <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"7px 11px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
                               </>
                             ):(
                               <>
-                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm(normalizeServicio(c.servicio)==="publicidad"?"Registrar publicidad":"Renovar cliente",normalizeServicio(c.servicio)==="publicidad"?`¿Registrar nuevo pago de publicidad para ${c.nombre}?`:`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:normalizeServicio(c.servicio)==="publicidad"?"Registrar":"Renovar",showVendedor:true,showFecha:normalizeServicio(c.servicio)==="publicidad",fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
+                                <button title="Renovación rápida" style={{...btn(true),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm(normalizeServicio(c.servicio)==="publicidad"?"Registrar publicidad":"Renovar cliente",normalizeServicio(c.servicio)==="publicidad"?`¿Registrar nuevo pago de publicidad para ${c.nombre}?`:`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:normalizeServicio(c.servicio)==="publicidad"?"Registrar":"Renovar",showVendedor:true,showFecha:normalizeServicio(c.servicio)==="publicidad",fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}>✔</button>
                                 <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                               </>
                             )}
@@ -4268,7 +4426,7 @@ export default function App(){
                         <td style={S.td}>{c.notas||"-"}</td>
                         <td style={S.td}>
                           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
-                            <button title="Renovación rápida" style={{...btn(true),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f)=>renovarRapido(c,v,m,f)})}>✔</button>
+                            <button title="Renovación rápida" style={{...btn(true),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Renovar clases",`¿Registrar una nueva renovación de clases para ${c.nombre}?`,null,{label:"Renovar",showVendedor:true,showFecha:true,fechaDefault:toISODate(getToday()),montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}>✔</button>
                             {c.estado_manual==="finalizado"?(
                               <span style={{fontSize:12,color:t.textMuted,fontWeight:700}}>Consolidada</span>
                             ):(
