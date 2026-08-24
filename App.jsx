@@ -347,12 +347,12 @@ function buildAltasRenovacionesMensual(ingresos){
   const vistos=new Map();
   const rows=new Map();
   (ingresos||[])
-    .filter(i=>["mensual","anual"].includes(normalizeServicio(i.servicio))&&i.fecha_pago)
+    .filter(i=>["mensual","anual","clases"].includes(normalizeServicio(i.servicio))&&i.fecha_pago)
     .slice()
     .sort((a,b)=>String(a.fecha_pago||"").localeCompare(String(b.fecha_pago||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")))
     .forEach(i=>{
       const mk=monthKey(i.fecha_pago);
-      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,total:0});
+      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,clasesAlta:0,clasesRenovacion:0,total:0});
       const r=rows.get(mk);
       const servicio=normalizeServicio(i.servicio);
       const pKey=ingresoPersonaKey(i);
@@ -361,6 +361,8 @@ function buildAltasRenovacionesMensual(ingresos){
         if(ya)r.mensualRenovacion+=1; else r.mensualAlta+=1;
       }else if(servicio==="anual"){
         if(ya)r.anualRenovacion+=1; else r.anualAlta+=1;
+      }else if(servicio==="clases"){
+        if(ya)r.clasesRenovacion+=1; else r.clasesAlta+=1;
       }
       r.total+=1;
       vistos.set(pKey,true);
@@ -1621,9 +1623,10 @@ function AltasRenovacionesCard({rows,t}){
                 <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden",marginBottom:6}}>
                   <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:6,fontSize:12,color:t.textMuted}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:6,fontSize:12,color:t.textMuted}}>
                   <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
+                  <div><b style={{color:t.text}}>Clases:</b> {r.clasesAlta} altas · {r.clasesRenovacion} renov.</div>
                 </div>
               </div>
             );
