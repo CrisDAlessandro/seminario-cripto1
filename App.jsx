@@ -282,7 +282,8 @@ function computeClient(c){
   const isPublicidad=servicio==="publicidad";
   const vencimiento=resolveDueDate(c);
   let estadoSistema="activo",dias=null;
-  if(isClases){estadoSistema=cNorm.estado_manual==="finalizado"?"finalizado":"clases";}
+  if(cNorm.estado_manual==="baja_operativa"){estadoSistema="baja";}
+  else if(isClases){estadoSistema=cNorm.estado_manual==="finalizado"?"finalizado":"clases";}
   else if(isPublicidad){estadoSistema="publicidad";}
   else if(cNorm.estado_manual==="sacar"){estadoSistema="sacar";}
   else if(vencimiento){
@@ -341,7 +342,9 @@ function buildMetodoPagoBreakdown(arr){
   return Array.from(map.values()).sort((a,b)=>b.total-a.total||a.label.localeCompare(b.label));
 }
 function ingresoPersonaKey(i){
-  return i?.cliente_id?`id:${i.cliente_id}`:i?.email?`email:${String(i.email).toLowerCase().trim()}`:`nombre:${String(i?.cliente_nombre||"").toLowerCase().trim()}`;
+  const persona=personaKeyFromData({nombre:i?.cliente_nombre,email:i?.email});
+  if(persona)return persona;
+  return i?.cliente_id?`id:${i.cliente_id}`:`ingreso:${i?.id||""}`;
 }
 function buildAltasRenovacionesMensual(ingresos){
   const vistos=new Map();
@@ -619,6 +622,41 @@ function validarEmailAcceso(email){
   }
   return{ok:true,email:e,error:null};
 }
+function normPersonaText(v){
+  return String(v||"")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g," ");
+}
+function personaKeyFromData(o){
+  const email=normalizarEmailAcceso(o?.email||"");
+  if(email)return`email:${email}`;
+  const nombre=normPersonaText(o?.nombre||o?.cliente_nombre||"");
+  return nombre?`nombre:${nombre}`:"";
+}
+function personaCoincide(a,b){
+  const emailA=normalizarEmailAcceso(a?.email||"");
+  const emailB=normalizarEmailAcceso(b?.email||"");
+  if(emailA&&emailB&&emailA===emailB)return true;
+  const nomA=normPersonaText(a?.nombre||a?.cliente_nombre||"");
+  const nomB=normPersonaText(b?.nombre||b?.cliente_nombre||"");
+  return !!nomA&&!!nomB&&nomA===nomB;
+}
+function hashPersonaId(txt){
+  let h=2166136261;
+  const s=String(txt||"");
+  for(let i=0;i<s.length;i++){
+    h^=s.charCodeAt(i);
+    h=Math.imul(h,16777619);
+  }
+  return (h>>>0).toString(36).toUpperCase().padStart(7,"0").slice(-7);
+}
+function clientePublicId(o){
+  const key=personaKeyFromData(o)||`id:${o?.id||"sin-id"}`;
+  return `SC-${hashPersonaId(key)}`;
+}
 async function fetchConTimeout(url,options={},timeoutMs=10000){
   const controller=new AbortController();
   const id=setTimeout(()=>controller.abort(),timeoutMs);
@@ -805,6 +843,7 @@ function badgeStyle(status){
   if(status==="publicidad")return{...b,background:"#fff7ed",color:"#9a3412",borderColor:"#fedf89"};
   if(status==="finalizado") return{...b,background:"#f2f4f7",color:"#344054",borderColor:"#d0d5dd"};
   if(status==="sacar")   return{...b,background:"#fef3f2",color:"#b42318",borderColor:"#fecdca"};
+  if(status==="baja")    return{...b,background:"#f1f5f9",color:"#64748b",borderColor:"#cbd5e1"};
   return{...b,background:"#f8fafc",color:"#334155",borderColor:"#d0d5dd"};
 }
 
@@ -941,7 +980,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
                 <div>
                   <div style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</div>
                   <div style={{color:t.textMuted,fontSize:12,marginTop:2}}>
-                    {c.email}
+                    {c.email||"Sin email"} · ID {clientePublicId(c)}
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -984,18 +1023,26 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
     return()=>window.removeEventListener("keydown",onKey);
   },[onClose]);
 
-  // Buscar TODOS los registros con el mismo nombre (mismo cliente, distintos servicios)
+  // ID lógico de persona: agrupa por email si existe, si no por nombre normalizado.
+  // Así un cliente que vuelve, o que también toma clases, cae en el mismo perfil histórico.
+  const personaKey = useMemo(()=>personaKeyFromData(cliente),[cliente.id,cliente.nombre,cliente.email]);
+  const personaId = useMemo(()=>clientePublicId(cliente),[cliente.id,cliente.nombre,cliente.email]);
   const mismoNombre = useMemo(()=>
-    (allClientes||[]).filter(c=>c.nombre?.trim().toLowerCase()===cliente.nombre?.trim().toLowerCase())
-  ,[allClientes,cliente.nombre]);
+    (allClientes||[]).filter(c=>personaKeyFromData(c)===personaKey || personaCoincide(c,cliente))
+  ,[allClientes,cliente.id,cliente.nombre,cliente.email,personaKey]);
 
   const todosLosIds = useMemo(()=>mismoNombre.map(c=>c.id),[mismoNombre]);
 
-  // Todos los pagos de todos los registros con ese nombre
+  // Todos los pagos del perfil: por cliente_id, y también por email/nombre para recuperar ingresos viejos
+  // que hayan quedado históricos sin cliente_id.
   const pagosTotales=useMemo(()=>
-    ingresos.filter(i=>todosLosIds.includes(i.cliente_id))
+    ingresos.filter(i=>
+      todosLosIds.map(String).includes(String(i.cliente_id)) ||
+      personaKeyFromData({nombre:i.cliente_nombre,email:i.email})===personaKey ||
+      personaCoincide({nombre:i.cliente_nombre,email:i.email},cliente)
+    )
       .sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))
-  ,[ingresos,todosLosIds]);
+  ,[ingresos,todosLosIds,personaKey,cliente.nombre,cliente.email]);
 
   const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
   const totalDeuda=mismoNombre.reduce((a,c)=>a+safeNum(c.deuda_restante),0);
@@ -1167,10 +1214,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
             <div>
               <h2 style={{margin:0,color:t.text,fontSize:21,fontWeight:900,letterSpacing:"-0.02em"}}>{cliente.nombre}</h2>
               <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6,flexWrap:"wrap"}}>
-                <span style={{color:t.textMuted,fontSize:13}}>{cliente.email}</span>
-                <button onClick={copiarEmail} style={{background:"none",border:"none",cursor:"pointer",color:copiado?"#22c55e":t.textMuted,fontSize:12,padding:"2px 8px",borderRadius:6,fontWeight:copiado?700:400}}>
+                <span style={{color:t.textMuted,fontSize:13}}>{cliente.email||"Sin email"}</span>
+                {cliente.email&&<button onClick={copiarEmail} style={{background:"none",border:"none",cursor:"pointer",color:copiado?"#22c55e":t.textMuted,fontSize:12,padding:"2px 8px",borderRadius:6,fontWeight:copiado?700:400}}>
                   {copiado?"✓ Copiado":"Copiar email"}
-                </button>
+                </button>}
+                <span style={{color:t.accent,fontSize:12,fontWeight:900,letterSpacing:"0.04em"}}>ID {personaId}</span>
               </div>
             </div>
             <button onClick={onClose} style={{...btn(false),padding:"8px 14px",flexShrink:0,marginLeft:12}}>Cerrar</button>
@@ -2431,48 +2479,70 @@ export default function App(){
     return nota;
   }
 
+  function buscarClienteExistenteParaAlta(nombre,email,servicio){
+    const objetivo={nombre,email};
+    const matches=(clientes||[]).filter(c=>personaCoincide(c,objetivo));
+    const servicioNorm=normalizeServicio(servicio);
+    // Reusar solo el registro del mismo servicio. Si la misma persona compra otro servicio,
+    // se conserva como servicio activo separado, pero cae en el mismo perfil por ID lógico.
+    return matches.find(c=>normalizeServicio(c.servicio)===servicioNorm) || null;
+  }
+
   async function guardarCliente(){
     const v=validateForm(form);if(!v)return;
-    // Solo validar duplicado de email si hay email y no es clases
-    if(!["clases","publicidad"].includes(normalizeServicio(form.servicio))&&v.email){
-      const dup=clientes.find(c=>c.email?.toLowerCase()===v.email);
-      if(dup){toast.error(`Ya existe un cliente con el email ${v.email}`);return;}
-    }
     setGuardando(true);
     try{
+      const servicioAlta=normalizeServicio(form.servicio);
+      const existente=buscarClienteExistenteParaAlta(v.nombre,v.email,servicioAlta);
       const payload=buildPayload(form,v.nombre,v.email);
-      const{data:ins,error}=await supabase.from("clientes").insert([payload]).select().single();
-      if(error){toast.error("No se pudo guardar el cliente");return;}
       const fechaIngresoAlta=fechaIngresoDesdeFormulario(form);
+      const esReactivacion=!!existente;
+      let ins=null,error=null;
+
+      if(esReactivacion){
+        const payloadReactivado={...payload,estado_manual:"activo"};
+        const r=await supabase.from("clientes").update(payloadReactivado).eq("id",existente.id).select().single();
+        ins=r.data?{...r.data}:({...existente,...payloadReactivado,id:existente.id});
+        error=r.error;
+      }else{
+        const r=await supabase.from("clientes").insert([payload]).select().single();
+        ins=r.data;
+        error=r.error;
+      }
+      if(error||!ins){toast.error("No se pudo guardar el cliente");return;}
+
       const recibeAlta=payload.vendedor||ins.vendedor||form.vendedor||"Cristian";
       const pendienteAlta=ventaPendienteTransferencia(recibeAlta);
       const{data:ingAlta,error:eIngAlta}=await supabase.from("ingresos").insert([buildIng(ins.id,ins.nombre,ins.email,ins.servicio,ins.monto,fechaIngresoAlta,ins.notas,{recibe:recibeAlta,pendiente:pendienteAlta},form.metodo_pago)]).select().single();
       if(eIngAlta){toast.error("Cliente guardado, pero no se pudo registrar el ingreso");}
 
-      // Actualización local inmediata: evita que Caja dependa de un refetch para saber quién recibió.
-      setClientes(prev=>[{...ins,vendedor:payload.vendedor||"",transferido:!pendienteAlta},...prev.filter(c=>String(c.id)!==String(ins.id))]);
+      // Actualización local inmediata: si la persona ya existía, se reutiliza el mismo ID real.
+      setClientes(prev=>esReactivacion
+        ? prev.map(c=>String(c.id)===String(ins.id)?{...c,...ins,vendedor:payload.vendedor||"",transferido:!pendienteAlta,estado_manual:"activo"}:c)
+        : [{...ins,vendedor:payload.vendedor||"",transferido:!pendienteAlta},...prev.filter(c=>String(c.id)!==String(ins.id))]
+      );
       if(ingAlta)setIngresos(prev=>[{...ingAlta,cliente_id:ins.id,cliente_nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,fecha_pago:fechaIngresoAlta},...prev.filter(i=>String(i.id)!==String(ingAlta.id))]);
 
       // La Caja directa de Cristian/Bahiano se crea antes del cierre del formulario.
-      // Luigi queda pendiente y entra recién cuando se marca recibido.
+      // Luigi/Jeremy quedan pendientes y entran recién cuando se marcan recibidos.
       if(!eIngAlta){
         try{
-          await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:recibeAlta,nombre:ins.nombre,clienteId:ins.id,origen:"alta",ingresoId:ingAlta?.id});
-        }catch(err){console.warn("Caja automática de alta falló",err);}
+          await registrarCajaDesdeVenta({fecha:fechaIngresoAlta,monto:ins.monto,recibe:recibeAlta,nombre:ins.nombre,clienteId:ins.id,origen:esReactivacion?"reactivación":"alta",ingresoId:ingAlta?.id});
+        }catch(err){console.warn("Caja automática de alta/reactivación falló",err);}
       }
 
       void (async()=>{
         try{
-          await logH(user?.email,normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
-          await logNC(ins.id,user?.email,"alta",`${normalizeServicio(ins.servicio)==="publicidad"?"Publicidad registrada":"Cliente dado de alta"}. Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null});
-          if(pendienteAlta)await registrarVentaPendiente({clienteId:ins.id,ingresoId:ingAlta?.id,nombre:ins.nombre,servicio:ins.servicio,monto:ins.monto,fecha:fechaIngresoAlta,vendedor:recibeAlta,origen:"alta"});
-          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))await sincronizarAccesoDrive("compartir", ins.email,{origen:"alta",cliente_id:ins.id,nombre:ins.nombre,servicio:ins.servicio,ingreso_id:ingAlta?.id||null});
+          await logH(user?.email,esReactivacion?"reactivó cliente existente":normalizeServicio(ins.servicio)==="publicidad"?"registró publicidad":"guardó nuevo cliente","cliente",ins.id,{nombre:ins.nombre,email:ins.email,servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
+          await logNC(ins.id,user?.email,esReactivacion?"reactivación":"alta",`${esReactivacion?"Cliente reactivado sobre el mismo ID":"Cliente dado de alta"}. ID: ${clientePublicId(ins)} · Servicio: ${svcLabel(ins.servicio)} · Monto: USD ${ins.monto} · Recibe: ${recibeAlta}${pendienteAlta?" · Pendiente de transferencia a Cristian":""}`,{servicio:ins.servicio,monto:ins.monto,recibe:recibeAlta,pendiente_transferencia:pendienteAlta,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
+          if(pendienteAlta)await registrarVentaPendiente({clienteId:ins.id,ingresoId:ingAlta?.id,nombre:ins.nombre,servicio:ins.servicio,monto:ins.monto,fecha:fechaIngresoAlta,vendedor:recibeAlta,origen:esReactivacion?"reactivación":"alta"});
+          if(!["clases","publicidad"].includes(normalizeServicio(ins.servicio)))await sincronizarAccesoDrive("compartir", ins.email,{origen:esReactivacion?"reactivación":"alta",cliente_id:ins.id,nombre:ins.nombre,servicio:ins.servicio,ingreso_id:ingAlta?.id||null,id_cliente:clientePublicId(ins)});
           refetch();
-        }catch(err){console.warn("Alta secundaria falló",err);refetch();}
+        }catch(err){console.warn("Alta/reactivación secundaria falló",err);refetch();}
       })();
 
       setShowForm(false);setForm(FORM_DEF);
-      toast.success(`${normalizeServicio(form.servicio)==="publicidad"?"Publicidad":"Cliente"} agregado correctamente`);
+      toast.success(esReactivacion?`${ins.nombre} reactivado sobre el mismo ID`:`${normalizeServicio(form.servicio)==="publicidad"?"Publicidad":"Cliente"} agregado correctamente`);
       refetch();
     }catch(err){
       console.error(err);
@@ -2481,6 +2551,7 @@ export default function App(){
       setGuardando(false);
     }
   }
+
   async function guardarRenovacion(){
     const v=validateForm(renovarForm);if(!v)return;
     setRenovando(true);
@@ -2577,18 +2648,22 @@ export default function App(){
   }
 
   async function eliminarClienteConfirmado(cliente){
-    // Baja operativa: elimina al cliente activo y revoca acceso, pero NO borra ingresos históricos.
-    // Antes de borrar el cliente, se desvinculan sus ingresos para evitar cascadas por clave foránea.
-    setClientes(prev=>prev.filter(c=>c.id!==cliente.id));
-    setIngresos(prev=>prev.map(i=>i.cliente_id===cliente.id?{...i,cliente_id:null}:i));
+    // Baja operativa sin borrar el registro real: conserva el mismo ID y mantiene ligados
+    // ingresos, clases, notas e historial para cuando la persona vuelva.
+    const fechaHoy=toISODate(getToday());
+    const notaBaja=`Baja operativa el ${formatDate(fechaHoy)}. Se conserva ID ${clientePublicId(cliente)} e historial para reactivación futura.`;
+    const notasBase=String(cliente.notas||"").trim();
+    const payload={estado_manual:"baja_operativa",notas:notasBase?`${notasBase} · ${notaBaja}`:notaBaja,vendedor:"",transferido:true};
+    const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    if(error){toast.error("No se pudo dar de baja");refetch();return;}
+    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...payload}:c));
     setClienteDetalle(null);
-    await supabase.from("ingresos").update({cliente_id:null}).eq("cliente_id",cliente.id);
-    const{error}=await supabase.from("clientes").delete().eq("id",cliente.id);
-    if(error){toast.error("No se pudo eliminar");refetch();return;}
-    await logH(user?.email,"eliminó cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin borrar ingresos"});
-    toast.success(`${cliente.nombre} eliminado. Los ingresos históricos se conservaron.`);
-    await sincronizarAccesoDrive("revocar",cliente.email,{origen:"baja",cliente_id:cliente.id,nombre:cliente.nombre});
+    await logH(user?.email,"dio de baja cliente","cliente",cliente.id,{nombre:cliente.nombre,email:cliente.email,nota:"baja operativa sin romper ID ni historial",id_cliente:clientePublicId(cliente)});
+    await logNC(cliente.id,user?.email,"estado",notaBaja,{estado:"baja_operativa",id_cliente:clientePublicId(cliente)});
+    toast.success(`${cliente.nombre} dado de baja. El ID y el historial quedan conservados.`);
+    if(!["clases","publicidad"].includes(normalizeServicio(cliente.servicio)))await sincronizarAccesoDrive("revocar",cliente.email,{origen:"baja",cliente_id:cliente.id,nombre:cliente.nombre,id_cliente:clientePublicId(cliente)});
   }
+
   async function eliminarIngreso(id){
     const ing=ingresos.find(i=>i.id===id);
     const movimientosCajaRelacionados=(cajaMovimientos||[]).filter(m=>{
@@ -2866,7 +2941,7 @@ export default function App(){
     const servicio=normalizeServicio(cliente.servicio);
     const va=cliente.vencimiento||cliente.fecha_vencimiento||resolveDueDate(cliente)||null;
     const fb=va||toISODate(getToday());
-    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio,fecha_inicio:servicio==="publicidad"?toISODate(getToday()):fb,monto:safeNum(cliente.monto),duracion_dias:["clases","publicidad"].includes(servicio)?0:svcDuration(servicio),deuda_restante:servicio==="anual"?safeNum(cliente.deuda_restante):0,notas:cliente.notas||"",vendedor:"",transferido:true});
+    setRenovarForm({id:cliente.id,nombre:cliente.nombre||"",email:cliente.email||"",servicio,fecha_inicio:servicio==="publicidad"?toISODate(getToday()):fb,monto:safeNum(cliente.monto),duracion_dias:["clases","publicidad"].includes(servicio)?0:svcDuration(servicio),deuda_restante:servicio==="anual"?safeNum(cliente.deuda_restante):0,notas:cliente.notas||"",vendedor:"",transferido:true,metodo_pago:""});
     setShowRenovar(true);
   }
   function handleSetView(v){setActiveView(v);setShowForm(false);}
@@ -2874,19 +2949,20 @@ export default function App(){
   // ── Datos derivados ───────────────────────────────────────────────────────
   const computed=useMemo(()=>clientes.map(computeClient),[clientes]);
   const filtered=useMemo(()=>computed.filter(c=>{
+    if(c.estado_manual==="baja_operativa")return false;
     if(normalizeServicio(c.servicio)==="clases"&&c.estado_manual==="finalizado")return false;
-    const txt=`${c.nombre||""} ${c.email||""}`.toLowerCase();
+    const txt=`${c.nombre||""} ${c.email||""} ${clientePublicId(c)}`.toLowerCase();
     const okB=txt.includes(busqueda.toLowerCase());
     const okF=filtro==="todos"||c.servicio===filtro||c.estadoSistema===filtro;
     return okB&&okF;
   }),[computed,busqueda,filtro]);
-  const deudores=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="anual"&&Number(c.deuda_restante||0)>0),[computed]);
-  const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases").sort((a,b)=>{
+  const deudores=useMemo(()=>computed.filter(c=>c.estado_manual!=="baja_operativa"&&normalizeServicio(c.servicio)==="anual"&&Number(c.deuda_restante||0)>0),[computed]);
+  const clasesList=useMemo(()=>computed.filter(c=>normalizeServicio(c.servicio)==="clases"&&c.estado_manual!=="baja_operativa").sort((a,b)=>{
     const af=a.estado_manual!=="finalizado", bf=b.estado_manual!=="finalizado";
     if(af!==bf)return af?-1:1;
     return String(b.fecha_inicio||"").localeCompare(String(a.fecha_inicio||""));
   }),[computed]);
-  const vencimientos=useMemo(()=>computed.filter(c=>!["clases","publicidad"].includes(normalizeServicio(c.servicio))).sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
+  const vencimientos=useMemo(()=>computed.filter(c=>c.estado_manual!=="baja_operativa"&&!["clases","publicidad"].includes(normalizeServicio(c.servicio))).sort((a,b)=>(!a.vencimiento?1:!b.vencimiento?-1:a.vencimiento.localeCompare(b.vencimiento))),[computed]);
   const vencimientosCriticos=useMemo(()=>{
     const pv=[],g=[],v=[];
     computed.forEach(c=>{
@@ -2911,6 +2987,7 @@ export default function App(){
   }
   const deudoresConAlerta = useMemo(() => {
     return computed.filter(c => {
+      if (c.estado_manual==="baja_operativa") return false;
       if (safeNum(c.deuda_restante) <= 0) return false;
       if (!c.fecha_inicio) return false;
       const inicio = parseISODate(c.fecha_inicio);
@@ -2928,6 +3005,7 @@ export default function App(){
   const resumen=useMemo(()=>{
     const b={activos:0,gracia:0,sacar:0,deudores:0,clases:0,ingresos:0};
     computed.forEach(c=>{
+      if(c.estado_manual==="baja_operativa")return;
       if(c.estadoSistema==="activo")b.activos++;
       if(c.estadoSistema==="gracia")b.gracia++;
       if(c.estadoSistema==="sacar"||c.estadoSistema==="vencido")b.sacar++;
@@ -4200,7 +4278,7 @@ export default function App(){
                   dateLabel="vence"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
-                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
+                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? Se conserva el historial y se puede reactivar.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
                 {/* En gracia: fondo siempre claro (amarillo) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="En gracia" badgeBg="#f5efdd" badgeColor="#7f5f15"
@@ -4210,7 +4288,7 @@ export default function App(){
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
-                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
+                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? Se conserva el historial y se puede reactivar.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
                 {/* Vencidos: fondo siempre claro (rosa) → nombre siempre oscuro fijo */}
                 <CriticosPanel titulo="Vencidos" badgeBg="#f8e9e8" badgeColor="#9b3b32"
@@ -4220,7 +4298,7 @@ export default function App(){
                   dateLabel="venció"
                   onRenovarRapido={c=>askConfirm("Renovar cliente",`¿Renovar a ${c.nombre} con el mismo plan?`,null,{label:"Renovar",showVendedor:true,montoDefault:c.monto,onConfirmFn:(v,m,f,p)=>renovarRapido(c,v,m,f,p)})}
                   onAbrirRenovar={abrirRenovar}
-                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
+                  onEliminar={c=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? Se conserva el historial y se puede reactivar.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}
                   onVerDetalle={setClienteDetalle} sectionRef={critRef} t={t}/>
               </div>
             </div>
@@ -4320,7 +4398,7 @@ export default function App(){
                                 <button title="Renovar con cambios" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>abrirRenovar(c)}>✏️</button>
                               </>
                             )}
-                            <button title="Eliminar" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
+                            <button title="Eliminar" style={{...btn(false),padding:"7px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? Se conserva el historial y se puede reactivar.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
                         </td>
                       </tr>
@@ -4435,7 +4513,7 @@ export default function App(){
                             ):(
                               <button title="Marcar clases como finalizadas" style={{...btn(false,true),padding:"6px 12px",fontSize:12}} onClick={()=>askConfirm("Finalizar clases",`¿Marcar las clases de ${c.nombre} como finalizadas? El ingreso y el historial se conservan.`,()=>finalizarClases(c),{label:"Finalizar"})}>Finalizar</button>
                             )}
-                            <button title="Eliminar" style={{...btn(false),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? No se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
+                            <button title="Eliminar" style={{...btn(false),padding:"6px 10px",fontSize:12}} onClick={()=>askConfirm("Eliminar cliente",`¿Eliminar a ${c.nombre}? Se conserva el historial y se puede reactivar.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
                         </td>
                       </tr>
