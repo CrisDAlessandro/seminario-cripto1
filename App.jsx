@@ -684,7 +684,7 @@ function usePagination(items,pageSize){
 
 const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
-const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","Western Union"];
+const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","Remitly","Western Union"];
 const metodoPagoValido = v => METODOS_PAGO.includes(v) ? v : "";
 const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true,metodo_pago:""};
 
@@ -3972,8 +3972,8 @@ export default function App(){
               <PieChart breakdown={graphStats.bkTotal} title="Ingresos totales por tipo" t={t}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:24}}>
-              <AltasRenovacionesCard rows={graphStats.altasRenovaciones} t={t}/>
               <MetodoPagoCard items={graphStats.metodosMes} title={`Ingresos por método de pago — ${monthLabel(graphMonth)}`} t={t}/>
+              <AltasRenovacionesCard rows={graphStats.altasRenovaciones} t={t}/>
             </div>
             {/* Ventas por día — histórico mensual */}
             {(()=>{
