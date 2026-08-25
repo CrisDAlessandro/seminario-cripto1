@@ -2769,7 +2769,7 @@ export default function App(){
   async function editarMontoIngreso(id,nuevoMonto){
     const montoNuevo=safeNum(nuevoMonto);
     if(!montoNuevo||montoNuevo<=0){toast.error("Ingresá un monto válido");return;}
-    const ing=ingresos.find(i=>i.id===id);
+    const ing=ingresos.find(i=>String(i.id)===String(id));
     if(!ing){toast.error("No se encontró el ingreso");return;}
     const montoAnterior=safeNum(ing.monto);
     if(montoAnterior===montoNuevo){setEditIngreso(null);return;}
@@ -2777,27 +2777,101 @@ export default function App(){
     const{error}=await supabase.from("ingresos").update({monto:montoNuevo}).eq("id",id);
     if(error){toast.error("No se pudo editar el monto");return;}
 
-    // Actualizar ingresos en pantalla: Dashboard, gráficos, ingresos del mes y total histórico
-    setIngresos(prev=>prev.map(i=>i.id===id?{...i,monto:montoNuevo}:i));
+    // 1) Actualizar ingresos en pantalla: Dashboard, gráficos, ingresos del mes y total histórico.
+    setIngresos(prev=>prev.map(i=>String(i.id)===String(id)?{...i,monto:montoNuevo}:i));
 
-    // Si este ingreso corresponde al último movimiento activo del cliente, actualizar también
-    // el monto operativo para que pendientes de recepción y ficha del cliente reflejen el valor real.
+    // 2) Sincronizar Caja y pendientes ligados al ingreso.
+    // Antes se corregía el ingreso, pero podía quedar vieja la caja automática con el monto anterior.
+    let cajaActualizada=0;
+    let notasActualizadas=0;
+    try{
+      const{data:notasRelacionadas}=await supabase
+        .from("notas_cliente")
+        .select("*")
+        .eq("detalle->>ingreso_id",String(id));
+
+      for(const n of (notasRelacionadas||[])){
+        const d=n.detalle||{};
+        const detalleNuevo={...d,monto:montoNuevo};
+        let contenidoNuevo=String(n.contenido||"");
+        if(contenidoNuevo){
+          contenidoNuevo=contenidoNuevo
+            .replace(new RegExp(`USD\\s*${String(montoAnterior).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?!\\d)`,"g"),`USD ${montoNuevo}`)
+            .replace(new RegExp(`Monto:\\s*USD\\s*${String(montoAnterior).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?!\\d)`,"g"),`Monto: USD ${montoNuevo}`);
+        }
+        const{error:eNota}=await supabase
+          .from("notas_cliente")
+          .update({detalle:detalleNuevo,contenido:contenidoNuevo})
+          .eq("id",n.id);
+        if(!eNota){
+          notasActualizadas++;
+          if(n.tipo==="caja"&&d.concepto==="movimiento")cajaActualizada++;
+        }
+      }
+
+      setCajaMovimientos(prev=>prev.map(m=>{
+        const d=m.detalle||{};
+        if(String(d.ingreso_id||"")!==String(id))return m;
+        const detalleNuevo={...d,monto:montoNuevo};
+        const contenidoNuevo=String(m.contenido||"").replace(new RegExp(`USD\\s*${String(montoAnterior).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?!\\d)`,"g"),`USD ${montoNuevo}`);
+        return{...m,detalle:detalleNuevo,contenido:contenidoNuevo};
+      }));
+      setVentasPendientesNotas(prev=>prev.map(n=>{
+        const d=n.detalle||{};
+        if(String(d.ingreso_id||"")!==String(id))return n;
+        const detalleNuevo={...d,monto:montoNuevo};
+        const contenidoNuevo=String(n.contenido||"").replace(new RegExp(`USD\\s*${String(montoAnterior).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?!\\d)`,"g"),`USD ${montoNuevo}`);
+        return{...n,detalle:detalleNuevo,contenido:contenidoNuevo};
+      }));
+      setTransferenciasRecibidas(prev=>prev.map(n=>{
+        const d=n.detalle||{};
+        if(String(d.ingreso_id||"")!==String(id))return n;
+        const detalleNuevo={...d,monto:montoNuevo};
+        const contenidoNuevo=String(n.contenido||"").replace(new RegExp(`USD\\s*${String(montoAnterior).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?!\\d)`,"g"),`USD ${montoNuevo}`);
+        return{...n,detalle:detalleNuevo,contenido:contenidoNuevo};
+      }));
+    }catch(err){
+      console.warn("No se pudieron sincronizar todas las notas/caja del ingreso",err);
+      toast.error("Monto editado, pero no se pudo sincronizar toda la caja automáticamente");
+    }
+
+    // 3) Actualizar Base operativa cuando ese ingreso representa el pago vigente del cliente.
+    // Cubre dos casos:
+    // - ingreso ligado por cliente_id;
+    // - ingreso viejo/desvinculado que coincide por email/nombre con el cliente actual.
     let actualizoCliente=false;
-    if(ing?.cliente_id){
-      const relacionados=ingresos
-        .filter(i=>i.cliente_id===ing.cliente_id)
-        .sort((a,b)=>{
-          const fa=String(a.fecha_pago||"");
-          const fb=String(b.fecha_pago||"");
-          if(fa!==fb)return fb.localeCompare(fa);
-          return String(b.id||"").localeCompare(String(a.id||""));
-        });
-      const ultimo=relacionados[0];
-      if(ultimo?.id===id){
-        const{error:eC}=await supabase.from("clientes").update({monto:montoNuevo}).eq("id",ing.cliente_id);
+    const servicioIng=normalizeServicio(ing.servicio);
+    const personaIng={nombre:ing.cliente_nombre,email:ing.email};
+    const candidatos=(clientes||[]).filter(c=>{
+      if(c.estado_manual==="baja_operativa")return false;
+      if(normalizeServicio(c.servicio)!==servicioIng)return false;
+      if(ing.cliente_id&&String(c.id)===String(ing.cliente_id))return true;
+      return personaCoincide(c,personaIng);
+    });
+
+    for(const c of candidatos){
+      const ingresosMismaPersonaServicio=(ingresos||[]).filter(i=>{
+        if(normalizeServicio(i.servicio)!==servicioIng)return false;
+        if(i.cliente_id&&String(i.cliente_id)===String(c.id))return true;
+        return personaCoincide({nombre:i.cliente_nombre,email:i.email},c);
+      }).sort((a,b)=>{
+        const fa=String(a.fecha_pago||"");
+        const fb=String(b.fecha_pago||"");
+        if(fa!==fb)return fb.localeCompare(fa);
+        return String(b.created_at||b.id||"").localeCompare(String(a.created_at||a.id||""));
+      });
+
+      const ultimo=ingresosMismaPersonaServicio[0];
+      const fechaCliente=dateOnly(c.fecha_inicio)||dateOnly(c.created_at);
+      const fechaIngreso=dateOnly(ing.fecha_pago);
+      const esIngresoVigente=String(ultimo?.id||"")===String(id)||Boolean(fechaCliente&&fechaIngreso&&fechaCliente===fechaIngreso);
+
+      if(esIngresoVigente){
+        const{error:eC}=await supabase.from("clientes").update({monto:montoNuevo}).eq("id",c.id);
         if(!eC){
           actualizoCliente=true;
-          setClientes(prev=>prev.map(c=>c.id===ing.cliente_id?{...c,monto:montoNuevo}:c));
+          setClientes(prev=>prev.map(cl=>String(cl.id)===String(c.id)?{...cl,monto:montoNuevo}:cl));
+          setClienteDetalle(prev=>prev&&String(prev.id)===String(c.id)?{...prev,monto:montoNuevo}:prev);
         }
       }
     }
@@ -2808,17 +2882,21 @@ export default function App(){
       servicio:ing?.servicio,
       monto_anterior:montoAnterior,
       monto_nuevo:montoNuevo,
-      actualizo_cliente:actualizoCliente
+      actualizo_cliente:actualizoCliente,
+      caja_actualizada:cajaActualizada,
+      notas_actualizadas:notasActualizadas
     });
     if(ing?.cliente_id){
-      await logNC(ing.cliente_id,user?.email,"pago",`Monto de pago editado. Antes: USD ${montoAnterior} · Ahora: USD ${montoNuevo}`,{
+      await logNC(ing.cliente_id,user?.email,"pago",`Monto de pago editado. Antes: USD ${montoAnterior} · Ahora: USD ${montoNuevo}${actualizoCliente?" · Base operativa actualizada":""}${cajaActualizada?" · Caja actualizada":""}`,{
         ingreso_id:id,
         monto_anterior:montoAnterior,
-        monto_nuevo:montoNuevo
+        monto_nuevo:montoNuevo,
+        actualizo_cliente:actualizoCliente,
+        caja_actualizada:cajaActualizada
       });
     }
     setEditIngreso(null);
-    toast.success("Monto actualizado");
+    toast.success(`Monto actualizado${actualizoCliente?", base operativa sincronizada":""}${cajaActualizada?", caja sincronizada":""}`);
   }
 
   async function cambiarEstado(id,value){
