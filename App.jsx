@@ -1807,13 +1807,13 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
     return()=>window.removeEventListener("keydown",onKey);
   },[isModal,onCancelar]);
   const inner=(
-    <div className="sc-card-premium" style={{width:"100%",maxWidth:isModal?860:undefined,background:t.cardBg,borderRadius:18,padding:30,boxShadow:isModal?(t.dark?"0 34px 90px rgba(0,0,0,.52)":"0 30px 76px rgba(15,23,42,.20)"):t.cardShadow,border:`1px solid ${t.cardBorder}`}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,paddingBottom:isModal?16:0,borderBottom:isModal?`1px solid ${t.tdBorder}`:undefined}}>
-        <div>
-          <h3 style={{margin:0,color:t.text,fontSize:20,fontWeight:900,letterSpacing:"-0.03em"}}>{title}</h3>
-          {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:4}}>{subtitle}</div>}
+    <div className="sc-card-premium" style={{width:"100%",maxWidth:isModal?860:undefined,maxHeight:isModal?"calc(100vh - 48px)":undefined,overflowY:isModal?"auto":undefined,background:t.cardBg,borderRadius:18,padding:30,boxShadow:isModal?(t.dark?"0 34px 90px rgba(0,0,0,.52)":"0 30px 76px rgba(15,23,42,.20)"):t.cardShadow,border:`1px solid ${t.cardBorder}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:24,paddingBottom:isModal?16:0,borderBottom:isModal?`1px solid ${t.tdBorder}`:undefined}}>
+        <div style={{flex:"1 1 260px",minWidth:0,paddingRight:isModal?8:0}}>
+          <h3 style={{margin:0,color:t.text,fontSize:20,fontWeight:900,letterSpacing:"-0.03em",lineHeight:1.15}}>{title}</h3>
+          {subtitle&&<div style={{color:t.textMuted,fontSize:13,marginTop:6,lineHeight:1.45,wordBreak:"break-word"}}>{subtitle}</div>}
         </div>
-        {isModal&&<button onClick={onCancelar} style={btn(false)}>Cerrar</button>}
+        {isModal&&<button onClick={onCancelar} style={{...btn(false),flex:"0 0 auto",alignSelf:"flex-start",whiteSpace:"nowrap"}}>Cerrar</button>}
       </div>
       <div className="sc-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
         {/* Nombre siempre primero */}
@@ -1878,10 +1878,10 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
   if(!isModal)return inner;
   return(
     <div
-      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",padding:24,zIndex:1000}}
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.72)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto",zIndex:1000}}
       {...backdropProps}
     >
-      <div {...modalProps}>{inner}</div>
+      <div style={{width:"100%",maxWidth:860,margin:"auto 0"}} {...modalProps}>{inner}</div>
     </div>
   );
 }
