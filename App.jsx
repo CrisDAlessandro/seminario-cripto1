@@ -739,7 +739,7 @@ function usePagination(items,pageSize){
 
 const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
-const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","Remitly","Western Union"];
+const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","PayPal","Remitly","Western Union"];
 const metodoPagoValido = v => METODOS_PAGO.includes(v) ? v : "";
 const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true,metodo_pago:""};
 
