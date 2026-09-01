@@ -3234,8 +3234,19 @@ export default function App(){
 
   function ingresoTieneTransferenciaRecibida(i){
     const ingresoId=String(i?.id||"");
-    return /Transferencia recibida por/i.test(String(i?.notas||"")) ||
-      (transferenciasRecibidas||[]).some(n=>String(n?.detalle?.ingreso_id||"")===ingresoId || String(n?.detalle?.pendiente_id||"")===ingresoId);
+    const notas=String(i?.notas||"");
+    return /Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i.test(notas) ||
+      (transferenciasRecibidas||[]).some(n=>{
+        const d=n?.detalle||{};
+        const contenido=String(n?.contenido||"").toLowerCase();
+        return String(d.ingreso_id||"")===ingresoId &&
+          (
+            contenido.includes("recibió transferencia") ||
+            contenido.includes("recibio transferencia") ||
+            !!d.recibe_final ||
+            !!d.caja_id
+          );
+      });
   }
 
   async function deshacerTransferenciaRecibidaIngreso(id){
@@ -3250,16 +3261,20 @@ export default function App(){
     if(eNotas){toast.error("No se pudo buscar la recepción para deshacer");return;}
 
     const notas=(notasRelacionadas||[]);
-    const recibos=notas.filter(n=>
-      String(n.tipo||"")==="pago" &&
-      (
-        String(n.contenido||"").toLowerCase().includes("recibió transferencia") ||
-        String(n.contenido||"").toLowerCase().includes("recibio transferencia") ||
-        n.detalle?.recibe_final
-      )
-    );
+    const pendientes=notas.filter(n=>String(n.tipo||"")==="venta_pendiente");
+    const recibos=notas.filter(n=>{
+      const d=n.detalle||{};
+      const contenido=String(n.contenido||"").toLowerCase();
+      return String(n.tipo||"")==="pago" &&
+        (
+          contenido.includes("recibió transferencia") ||
+          contenido.includes("recibio transferencia") ||
+          !!d.recibe_final ||
+          !!d.caja_id
+        );
+    });
+
     const pendienteIdDetectado=String(
-      cliente?.pendiente_id ||
       recibos[0]?.detalle?.pendiente_id ||
       pendientes[0]?.id ||
       pendientes[0]?.detalle?.pendiente_id ||
@@ -3294,7 +3309,6 @@ export default function App(){
         return origen.includes("recepci") && nombreIng && nombre===nombreIng;
       });
     }
-    const pendientes=notas.filter(n=>String(n.tipo||"")==="venta_pendiente");
 
     const vendedorOriginal=String(
       cajas[0]?.detalle?.vendedor_original ||
