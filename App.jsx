@@ -3232,6 +3232,139 @@ export default function App(){
     toast.success(`✓ ${montoRecibido} USD recibidos por ${recibeCaja}`);
   }
 
+  function ingresoTieneTransferenciaRecibida(i){
+    const ingresoId=String(i?.id||"");
+    return /Transferencia recibida por/i.test(String(i?.notas||"")) ||
+      (transferenciasRecibidas||[]).some(n=>String(n?.detalle?.ingreso_id||"")===ingresoId || String(n?.detalle?.pendiente_id||"")===ingresoId);
+  }
+
+  async function deshacerTransferenciaRecibidaIngreso(id){
+    const ingresoId=String(id||"");
+    const ing=(ingresos||[]).find(i=>String(i.id)===ingresoId);
+    if(!ing){toast.error("No se encontró el ingreso");return;}
+
+    const{data:notasRelacionadas,error:eNotas}=await supabase
+      .from("notas_cliente")
+      .select("*")
+      .eq("detalle->>ingreso_id",ingresoId);
+    if(eNotas){toast.error("No se pudo buscar la recepción para deshacer");return;}
+
+    const notas=(notasRelacionadas||[]);
+    const recibos=notas.filter(n=>
+      String(n.tipo||"")==="pago" &&
+      (
+        String(n.contenido||"").toLowerCase().includes("recibió transferencia") ||
+        String(n.contenido||"").toLowerCase().includes("recibio transferencia") ||
+        n.detalle?.recibe_final
+      )
+    );
+    const cajas=notas.filter(n=>{
+      const d=n.detalle||{};
+      return String(n.tipo||"")==="caja" &&
+        d.concepto==="movimiento" &&
+        String(d.origen||"").toLowerCase().includes("recepci");
+    });
+    const pendientes=notas.filter(n=>String(n.tipo||"")==="venta_pendiente");
+
+    const vendedorOriginal=String(
+      cajas[0]?.detalle?.vendedor_original ||
+      recibos[0]?.detalle?.vendedor ||
+      pendientes[0]?.detalle?.vendedor ||
+      (String(ing.notas||"").match(/Cobró\s+(Luigi|Jeremy|Bahiano|Baiano|Cristian)/i)||[])[1] ||
+      (String(ing.notas||"").match(/(?:recibe|recibió|recibio)\s*:?\s*(Luigi|Jeremy|Bahiano|Baiano|Cristian)/i)||[])[1] ||
+      "Luigi"
+    ).replace("Baiano","Bahiano");
+
+    const clienteId=ing.cliente_id ||
+      recibos[0]?.cliente_id ||
+      pendientes[0]?.cliente_id ||
+      cajas[0]?.detalle?.cliente_id ||
+      null;
+
+    const idsBorrar=[...recibos,...cajas].map(n=>n.id).filter(Boolean).filter(x=>!String(x).startsWith("tmp-"));
+    if(idsBorrar.length){
+      const{error:eDel}=await supabase.from("notas_cliente").delete().in("id",idsBorrar);
+      if(eDel){toast.error("No se pudo borrar la recepción/caja vinculada");return;}
+    }
+
+    let notasIngreso=limpiarTextoRecepcion(ing.notas||"")
+      .replace(/\s*·\s*Transferencia recibida por\s+(Cristian|Bahiano|Baiano)\s+el\s+\d{1,2}\/\d{1,2}\/\d{4}/ig,"")
+      .replace(/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)\s+el\s+\d{1,2}\/\d{1,2}\/\d{4}/ig,"")
+      .replace(/\s*·\s*$/,"")
+      .trim();
+
+    if(!/Pendiente de recepción/i.test(notasIngreso)&&ventaPendienteTransferencia(vendedorOriginal)){
+      notasIngreso=notaConRecepcion(notasIngreso,vendedorOriginal,true);
+    }
+
+    const{error:eIng}=await supabase.from("ingresos").update({notas:notasIngreso}).eq("id",ingresoId);
+    if(eIng){toast.error("Se borró la recepción, pero no se pudo restaurar el ingreso como pendiente");return;}
+
+    // Si esa recepción pertenecía al estado vigente del cliente, restaurar pendiente.
+    let actualizoCliente=false;
+    if(clienteId&&ventaPendienteTransferencia(vendedorOriginal)){
+      const ingresosCliente=(ingresos||[])
+        .filter(x=>String(x.cliente_id||"")===String(clienteId))
+        .sort((a,b)=>String(b.fecha_pago||"").localeCompare(String(a.fecha_pago||""))||String(b.created_at||b.id||"").localeCompare(String(a.created_at||a.id||"")));
+      const ultimo=ingresosCliente[0];
+      if(String(ultimo?.id||"")===ingresoId){
+        const{error:eCli}=await supabase.from("clientes").update({vendedor:vendedorOriginal,transferido:false}).eq("id",clienteId);
+        if(!eCli){
+          actualizoCliente=true;
+          supabase.from("clientes").update({recibe_final:null,fecha_transferencia:null}).eq("id",clienteId).then(()=>{});
+          setClientes(prev=>prev.map(c=>String(c.id)===String(clienteId)?{...c,vendedor:vendedorOriginal,transferido:false,recibe_final:null,fecha_transferencia:null}:c));
+        }
+      }
+    }
+
+    // Si por algún motivo no quedó la nota pendiente, la recreamos.
+    let pendienteCreada=false;
+    if(!pendientes.length&&clienteId&&ventaPendienteTransferencia(vendedorOriginal)){
+      const nueva=await registrarVentaPendiente({
+        clienteId,
+        ingresoId,
+        nombre:ing.cliente_nombre||"",
+        servicio:ing.servicio,
+        monto:ing.monto,
+        fecha:ing.fecha_pago,
+        vendedor:vendedorOriginal,
+        origen:"deshacer recepción"
+      });
+      pendienteCreada=!!nueva;
+    }
+
+    setTransferenciasRecibidas(prev=>prev.filter(n=>String(n.detalle?.ingreso_id||"")!==ingresoId&&String(n.detalle?.pendiente_id||"")!==ingresoId&&!idsBorrar.includes(n.id)));
+    setCajaMovimientos(prev=>prev.filter(m=>{
+      const d=m.detalle||{};
+      return !(String(d.ingreso_id||"")===ingresoId&&String(d.origen||"").toLowerCase().includes("recepci"));
+    }));
+    setIngresos(prev=>prev.map(i=>String(i.id)===ingresoId?{...i,notas:notasIngreso}:i));
+
+    await logH(user?.email,"deshizo recepción de transferencia","cliente",clienteId||ing.cliente_id||null,{
+      nombre:ing.cliente_nombre,
+      email:ing.email,
+      ingreso_id:ingresoId,
+      vendedor:vendedorOriginal,
+      monto:ing.monto,
+      caja_eliminada:cajas.length,
+      recibos_eliminados:recibos.length,
+      pendiente_creada:pendienteCreada,
+      actualizo_cliente:actualizoCliente
+    });
+    if(clienteId){
+      await logNC(clienteId,user?.email,"venta_pendiente",`Se deshizo recepción marcada por error. La venta vuelve a pendiente. Servicio: ${svcLabel(ing.servicio)} · Monto: USD ${safeNum(ing.monto)} · Vendedor: ${vendedorOriginal}`,{
+        ingreso_id:ingresoId,
+        vendedor:vendedorOriginal,
+        monto:safeNum(ing.monto),
+        pendiente_transferencia:true,
+        caja_eliminada:cajas.length
+      });
+    }
+    await refetch();
+    setEditIngreso(null);
+    toast.success("Recepción deshecha: volvió a pendiente y se quitó de Caja");
+  }
+
   async function registrarMovimientoCaja(){
     const monto=Number(cajaForm.monto||0);
     const fecha=dateOnly(cajaForm.fecha)||toISODate(getToday());
@@ -4307,7 +4440,7 @@ export default function App(){
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={S.table}>
-                  <thead><TableHeader cols={["Fecha","Nombre / Empresa","Email","Servicio","Monto","Notas","Eliminar"]} t={t}/></thead>
+                  <thead><TableHeader cols={["Fecha","Nombre / Empresa","Email","Servicio","Monto","Notas","Acciones"]} t={t}/></thead>
                   <tbody>
                     {ingPag.rows.map(i=>(
                       <tr key={i.id}>
@@ -4325,7 +4458,18 @@ export default function App(){
                           </button>
                         </td>
                         <td style={S.td}>{formatearNotasIngreso(i.notas)}</td>
-                        <td style={S.td}><button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button></td>
+                        <td style={S.td}>
+                          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                            {ingresoTieneTransferenciaRecibida(i)&&(
+                              <button
+                                title="Deshacer recepción y volver a pendiente"
+                                style={{...btn(false),padding:"6px 10px",fontSize:12}}
+                                onClick={()=>askConfirm("Deshacer recepción",`¿Volver esta venta de ${i.cliente_nombre||"cliente"} a pendiente y quitarla de Caja?`,()=>deshacerTransferenciaRecibidaIngreso(i.id),{danger:false,label:"Deshacer"})}
+                              >↩ Pendiente</button>
+                            )}
+                            <button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
