@@ -3341,6 +3341,17 @@ export default function App(){
         });
       }
 
+      const fechasCajaAfectadas=Array.from(new Set(cajas.map(c=>dateOnly(c?.detalle?.fecha)).filter(Boolean)));
+      let neteosAfectados=[];
+      if(fechasCajaAfectadas.length){
+        const{data:neteosCaja}=await supabase
+          .from("notas_cliente")
+          .select("*")
+          .eq("tipo","caja")
+          .eq("detalle->>concepto","neteada");
+        neteosAfectados=(neteosCaja||[]).filter(n=>fechasCajaAfectadas.includes(dateOnly(n?.detalle?.fecha)));
+      }
+
       const teniaRecepcion=recibos.length>0||cajas.length>0||/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i.test(String(ing.notas||""));
       const vendedorOriginal=vendedorOriginalDesdeRecepcion(ing,pendientes,recibos,cajas);
 
@@ -3359,7 +3370,7 @@ export default function App(){
         cajas[0]?.detalle?.cliente_id ||
         null;
 
-      const idsBorrar=[...recibos,...cajas].map(n=>n.id).filter(Boolean).filter(x=>!String(x).startsWith("tmp-"));
+      const idsBorrar=[...recibos,...cajas,...neteosAfectados].map(n=>n.id).filter(Boolean).filter(x=>!String(x).startsWith("tmp-"));
       if(idsBorrar.length){
         const{error:eDel}=await supabase.from("notas_cliente").delete().in("id",idsBorrar);
         if(eDel){toast.error("No se pudo borrar la recepción/caja vinculada");return;}
@@ -3405,8 +3416,28 @@ export default function App(){
       }
 
       // Si ya existía nota pendiente vieja, no crear otra. Si no existía, crear una sola.
+      // Además se limpian duplicados viejos del mismo ingreso para que no aparezca dos veces.
+      let pendientesMismoIngreso=[...pendientes];
+      if(clienteId){
+        const{data:pendientesCliente}=await supabase
+          .from("notas_cliente")
+          .select("*")
+          .eq("tipo","venta_pendiente")
+          .eq("cliente_id",clienteId);
+        pendientesMismoIngreso=[
+          ...pendientesMismoIngreso,
+          ...(pendientesCliente||[]).filter(n=>String(n?.detalle?.ingreso_id||"")===ingresoId)
+        ];
+      }
+      const vistosPend=new Set();
+      pendientesMismoIngreso=pendientesMismoIngreso.filter(n=>{
+        const k=String(n.id);
+        if(vistosPend.has(k))return false;
+        vistosPend.add(k);
+        return true;
+      });
       let pendienteCreada=false;
-      if(!pendientes.length&&clienteId){
+      if(!pendientesMismoIngreso.length&&clienteId){
         const nueva=await registrarVentaPendiente({
           clienteId,
           ingresoId,
@@ -3418,6 +3449,19 @@ export default function App(){
           origen:"deshacer recepción"
         });
         pendienteCreada=!!nueva;
+        if(nueva)pendientesMismoIngreso=[nueva];
+      }
+      if(pendientesMismoIngreso.length>1){
+        const keep=pendientesMismoIngreso
+          .slice()
+          .sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")))[0];
+        const borrarDup=pendientesMismoIngreso
+          .filter(n=>String(n.id)!==String(keep.id))
+          .map(n=>n.id)
+          .filter(Boolean)
+          .filter(x=>!String(x).startsWith("tmp-"));
+        if(borrarDup.length)await supabase.from("notas_cliente").delete().in("id",borrarDup);
+        pendientesMismoIngreso=[keep];
       }
 
       setTransferenciasRecibidas(prev=>prev.filter(n=>
@@ -3425,19 +3469,21 @@ export default function App(){
         (!pendienteIdDetectado || String(n.detalle?.pendiente_id||"")!==pendienteIdDetectado) &&
         !idsBorrar.includes(n.id)
       ));
-      const idsCajaBorradas=new Set(cajas.map(c=>String(c.id)).filter(Boolean));
+      const idsCajaBorradas=new Set([...cajas,...neteosAfectados].map(c=>String(c.id)).filter(Boolean));
+      const fechasNeteoReabiertas=new Set(fechasCajaAfectadas);
       setCajaMovimientos(prev=>prev.filter(m=>{
         const d=m.detalle||{};
         const porId=idsCajaBorradas.has(String(m.id));
         const porIngreso=String(d.ingreso_id||"")===ingresoId;
         const porPendiente=pendienteIdDetectado&&String(d.pendiente_id||"")===pendienteIdDetectado;
         const esRecepcion=String(d.origen||"").toLowerCase().includes("recepci");
-        return !(porId || ((porIngreso||porPendiente)&&esRecepcion));
+        const esNeteoAfectado=d.concepto==="neteada"&&fechasNeteoReabiertas.has(dateOnly(d.fecha));
+        return !(porId || ((porIngreso||porPendiente)&&esRecepcion) || esNeteoAfectado);
       }));
       setVentasPendientesNotas(prev=>{
-        if(!pendientes.length)return prev;
+        if(!pendientesMismoIngreso.length)return prev;
         const idsExistentes=new Set(prev.map(n=>String(n.id)));
-        const faltantes=pendientes.filter(n=>!idsExistentes.has(String(n.id)));
+        const faltantes=pendientesMismoIngreso.filter(n=>!idsExistentes.has(String(n.id)));
         return faltantes.length?[...faltantes,...prev]:prev;
       });
       setIngresos(prev=>prev.map(i=>String(i.id)===ingresoId?{...i,notas:notasIngreso}:i));
@@ -3449,6 +3495,7 @@ export default function App(){
         vendedor:vendedorOriginal,
         monto:ing.monto,
         caja_eliminada:cajas.length,
+        neteos_reabiertos:neteosAfectados.length,
         recibos_eliminados:recibos.length,
         pendiente_creada:pendienteCreada,
         actualizo_cliente:actualizoCliente
@@ -3467,7 +3514,7 @@ export default function App(){
       await fetchTransferenciasRecibidas();
       await fetchIngresos();
       setEditIngreso(null);
-      toast.success("Recepción deshecha y Caja recalculada");
+      toast.success(neteosAfectados.length?"Recepción deshecha, Caja reabierta y recalculada":"Recepción deshecha y Caja recalculada");
     }finally{
       actionLocks.current.delete(lock);
     }
