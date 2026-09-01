@@ -3258,12 +3258,42 @@ export default function App(){
         n.detalle?.recibe_final
       )
     );
-    const cajas=notas.filter(n=>{
+    const pendienteIdDetectado=String(
+      cliente?.pendiente_id ||
+      recibos[0]?.detalle?.pendiente_id ||
+      pendientes[0]?.id ||
+      pendientes[0]?.detalle?.pendiente_id ||
+      ""
+    );
+
+    let cajas=notas.filter(n=>{
       const d=n.detalle||{};
       return String(n.tipo||"")==="caja" &&
         d.concepto==="movimiento" &&
-        String(d.origen||"").toLowerCase().includes("recepci");
+        (
+          String(d.origen||"").toLowerCase().includes("recepci") ||
+          String(d.ingreso_id||"")===ingresoId ||
+          (pendienteIdDetectado&&String(d.pendiente_id||"")===pendienteIdDetectado)
+        );
     });
+
+    // Respaldo extra para cajas viejas que pudieron quedar sin ingreso_id o sin pendiente_id.
+    if(!cajas.length){
+      const nombreIng=normCajaText(ing.cliente_nombre||"");
+      const montoIng=safeNum(ing.monto);
+      const{data:cajasFallback}=await supabase
+        .from("notas_cliente")
+        .select("*")
+        .eq("tipo","caja")
+        .eq("detalle->>concepto","movimiento")
+        .eq("detalle->>monto",String(montoIng));
+      cajas=(cajasFallback||[]).filter(n=>{
+        const d=n.detalle||{};
+        const origen=String(d.origen||"").toLowerCase();
+        const nombre=normCajaText(d.nombre||"");
+        return origen.includes("recepci") && nombreIng && nombre===nombreIng;
+      });
+    }
     const pendientes=notas.filter(n=>String(n.tipo||"")==="venta_pendiente");
 
     const vendedorOriginal=String(
@@ -3333,10 +3363,19 @@ export default function App(){
       pendienteCreada=!!nueva;
     }
 
-    setTransferenciasRecibidas(prev=>prev.filter(n=>String(n.detalle?.ingreso_id||"")!==ingresoId&&String(n.detalle?.pendiente_id||"")!==ingresoId&&!idsBorrar.includes(n.id)));
+    setTransferenciasRecibidas(prev=>prev.filter(n=>
+      String(n.detalle?.ingreso_id||"")!==ingresoId &&
+      (!pendienteIdDetectado || String(n.detalle?.pendiente_id||"")!==pendienteIdDetectado) &&
+      !idsBorrar.includes(n.id)
+    ));
+    const idsCajaBorradas=new Set(cajas.map(c=>String(c.id)).filter(Boolean));
     setCajaMovimientos(prev=>prev.filter(m=>{
       const d=m.detalle||{};
-      return !(String(d.ingreso_id||"")===ingresoId&&String(d.origen||"").toLowerCase().includes("recepci"));
+      const porId=idsCajaBorradas.has(String(m.id));
+      const porIngreso=String(d.ingreso_id||"")===ingresoId;
+      const porPendiente=pendienteIdDetectado&&String(d.pendiente_id||"")===pendienteIdDetectado;
+      const esRecepcion=String(d.origen||"").toLowerCase().includes("recepci");
+      return !(porId || ((porIngreso||porPendiente)&&esRecepcion));
     }));
     setIngresos(prev=>prev.map(i=>String(i.id)===ingresoId?{...i,notas:notasIngreso}:i));
 
@@ -3360,9 +3399,12 @@ export default function App(){
         caja_eliminada:cajas.length
       });
     }
-    await refetch();
+    await fetchCajaMovimientos();
+    await fetchVentasPendientesNotas();
+    await fetchTransferenciasRecibidas();
+    await fetchIngresos();
     setEditIngreso(null);
-    toast.success("Recepción deshecha: volvió a pendiente y se quitó de Caja");
+    toast.success("Recepción deshecha y Caja recalculada");
   }
 
   async function registrarMovimientoCaja(){
@@ -4465,7 +4507,7 @@ export default function App(){
                                 title="Deshacer recepción y volver a pendiente"
                                 style={{...btn(false),padding:"6px 10px",fontSize:12}}
                                 onClick={()=>askConfirm("Deshacer recepción",`¿Volver esta venta de ${i.cliente_nombre||"cliente"} a pendiente y quitarla de Caja?`,()=>deshacerTransferenciaRecibidaIngreso(i.id),{danger:false,label:"Deshacer"})}
-                              >↩ Pendiente</button>
+                              >↩</button>
                             )}
                             <button style={{...btn(false),padding:"6px 11px",fontSize:13}} onClick={()=>askConfirm("Eliminar ingreso","¿Confirmas que querés eliminar este ingreso?",()=>eliminarIngreso(i.id),{danger:true,label:"Eliminar"})}>🗑</button>
                           </div>
