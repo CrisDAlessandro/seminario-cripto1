@@ -3342,14 +3342,54 @@ export default function App(){
       }
 
       const fechasCajaAfectadas=Array.from(new Set(cajas.map(c=>dateOnly(c?.detalle?.fecha)).filter(Boolean)));
-      let neteosAfectados=[];
-      if(fechasCajaAfectadas.length){
+      let neteosAjustados=[];
+      if(fechasCajaAfectadas.length&&cajas.length){
         const{data:neteosCaja}=await supabase
           .from("notas_cliente")
           .select("*")
           .eq("tipo","caja")
           .eq("detalle->>concepto","neteada");
-        neteosAfectados=(neteosCaja||[]).filter(n=>fechasCajaAfectadas.includes(dateOnly(n?.detalle?.fecha)));
+        const neteosPorFecha=(neteosCaja||[])
+          .filter(n=>fechasCajaAfectadas.includes(dateOnly(n?.detalle?.fecha)))
+          .sort((a,b)=>new Date(a.created_at||0)-new Date(b.created_at||0));
+        const ajustes=new Map();
+
+        cajas.forEach(caja=>{
+          const d=caja.detalle||{};
+          const fecha=dateOnly(d.fecha);
+          const recibe=String(d.recibe||"");
+          const monto=safeNum(d.monto);
+          if(!fecha||monto<=0)return;
+          // Aporte que esa venta puntual hacía al saldo a dividir.
+          // Cristian recibido suma +mitad, Bahiano recibido resta -mitad.
+          const aporteSaldo=recibe==="Cristian"?monto/2:recibe==="Bahiano"?-(monto/2):0;
+          if(!aporteSaldo)return;
+          const tsCaja=new Date(caja.created_at||`${fecha}T00:00:00`).getTime()||0;
+          const neteo=neteosPorFecha.find(n=>{
+            const tsNeteo=new Date(n.created_at||`${fecha}T23:59:59`).getTime()||0;
+            return dateOnly(n?.detalle?.fecha)===fecha&&tsNeteo>=tsCaja;
+          });
+          if(!neteo?.id)return; // si la venta fue posterior al neteo, no se toca el neteo.
+          const key=String(neteo.id);
+          const prev=ajustes.get(key)||{neteo,delta:0};
+          prev.delta+=aporteSaldo;
+          ajustes.set(key,prev);
+        });
+
+        for(const item of ajustes.values()){
+          const n=item.neteo;
+          const anterior=safeNum(n?.detalle?.saldo_cancelado);
+          let nuevo=anterior-item.delta;
+          if(Math.abs(nuevo)<0.01)nuevo=0;
+          const detalleNuevo={...(n.detalle||{}),saldo_cancelado:nuevo};
+          const texto=nuevo>0
+            ? `Caja diaria neteada: Cristian saldó USD ${Math.abs(nuevo)} con Bahiano`
+            : nuevo<0
+              ? `Caja diaria neteada: Bahiano saldó USD ${Math.abs(nuevo)} con Cristian`
+              : "Caja diaria neteada: Caja neteada";
+          const{error:eNeteo}=await supabase.from("notas_cliente").update({detalle:detalleNuevo,contenido:texto}).eq("id",n.id);
+          if(!eNeteo)neteosAjustados.push({...n,detalle:detalleNuevo,contenido:texto,saldoCancelado:nuevo});
+        }
       }
 
       const teniaRecepcion=recibos.length>0||cajas.length>0||/Transferencia recibida por\s+(Cristian|Bahiano|Baiano)/i.test(String(ing.notas||""));
@@ -3370,7 +3410,7 @@ export default function App(){
         cajas[0]?.detalle?.cliente_id ||
         null;
 
-      const idsBorrar=[...recibos,...cajas,...neteosAfectados].map(n=>n.id).filter(Boolean).filter(x=>!String(x).startsWith("tmp-"));
+      const idsBorrar=[...recibos,...cajas].map(n=>n.id).filter(Boolean).filter(x=>!String(x).startsWith("tmp-"));
       if(idsBorrar.length){
         const{error:eDel}=await supabase.from("notas_cliente").delete().in("id",idsBorrar);
         if(eDel){toast.error("No se pudo borrar la recepción/caja vinculada");return;}
@@ -3469,17 +3509,19 @@ export default function App(){
         (!pendienteIdDetectado || String(n.detalle?.pendiente_id||"")!==pendienteIdDetectado) &&
         !idsBorrar.includes(n.id)
       ));
-      const idsCajaBorradas=new Set([...cajas,...neteosAfectados].map(c=>String(c.id)).filter(Boolean));
-      const fechasNeteoReabiertas=new Set(fechasCajaAfectadas);
-      setCajaMovimientos(prev=>prev.filter(m=>{
-        const d=m.detalle||{};
-        const porId=idsCajaBorradas.has(String(m.id));
-        const porIngreso=String(d.ingreso_id||"")===ingresoId;
-        const porPendiente=pendienteIdDetectado&&String(d.pendiente_id||"")===pendienteIdDetectado;
-        const esRecepcion=String(d.origen||"").toLowerCase().includes("recepci");
-        const esNeteoAfectado=d.concepto==="neteada"&&fechasNeteoReabiertas.has(dateOnly(d.fecha));
-        return !(porId || ((porIngreso||porPendiente)&&esRecepcion) || esNeteoAfectado);
-      }));
+      const idsCajaBorradas=new Set(cajas.map(c=>String(c.id)).filter(Boolean));
+      const neteosAjustadosPorId=new Map(neteosAjustados.map(n=>[String(n.id),n]));
+      setCajaMovimientos(prev=>prev
+        .filter(m=>{
+          const d=m.detalle||{};
+          const porId=idsCajaBorradas.has(String(m.id));
+          const porIngreso=String(d.ingreso_id||"")===ingresoId;
+          const porPendiente=pendienteIdDetectado&&String(d.pendiente_id||"")===pendienteIdDetectado;
+          const esRecepcion=String(d.origen||"").toLowerCase().includes("recepci");
+          return !(porId || ((porIngreso||porPendiente)&&esRecepcion));
+        })
+        .map(m=>neteosAjustadosPorId.has(String(m.id))?{...m,...neteosAjustadosPorId.get(String(m.id))}:m)
+      );
       setVentasPendientesNotas(prev=>{
         if(!pendientesMismoIngreso.length)return prev;
         const idsExistentes=new Set(prev.map(n=>String(n.id)));
@@ -3495,7 +3537,7 @@ export default function App(){
         vendedor:vendedorOriginal,
         monto:ing.monto,
         caja_eliminada:cajas.length,
-        neteos_reabiertos:neteosAfectados.length,
+        neteos_ajustados:neteosAjustados.length,
         recibos_eliminados:recibos.length,
         pendiente_creada:pendienteCreada,
         actualizo_cliente:actualizoCliente
@@ -3514,7 +3556,7 @@ export default function App(){
       await fetchTransferenciasRecibidas();
       await fetchIngresos();
       setEditIngreso(null);
-      toast.success(neteosAfectados.length?"Recepción deshecha, Caja reabierta y recalculada":"Recepción deshecha y Caja recalculada");
+      toast.success(neteosAjustados.length?"Recepción deshecha y neteo ajustado solo por esa venta":"Recepción deshecha y Caja recalculada");
     }finally{
       actionLocks.current.delete(lock);
     }
