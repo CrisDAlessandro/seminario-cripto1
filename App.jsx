@@ -1499,26 +1499,38 @@ function PagoModal({cliente,onClose,onConfirm,t}){
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
-function Pagination({page,totalPages,setPage,sectionRef,t}){
+function Pagination({page,totalPages,setPage,sectionRef,t,compact=false}){
   const btn=makeBtn(t);
   if(totalPages<=1)return null;
   function goTo(n){setPage(n);}
   function compactPages(){
+    if(compact){
+      if(totalPages<=6)return Array.from({length:totalPages},(_,i)=>i+1);
+      if(page<=3)return [1,2,3,"ellipsis-right",totalPages];
+      if(page>=totalPages-2)return [1,"ellipsis-left",totalPages-2,totalPages-1,totalPages];
+      return [1,"ellipsis-left",page,"ellipsis-right",totalPages];
+    }
     if(totalPages<=7)return Array.from({length:totalPages},(_,i)=>i+1);
     if(page<=4)return [1,2,3,4,5,"ellipsis-right",totalPages];
     if(page>=totalPages-3)return [1,"ellipsis-left",totalPages-4,totalPages-3,totalPages-2,totalPages-1,totalPages];
     return [1,"ellipsis-left",page-1,page,page+1,"ellipsis-right",totalPages];
   }
   const pages=compactPages();
+  const wrapStyle=compact
+    ? {marginTop:0,width:"100%",display:"flex",justifyContent:"center",alignItems:"center",gap:5,flexWrap:"nowrap",overflowX:"auto",overflowY:"hidden",padding:"2px 0 0"}
+    : {marginTop:18,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:7,flexWrap:"wrap"};
+  const navPad=compact?"6px 9px":"7px 13px";
+  const pagePad=compact?"6px 9px":"7px 11px";
+  const fs=compact?12:13;
   return(
-    <div style={{marginTop:18,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-      <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
+    <div style={wrapStyle}>
+      <button style={{...btn(false),padding:navPad,fontSize:fs,whiteSpace:"nowrap",flex:"0 0 auto",lineHeight:1.2}} onClick={()=>goTo(Math.max(1,page-1))} disabled={page===1}>Anterior</button>
       {pages.map((n,idx)=>typeof n==="string"?(
-        <span key={`${n}-${idx}`} style={{color:t.textMuted,fontWeight:900,padding:"0 2px",lineHeight:"30px"}}>…</span>
+        <span key={`${n}-${idx}`} style={{color:t.textMuted,fontWeight:900,padding:"0 1px",lineHeight:"28px",flex:"0 0 auto"}}>…</span>
       ):(
-        <button key={n} style={{...btn(n===page),padding:"7px 11px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(n)}>{n}</button>
+        <button key={n} style={{...btn(n===page),padding:pagePad,fontSize:fs,whiteSpace:"nowrap",flex:"0 0 auto",lineHeight:1.2,minWidth:30}} onClick={()=>goTo(n)}>{n}</button>
       ))}
-      <button style={{...btn(false),padding:"7px 13px",fontSize:13,whiteSpace:"nowrap",flex:"0 0 auto"}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
+      <button style={{...btn(false),padding:navPad,fontSize:fs,whiteSpace:"nowrap",flex:"0 0 auto",lineHeight:1.2}} onClick={()=>goTo(Math.min(totalPages,page+1))} disabled={page===totalPages}>Siguiente</button>
     </div>
   );
 }
@@ -1744,17 +1756,17 @@ function MetodoPagoCard({items,title,t}){
 function ClienteCard({cliente,accentBorder,accentBg,accentText,nameColor,dateLabel,onRenovarRapido,onAbrirRenovar,onEliminar,onVerDetalle,t}){
   const btn=makeBtn(t);
   return(
-    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":accentBg,borderRadius:14,padding:"9px 14px",height:60,boxSizing:"border-box",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,transition:"box-shadow 0.15s, transform 0.15s"}}
+    <div style={{border:`1px solid ${t.cardBorder}`,borderLeft:`4px solid ${accentBorder}`,background:t.dark?"#101827":accentBg,borderRadius:14,padding:"9px 12px",height:60,boxSizing:"border-box",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,transition:"box-shadow 0.15s, transform 0.15s",overflow:"hidden"}}
       onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 10px 22px rgba(16,24,40,0.08)`}
       onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-      <div style={{cursor:"pointer",flex:1}} onClick={()=>onVerDetalle(cliente)}>
-        <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:220}}>{cliente.nombre}</div>
-        <div style={{fontSize:12,color:accentText,marginTop:2}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
+      <div style={{cursor:"pointer",flex:"1 1 auto",minWidth:0}} onClick={()=>onVerDetalle(cliente)}>
+        <div style={{fontWeight:700,color:nameColor||t.text,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{cliente.nombre}</div>
+        <div style={{fontSize:12,color:accentText,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{svcLabel(cliente.servicio)} · {dateLabel} {formatDate(cliente.vencimiento)}</div>
       </div>
-      <div style={{display:"flex",gap:6}}>
-        <button style={{...btn(true),padding:"7px 11px",fontSize:13}} title="Renovar" onClick={()=>onRenovarRapido(cliente)}>✔</button>
-        <button style={{...btn(false),padding:"7px 11px",fontSize:13}} title="Editar" onClick={()=>onAbrirRenovar(cliente)}>✏️</button>
-        <button style={{...btn(false),padding:"7px 11px",fontSize:13}} title="Eliminar" onClick={()=>onEliminar(cliente)}>🗑</button>
+      <div style={{display:"flex",gap:5,flex:"0 0 auto",alignItems:"center"}}>
+        <button style={{...btn(true),padding:"7px 10px",fontSize:13,lineHeight:1}} title="Renovar" onClick={()=>onRenovarRapido(cliente)}>✔</button>
+        <button style={{...btn(false),padding:"7px 10px",fontSize:13,lineHeight:1}} title="Editar" onClick={()=>onAbrirRenovar(cliente)}>✏️</button>
+        <button style={{...btn(false),padding:"7px 10px",fontSize:13,lineHeight:1}} title="Eliminar" onClick={()=>onEliminar(cliente)}>🗑</button>
       </div>
     </div>
   );
@@ -1768,12 +1780,12 @@ function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,
     ...Array.from({length:Math.max(0,3-visibleRows.length)},(_,i)=>({__empty:true,id:`empty-${titulo}-${i}`}))
   ];
   return(
-    <div style={{...S.card,display:"flex",flexDirection:"column",height:354,minHeight:354,borderTop:`3px solid ${accentBorder}`}}>
+    <div style={{...S.card,display:"flex",flexDirection:"column",height:"auto",minHeight:374,borderTop:`3px solid ${accentBorder}`,overflow:"hidden"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flex:"0 0 auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:t.text}}>{titulo}</div>
         <div style={{minWidth:30,height:30,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:badgeBg,color:badgeColor,fontWeight:800,fontSize:13}}>{clientes.length}</div>
       </div>
-      <div style={{height:196,minHeight:196,maxHeight:196,flex:"0 0 196px"}}>
+      <div style={{height:196,minHeight:196,maxHeight:196,flex:"0 0 196px",overflow:"hidden"}}>
         {clientes.length?(
           <div style={{display:"grid",gridTemplateRows:"repeat(3,60px)",gap:8,height:196,alignContent:"start"}}>
             {rowSlots.slice(0,3).map(c=>c.__empty?(
@@ -1786,8 +1798,8 @@ function CriticosPanel({titulo,badgeBg,badgeColor,clientes,rows,page,totalPages,
           <div style={{color:t.textMuted,fontSize:13}}>Sin clientes en esta categoría.</div>
         )}
       </div>
-      <div style={{height:58,minHeight:58,flex:"0 0 58px",display:"flex",alignItems:"flex-end"}}>
-        <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t}/>
+      <div style={{minHeight:48,flex:"0 0 auto",display:"flex",alignItems:"flex-end",justifyContent:"center",paddingTop:18,marginTop:"auto",overflow:"hidden"}}>
+        <Pagination page={page} totalPages={totalPages} setPage={setPage} sectionRef={sectionRef} t={t} compact/>
       </div>
     </div>
   );
@@ -4713,7 +4725,7 @@ export default function App(){
                 </h3>
                 <div style={{color:t.textMuted,fontSize:13,marginTop:4}}>Clic en el nombre del cliente para ver su ficha completa.</div>
               </div>
-              <div className="sc-criticos" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:16,alignItems:"stretch"}}>
+              <div className="sc-criticos" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:16,alignItems:"stretch"}}>
                 {/* Por vencer: fondo oscuro en dark mode → nombre claro; fondo claro en light → nombre oscuro */}
                 <CriticosPanel titulo="Por vencer" badgeBg="#f6efe2" badgeColor="#8a5a12"
                   clientes={vencimientosCriticos.hoy} {...cHoyPag}
