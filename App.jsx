@@ -1505,10 +1505,15 @@ function Pagination({page,totalPages,setPage,sectionRef,t,compact=false}){
   function goTo(n){setPage(n);}
   function compactPages(){
     if(compact){
-      if(totalPages<=6)return Array.from({length:totalPages},(_,i)=>i+1);
-      if(page<=3)return [1,2,3,"ellipsis-right",totalPages];
-      if(page>=totalPages-2)return [1,"ellipsis-left",totalPages-2,totalPages-1,totalPages];
-      return [1,"ellipsis-left",page,"ellipsis-right",totalPages];
+      // Paneles chicos: se muestra la mayor cantidad posible, pero siempre con
+      // navegación estable y último número visible. Al avanzar, el bloque se mueve.
+      const maxVisible=8;
+      if(totalPages<=maxVisible+2)return Array.from({length:totalPages},(_,i)=>i+1);
+      if(page<=maxVisible)return [...Array.from({length:maxVisible},(_,i)=>i+1),"ellipsis-right",totalPages];
+      if(page>=totalPages-maxVisible+1)return [1,"ellipsis-left",...Array.from({length:maxVisible},(_,i)=>totalPages-maxVisible+1+i)];
+      const start=Math.max(2,page-3);
+      const end=Math.min(totalPages-1,page+3);
+      return [1,"ellipsis-left",...Array.from({length:end-start+1},(_,i)=>start+i),"ellipsis-right",totalPages];
     }
     if(totalPages<=7)return Array.from({length:totalPages},(_,i)=>i+1);
     if(page<=4)return [1,2,3,4,5,"ellipsis-right",totalPages];
@@ -1517,7 +1522,7 @@ function Pagination({page,totalPages,setPage,sectionRef,t,compact=false}){
   }
   const pages=compactPages();
   const wrapStyle=compact
-    ? {marginTop:0,width:"100%",display:"flex",justifyContent:"center",alignItems:"center",gap:5,flexWrap:"nowrap",overflowX:"auto",overflowY:"hidden",padding:"2px 0 0"}
+    ? {marginTop:0,width:"100%",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:5,flexWrap:"nowrap",overflow:"hidden",padding:"2px 0 0",minWidth:0}
     : {marginTop:18,display:"flex",justifyContent:"flex-end",alignItems:"center",gap:7,flexWrap:"wrap"};
   const navPad=compact?"6px 9px":"7px 13px";
   const pagePad=compact?"6px 9px":"7px 11px";
