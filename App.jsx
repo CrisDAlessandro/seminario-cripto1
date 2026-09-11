@@ -689,6 +689,27 @@ function driveErrorEsAccesoExistente(msg){
   const m=String(msg||"").toLowerCase();
   return /already|exists|existente|ya tiene|already has|permission already|duplicate|duplicado/.test(m);
 }
+function driveErrorEsNoGoogleUser(msg){
+  const m=String(msg||"").toLowerCase();
+  return /cannotinvitenongoogleuser|non.?google|do not have a google account|no tiene cuenta google|not have a google account/.test(m);
+}
+function limpiarErrorDrive(msg,email=""){
+  const raw=String(msg||"").trim();
+  const e=normalizarEmailAcceso(email);
+  if(driveErrorEsNoGoogleUser(raw)){
+    return `Google Drive rechazó el acceso: ${e||"este email"} no figura como cuenta Google. Revisá que el correo esté bien escrito o pedile al alumno un Gmail/cuenta Google válido.`;
+  }
+  if(!raw)return "Drive no respondió correctamente";
+  try{
+    const obj=JSON.parse(raw.replace(/^Error:\s*/i,""));
+    const msg1=obj?.error?.message||obj?.message||obj?.errors?.[0]?.message;
+    if(msg1)return limpiarErrorDrive(String(msg1),e);
+  }catch(_){}
+  return raw.length>220?`${raw.slice(0,220)}...`:raw;
+}
+function driveErrorEsPermanente(msg){
+  return driveErrorEsNoGoogleUser(msg);
+}
 async function llamarDrive(accion, email) {
   const validacion=validarEmailAcceso(email);
   if(!validacion.ok)return{ok:false,accion,email:validacion.email,error:validacion.error};
@@ -717,6 +738,11 @@ async function llamarDrive(accion, email) {
         console.log(`Drive ✓ ${accion}: ${emailFinal} ya tenía acceso`);
         return{ok:true,accion,email:emailFinal,data:{...data,already:true}};
       }
+      if(accion==="compartir"&&driveErrorEsPermanente(ultimoError)){
+        const errorLimpio=limpiarErrorDrive(ultimoError,emailFinal);
+        console.warn(`Drive error permanente ${accion}:`, errorLimpio);
+        return{ok:false,accion,email:emailFinal,error:errorLimpio,noRetry:true,permanent:true};
+      }
       console.warn(`Drive intento ${intento} falló:`, ultimoError);
     } catch(err) {
       ultimoError=err?.name==="AbortError"?"Timeout al llamar Drive":(err?.message||String(err));
@@ -725,7 +751,7 @@ async function llamarDrive(accion, email) {
     if(intento < 4) await new Promise(r => setTimeout(r, intento * 900));
   }
   console.warn(`Drive: falló después de 4 intentos para ${emailFinal}`);
-  return{ok:false,accion,email:emailFinal,error:ultimoError||"Drive no respondió correctamente"};
+  return{ok:false,accion,email:emailFinal,error:limpiarErrorDrive(ultimoError||"Drive no respondió correctamente",emailFinal),noRetry:driveErrorEsPermanente(ultimoError)};
 }
 
 // ─── usePagination ────────────────────────────────────────────────────────────
@@ -2133,6 +2159,7 @@ export default function App(){
   }
   async function encolarPendienteDrive(accion,email,ctx={},error=""){
     if(accion!=="compartir")return false; // solo se reintenta automáticamente dar acceso; revocar no se reintenta para evitar revocaciones tardías peligrosas.
+    if(driveErrorEsPermanente(error))return false; // no repetir errores definitivos: mail sin cuenta Google/no invitable.
     const validacion=validarEmailAcceso(email);
     if(!validacion.ok)return false;
     const key=driveQueueKey(accion,validacion.email);
@@ -2180,11 +2207,16 @@ export default function App(){
             await logH(user?.email,"Drive pendiente OK","Drive",null,{...(d.ctx||{}),email:res.email||email,accion_drive:accion,pendiente_id:item.id});
             if(!silencioso)toast.success(`Acceso Drive enviado a ${res.email||email}`);
           }else{
+            if(res.noRetry||driveErrorEsPermanente(res.error)){
+              await supabase.from("notas_cliente").delete().eq("id",item.id);
+              await logH(user?.email,"Drive rechazó email","Drive",null,{...(d.ctx||{}),email:res.email||email,accion_drive:accion,error:limpiarErrorDrive(res.error,res.email||email),motivo:"no_reintentar"});
+              continue;
+            }
             const attempts=Number(d.attempts||0)+1;
             const delayMin=Math.min(10,Math.max(1,attempts)); // reintentos progresivos hasta cada 10 min
             const nextAt=new Date(Date.now()+delayMin*60000).toISOString();
             await supabase.from("notas_cliente").update({
-              detalle:{...d,attempts,next_at:nextAt,last_error:res.error||"Drive no respondió",last_try:new Date().toISOString()}
+              detalle:{...d,attempts,next_at:nextAt,last_error:limpiarErrorDrive(res.error||"Drive no respondió",email),last_try:new Date().toISOString()}
             }).eq("id",item.id);
           }
         }finally{
@@ -2197,11 +2229,14 @@ export default function App(){
   }
   async function sincronizarAccesoDrive(accion,email,ctx={},opts={}){
     const res=await llamarDrive(accion,email);
-    const accionHist=res.ok?`Drive ${accion} OK`:`falló Drive ${accion}`;
-    await logH(user?.email,accionHist,"Drive",null,{...ctx,email:res.email||normalizarEmailAcceso(email),accion_drive:accion,error:res.error||null});
+    const errorLimpio=res.error?limpiarErrorDrive(res.error,res.email||email):null;
+    const accionHist=res.ok
+      ? `Drive ${accion} OK`
+      : (res.noRetry||driveErrorEsPermanente(errorLimpio) ? "Drive rechazó email" : `falló Drive ${accion}`);
+    await logH(user?.email,accionHist,"Drive",null,{...ctx,email:res.email||normalizarEmailAcceso(email),accion_drive:accion,error:errorLimpio});
     if(!res.ok){
-      const encolado=await encolarPendienteDrive(accion,email,ctx,res.error||"");
-      toast.error(`Drive no pudo ${accion==="compartir"?"dar acceso":"revocar acceso"}: ${res.error}${encolado?" · Quedó en cola automática":""}`);
+      const encolado=res.noRetry?false:await encolarPendienteDrive(accion,email,ctx,errorLimpio||"");
+      toast.error(`${errorLimpio}${encolado?" · Quedó en cola automática":""}`);
       return false;
     }
     await limpiarPendienteDrive(accion,email);
