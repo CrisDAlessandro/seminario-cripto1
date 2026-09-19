@@ -1751,7 +1751,7 @@ function AltasRenovacionesCard({rows,t}){
                   <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Clases:</b> {r.clasesAlta} altas · {r.clasesRenovacion} renov.</div>
-                  {r.tasaRenovacion!=null&&<div><b style={{color:t.accent}}>Tasa renovación:</b> {tasaTxt}</div>}
+                  {r.tasaRenovacion!=null&&<div><b style={{color:t.accent}}>Tasa de renovación:</b> {tasaTxt}</div>}
                 </div>
               </div>
             );
