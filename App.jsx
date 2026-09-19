@@ -346,6 +346,37 @@ function ingresoPersonaKey(i){
   if(persona)return persona;
   return i?.cliente_id?`id:${i.cliente_id}`:`ingreso:${i?.id||""}`;
 }
+function prevMonthKey(key){
+  const [y,m]=String(key||"").split("-").map(Number);
+  if(!y||!m)return null;
+  return monthKey(toISODate(new Date(y,m-2,1)));
+}
+function renovablesPorMes(ingresos){
+  const servicios=["mensual","anual","clases"];
+  const map=new Map();
+  (ingresos||[]).forEach(i=>{
+    const servicio=normalizeServicio(i.servicio);
+    if(!servicios.includes(servicio)||!i.fecha_pago)return;
+    const mk=monthKey(i.fecha_pago);
+    const persona=ingresoPersonaKey(i);
+    if(!mk||!persona)return;
+    if(!map.has(mk))map.set(mk,new Set());
+    map.get(mk).add(persona);
+  });
+  return map;
+}
+function calcularTasaRenovacionMensual(ingresos,key){
+  const mk=String(key||"");
+  const prevKey=prevMonthKey(mk);
+  if(!mk||!prevKey)return{tasa:null,renovaron:0,base:0};
+  const personas=renovablesPorMes(ingresos);
+  const prev=personas.get(prevKey)||new Set();
+  const cur=personas.get(mk)||new Set();
+  if(prev.size===0)return{tasa:null,renovaron:0,base:0};
+  let renovaron=0;
+  prev.forEach(p=>{if(cur.has(p))renovaron++;});
+  return{tasa:(renovaron/prev.size)*100,renovaron,base:prev.size};
+}
 function buildAltasRenovacionesMensual(ingresos){
   const vistos=new Map();
   const rows=new Map();
@@ -371,11 +402,12 @@ function buildAltasRenovacionesMensual(ingresos){
       vistos.set(pKey,true);
     });
   const out=Array.from(rows.values()).sort((a,b)=>a.key.localeCompare(b.key));
-  out.forEach((r,idx)=>{
+  out.forEach(r=>{
     r.renovaciones=safeNum(r.mensualRenovacion)+safeNum(r.anualRenovacion)+safeNum(r.clasesRenovacion);
-    const prev=out[idx-1];
-    r.baseMesAnterior=prev?safeNum(prev.total):0;
-    r.tasaRenovacion=r.baseMesAnterior>0?(r.renovaciones/r.baseMesAnterior)*100:null;
+    const tasa=calcularTasaRenovacionMensual(ingresos,r.key);
+    r.baseMesAnterior=tasa.base;
+    r.tasaRenovacion=tasa.tasa;
+    r.renovaronMesAnterior=tasa.renovaron;
   });
   return out;
 }
@@ -4123,20 +4155,13 @@ export default function App(){
   }
 
   const tasaRenovacion=useMemo(()=>{
-    // Usar cliente_id si existe, sino email como identificador
-    const keyOf=i=>i.cliente_id?`id:${i.cliente_id}`:i.email?`email:${i.email.toLowerCase().trim()}`:null;
-    const planes=["mensual","anual"];
-    const pagaronMesAnt=new Set(
-      prevMI.filter(i=>planes.includes(normalizeServicio(i.servicio))).map(keyOf).filter(Boolean)
-    );
-    if(pagaronMesAnt.size===0)return null;
-    const pagaronEsteMes=new Set(
-      curMI.filter(i=>planes.includes(normalizeServicio(i.servicio))).map(keyOf).filter(Boolean)
-    );
-    let renovaron=0;
-    pagaronMesAnt.forEach(k=>{if(pagaronEsteMes.has(k))renovaron++;});
-    return Math.round((renovaron/pagaronMesAnt.size)*100);
-  },[prevMI,curMI]);
+    const r=calcularTasaRenovacionMensual(ingresos,curMK);
+    return r.tasa==null?null:Math.round(r.tasa*10)/10;
+  },[ingresos,curMK]);
+  const tasaRenovacionGraph=useMemo(()=>{
+    const r=calcularTasaRenovacionMensual(ingresos,graphMonth||curMK);
+    return r.tasa==null?null:Math.round(r.tasa*10)/10;
+  },[ingresos,graphMonth,curMK]);
   const ingFiltrados=useMemo(()=>ingresos.filter(i=>{
     if(!i.fecha_pago)return true;
     if(ingDesde&&i.fecha_pago<ingDesde)return false;
@@ -4536,7 +4561,7 @@ export default function App(){
               <MetricCard title="Ventas mes seleccionado" value={graphStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
               <MetricCard title="Ventas por día" value={`${graphVentaPromedioDia}`} sub="ventas registradas ÷ días del mes" t={t}/>
-              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron" t={t}/>
+              <MetricCard title="Tasa de renovación" value={tasaRenovacionGraph!=null?`${tasaRenovacionGraph}%`:"—"} sub="clientes que renovaron" t={t}/>
             </div>
             <div style={S.card}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:16}}>Fluctuación de ingresos</h3>
