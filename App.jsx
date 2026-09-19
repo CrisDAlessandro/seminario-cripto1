@@ -355,7 +355,7 @@ function buildAltasRenovacionesMensual(ingresos){
     .sort((a,b)=>String(a.fecha_pago||"").localeCompare(String(b.fecha_pago||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")))
     .forEach(i=>{
       const mk=monthKey(i.fecha_pago);
-      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,clasesAlta:0,clasesRenovacion:0,total:0});
+      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,clasesAlta:0,clasesRenovacion:0,total:0,renovaciones:0,tasaRenovacion:null,baseMesAnterior:0});
       const r=rows.get(mk);
       const servicio=normalizeServicio(i.servicio);
       const pKey=ingresoPersonaKey(i);
@@ -370,7 +370,14 @@ function buildAltasRenovacionesMensual(ingresos){
       r.total+=1;
       vistos.set(pKey,true);
     });
-  return Array.from(rows.values()).sort((a,b)=>a.key.localeCompare(b.key));
+  const out=Array.from(rows.values()).sort((a,b)=>a.key.localeCompare(b.key));
+  out.forEach((r,idx)=>{
+    r.renovaciones=safeNum(r.mensualRenovacion)+safeNum(r.anualRenovacion)+safeNum(r.clasesRenovacion);
+    const prev=out[idx-1];
+    r.baseMesAnterior=prev?safeNum(prev.total):0;
+    r.tasaRenovacion=r.baseMesAnterior>0?(r.renovaciones/r.baseMesAnterior)*100:null;
+  });
+  return out;
 }
 function esIngresoHistorico(i){
   const key=monthKey(i?.fecha_pago);
@@ -1725,11 +1732,12 @@ function AltasRenovacionesCard({rows,t}){
   return(
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>Altas vs renovaciones por plan</h3>
-      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez y quién vuelve a pagar.</div>
+      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez, quién vuelve a pagar y tasa de renovación contra el mes anterior.</div>
       {!ultimos.length?<div style={{color:t.textMuted}}>Sin datos disponibles.</div>:(
         <div style={{display:"grid",gap:13}}>
           {ultimos.map(r=>{
             const pct=Math.max((r.total/max)*100,4);
+            const tasaTxt=r.tasaRenovacion==null?"—":`${r.tasaRenovacion.toFixed(1).replace(".0","")}%`;
             return(
               <div key={r.key}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:13,marginBottom:6,color:t.text}}>
@@ -1743,6 +1751,7 @@ function AltasRenovacionesCard({rows,t}){
                   <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Clases:</b> {r.clasesAlta} altas · {r.clasesRenovacion} renov.</div>
+                  <div><b style={{color:t.accent}}>Tasa renovación:</b> {tasaTxt} <span style={{opacity:.75}}>vs mes anterior</span></div>
                 </div>
               </div>
             );
