@@ -1732,7 +1732,7 @@ function AltasRenovacionesCard({rows,t}){
   return(
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>Altas vs renovaciones por plan</h3>
-      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez, quién vuelve a pagar y tasa de renovación contra el mes anterior.</div>
+      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez, quién vuelve a pagar y tasa de renovación.</div>
       {!ultimos.length?<div style={{color:t.textMuted}}>Sin datos disponibles.</div>:(
         <div style={{display:"grid",gap:13}}>
           {ultimos.map(r=>{
@@ -1751,7 +1751,7 @@ function AltasRenovacionesCard({rows,t}){
                   <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
                   <div><b style={{color:t.text}}>Clases:</b> {r.clasesAlta} altas · {r.clasesRenovacion} renov.</div>
-                  <div><b style={{color:t.accent}}>Tasa renovación:</b> {tasaTxt} <span style={{opacity:.75}}>vs mes anterior</span></div>
+                  {r.tasaRenovacion!=null&&<div><b style={{color:t.accent}}>Tasa renovación:</b> {tasaTxt}</div>}
                 </div>
               </div>
             );
@@ -4536,7 +4536,7 @@ export default function App(){
               <MetricCard title="Ventas mes seleccionado" value={graphStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
               <MetricCard title="Ventas por día" value={`${graphVentaPromedioDia}`} sub="ventas registradas ÷ días del mes" t={t}/>
-              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="vs mes anterior" t={t}/>
+              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron" t={t}/>
             </div>
             <div style={S.card}>
               <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:16}}>Fluctuación de ingresos</h3>
@@ -4670,7 +4670,7 @@ export default function App(){
               <MetricCard title="Ventas del mes" value={dashStats.ventasMes} t={t}/>
               <MetricCard title="Clientes" value={resumen.activos+resumen.gracia+resumen.sacar} subValue={`${resumen.activos} activos`} t={t}/>
               <MetricCard title="Ventas por día" value={`${ventaPromedioDia}`} sub="ventas registradas ÷ días transcurridos" t={t}/>
-              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron vs mes anterior" t={t}/>
+              <MetricCard title="Tasa de renovación" value={tasaRenovacion!=null?`${tasaRenovacion}%`:"—"} sub="clientes que renovaron" t={t}/>
             </div>
             <BreakdownCard title="Ingresos por tipo (mes)" breakdown={dashStats.bkMes} t={t}/>
             <BreakdownCard title="Ingresos totales por tipo" breakdown={dashStats.bkTotal} t={t}/>
