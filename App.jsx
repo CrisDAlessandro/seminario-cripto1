@@ -1815,7 +1815,7 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
     const pk=it.personaKey||personaKeyFromData({nombre:it.nombre,email:it.email});
     const byPersona=pk?allClientes.find(c=>personaKeyFromData(c)===pk):null;
     const byEmail=it.email?allClientes.find(c=>String(c.email||"").toLowerCase().trim()===String(it.email||"").toLowerCase().trim()):null;
-    const byName=it.nombre?allClientes.find(c=>normName(c.nombre)===normName(it.nombre)):null;
+    const byName=it.nombre?allClientes.find(c=>normPersonaText(c.nombre)===normPersonaText(it.nombre)):null;
     const found=byId||byPersona||byEmail||byName||{
       id:`listado-${it.key}`,
       nombre:it.nombre||"Sin nombre",
@@ -1936,6 +1936,7 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
                               {it.nombre||"Sin nombre"}
                             </div>
                             <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{it.email||"Sin email"}</div>
+                            <div style={{color:t.accent,fontSize:11,fontWeight:900,marginTop:3}}>Ver historial ↗</div>
                           </button>
                         </div>
                         <div style={{color:t.textMuted,whiteSpace:"nowrap"}}>{formatDate(it.fecha)}</div>
