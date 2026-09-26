@@ -377,26 +377,63 @@ function calcularTasaRenovacionMensual(ingresos,key){
   prev.forEach(p=>{if(cur.has(p))renovaron++;});
   return{tasa:(renovaron/prev.size)*100,renovaron,base:prev.size};
 }
+function ingresoListaItem(i,servicio,pKey){
+  return{
+    key:String(i?.id||`${pKey||"sin-key"}-${i?.fecha_pago||""}-${i?.created_at||""}-${safeNum(i?.monto)}`),
+    personaKey:pKey,
+    nombre:i?.cliente_nombre||i?.nombre||"Sin nombre",
+    email:i?.email||"",
+    fecha:i?.fecha_pago||i?.created_at||"",
+    monto:safeNum(i?.monto),
+    metodo:metodoPagoDesdeIngreso(i),
+    servicio
+  };
+}
+function uniqueItemsByPersona(items){
+  const map=new Map();
+  (items||[]).forEach(it=>{
+    if(!it?.personaKey)return;
+    if(!map.has(it.personaKey))map.set(it.personaKey,it);
+  });
+  return Array.from(map.values()).sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||""),"es"));
+}
 function buildAltasRenovacionesMensual(ingresos){
   const vistos=new Map();
   const rows=new Map();
+  const emptyRow=key=>({
+    key,
+    mensualAlta:0,mensualRenovacion:0,
+    anualAlta:0,anualRenovacion:0,
+    clasesAlta:0,clasesRenovacion:0,
+    total:0,renovaciones:0,tasaRenovacion:null,baseMesAnterior:0,renovaronMesAnterior:0,
+    items:[],
+    mensualAltaItems:[],mensualRenovacionItems:[],
+    anualAltaItems:[],anualRenovacionItems:[],
+    clasesAltaItems:[],clasesRenovacionItems:[],
+    tasaRenovacionItems:[]
+  });
   (ingresos||[])
     .filter(i=>["mensual","anual","clases"].includes(normalizeServicio(i.servicio))&&i.fecha_pago)
     .slice()
     .sort((a,b)=>String(a.fecha_pago||"").localeCompare(String(b.fecha_pago||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")))
     .forEach(i=>{
       const mk=monthKey(i.fecha_pago);
-      if(!rows.has(mk))rows.set(mk,{key:mk,mensualAlta:0,mensualRenovacion:0,anualAlta:0,anualRenovacion:0,clasesAlta:0,clasesRenovacion:0,total:0,renovaciones:0,tasaRenovacion:null,baseMesAnterior:0});
+      if(!rows.has(mk))rows.set(mk,emptyRow(mk));
       const r=rows.get(mk);
       const servicio=normalizeServicio(i.servicio);
       const pKey=ingresoPersonaKey(i);
       const ya=vistos.has(pKey);
+      const item=ingresoListaItem(i,servicio,pKey);
+      r.items.push(item);
       if(servicio==="mensual"){
-        if(ya)r.mensualRenovacion+=1; else r.mensualAlta+=1;
+        if(ya){r.mensualRenovacion+=1;r.mensualRenovacionItems.push(item);}
+        else {r.mensualAlta+=1;r.mensualAltaItems.push(item);}
       }else if(servicio==="anual"){
-        if(ya)r.anualRenovacion+=1; else r.anualAlta+=1;
+        if(ya){r.anualRenovacion+=1;r.anualRenovacionItems.push(item);}
+        else {r.anualAlta+=1;r.anualAltaItems.push(item);}
       }else if(servicio==="clases"){
-        if(ya)r.clasesRenovacion+=1; else r.clasesAlta+=1;
+        if(ya){r.clasesRenovacion+=1;r.clasesRenovacionItems.push(item);}
+        else {r.clasesAlta+=1;r.clasesAltaItems.push(item);}
       }
       r.total+=1;
       vistos.set(pKey,true);
@@ -408,6 +445,12 @@ function buildAltasRenovacionesMensual(ingresos){
     r.baseMesAnterior=tasa.base;
     r.tasaRenovacion=tasa.tasa;
     r.renovaronMesAnterior=tasa.renovaron;
+    const prev=rows.get(prevMonthKey(r.key));
+    const prevPersonas=new Set((prev?.items||[]).map(it=>it.personaKey).filter(Boolean));
+    r.tasaRenovacionItems=uniqueItemsByPersona((r.items||[]).filter(it=>prevPersonas.has(it.personaKey)));
+    ["items","mensualAltaItems","mensualRenovacionItems","anualAltaItems","anualRenovacionItems","clasesAltaItems","clasesRenovacionItems"].forEach(k=>{
+      r[k]=(r[k]||[]).slice().sort((a,b)=>String(a.fecha||"").localeCompare(String(b.fecha||""))||String(a.nombre||"").localeCompare(String(b.nombre||""),"es"));
+    });
   });
   return out;
 }
@@ -1759,12 +1802,24 @@ function PieChart({breakdown,title,t}){
 
 function AltasRenovacionesCard({rows,t}){
   const S=makeS(t);
+  const [detalle,setDetalle]=useState(null);
   const ultimos=(rows||[]).slice(-8);
   const max=Math.max(...ultimos.map(r=>r.total),1);
+  const btnBase={all:"unset",cursor:"pointer",fontWeight:700};
+  const openDetalle=(r,titulo,items)=>setDetalle({titulo,mes:monthLabel(r.key),items:items||[]});
+  const planLine=(r,plan,altaKey,renKey,altaItemsKey,renItemsKey)=>(
+    <div>
+      <b style={{color:t.text}}>{plan}:</b>{" "}
+      <button type="button" style={{...btnBase,color:t.text}} onClick={()=>openDetalle(r,`${plan} · Altas`,r[altaItemsKey])}>{r[altaKey]} altas</button>
+      <span> · </span>
+      <button type="button" style={{...btnBase,color:t.text}} onClick={()=>openDetalle(r,`${plan} · Renovaciones`,r[renItemsKey])}>{r[renKey]} renov.</button>
+    </div>
+  );
+  const detalleItems=detalle?.items||[];
   return(
     <div style={S.card}>
       <h3 style={{marginTop:0,color:t.text,fontWeight:700,fontSize:16,marginBottom:8}}>Altas vs renovaciones por plan</h3>
-      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez, quién vuelve a pagar y tasa de renovación.</div>
+      <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Mes a mes: quién entra por primera vez, quién vuelve a pagar y tasa de renovación. Tocá cualquier número para ver el listado.</div>
       {!ultimos.length?<div style={{color:t.textMuted}}>Sin datos disponibles.</div>:(
         <div style={{display:"grid",gap:13}}>
           {ultimos.map(r=>{
@@ -1774,20 +1829,57 @@ function AltasRenovacionesCard({rows,t}){
               <div key={r.key}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:13,marginBottom:6,color:t.text}}>
                   <strong>{monthLabel(r.key)}</strong>
-                  <span style={{color:t.textMuted}}>{r.total} pago{r.total!==1?"s":""}</span>
+                  <button type="button" style={{...btnBase,color:t.textMuted,fontWeight:500}} onClick={()=>openDetalle(r,"Total de pagos",r.items)}>{r.total} pago{r.total!==1?"s":""}</button>
                 </div>
                 <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden",marginBottom:6}}>
                   <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:6,fontSize:12,color:t.textMuted}}>
-                  <div><b style={{color:t.text}}>Trader:</b> {r.mensualAlta} altas · {r.mensualRenovacion} renov.</div>
-                  <div><b style={{color:t.text}}>Inversor:</b> {r.anualAlta} altas · {r.anualRenovacion} renov.</div>
-                  <div><b style={{color:t.text}}>Clases:</b> {r.clasesAlta} altas · {r.clasesRenovacion} renov.</div>
-                  {r.tasaRenovacion!=null&&<div><b style={{color:t.accent}}>Tasa de renovación:</b> {tasaTxt}</div>}
+                  {planLine(r,"Trader","mensualAlta","mensualRenovacion","mensualAltaItems","mensualRenovacionItems")}
+                  {planLine(r,"Inversor","anualAlta","anualRenovacion","anualAltaItems","anualRenovacionItems")}
+                  {planLine(r,"Clases","clasesAlta","clasesRenovacion","clasesAltaItems","clasesRenovacionItems")}
+                  {r.tasaRenovacion!=null&&(
+                    <button type="button" style={{...btnBase,color:t.textMuted,textAlign:"left",fontWeight:500}} onClick={()=>openDetalle(r,"Tasa de renovación · Clientes retenidos",r.tasaRenovacionItems)}>
+                      <b style={{color:t.accent}}>Tasa de renovación:</b> {tasaTxt}
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+      {detalle&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setDetalle(null)}>
+          <div style={{width:"min(720px,96vw)",maxHeight:"82vh",overflow:"hidden",background:t.panel,border:`1px solid ${t.border}`,borderRadius:18,boxShadow:"0 24px 80px rgba(0,0,0,.45)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",padding:"18px 18px 12px",borderBottom:`1px solid ${t.border}`}}>
+              <div>
+                <div style={{color:t.accent,fontSize:12,fontWeight:900,letterSpacing:.3,textTransform:"uppercase"}}>{detalle.mes}</div>
+                <h3 style={{margin:"4px 0 0",color:t.text,fontSize:18}}>{detalle.titulo}</h3>
+                <div style={{marginTop:4,color:t.textMuted,fontSize:12}}>{detalleItems.length} registro{detalleItems.length!==1?"s":""}</div>
+              </div>
+              <button type="button" onClick={()=>setDetalle(null)} style={{border:`1px solid ${t.border}`,background:t.soft,color:t.text,borderRadius:10,padding:"8px 11px",fontWeight:900,cursor:"pointer"}}>Cerrar</button>
+            </div>
+            <div style={{padding:16,maxHeight:"62vh",overflow:"auto"}}>
+              {!detalleItems.length?(
+                <div style={{color:t.textMuted,fontSize:13}}>No hay registros para este filtro.</div>
+              ):(
+                <div style={{display:"grid",gap:8}}>
+                  {detalleItems.map((it,idx)=>(
+                    <div key={`${it.key}-${idx}`} style={{display:"grid",gridTemplateColumns:"1.3fr .9fr .75fr .75fr",gap:10,alignItems:"center",padding:"10px 12px",border:`1px solid ${t.border}`,borderRadius:12,background:t.soft,fontSize:12}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{color:t.text,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.nombre||"Sin nombre"}</div>
+                        <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.email||"Sin email"}</div>
+                      </div>
+                      <div style={{color:t.textMuted}}>{formatDate(it.fecha)}</div>
+                      <div style={{color:t.text,fontWeight:800}}>{money(it.monto)}</div>
+                      <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.metodo||"Sin método"}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
