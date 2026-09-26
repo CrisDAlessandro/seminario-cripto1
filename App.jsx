@@ -1339,7 +1339,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.74)",backdropFilter:"blur(4px)",zIndex:1500,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
+    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.74)",backdropFilter:"blur(4px)",zIndex:12000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
       <div {...modalProps} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
 
         {/* Header */}
@@ -1804,6 +1804,7 @@ function PieChart({breakdown,title,t}){
 function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
   const S=makeS(t);
   const [detalle,setDetalle]=useState(null);
+  const [clientePendiente,setClientePendiente]=useState(null);
   const ultimos=(rows||[]).slice(-8);
   const max=Math.max(...ultimos.map(r=>r.total),1);
   const btnBase={all:"unset",cursor:"pointer",fontWeight:500,textDecoration:"underline",textUnderlineOffset:3,textDecorationColor:t.accent};
@@ -1827,8 +1828,8 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
       estadoSistema:"historial",
       __desdeListado:true
     };
+    setClientePendiente(found);
     setDetalle(null);
-    setTimeout(()=>onClienteClick?.(found),0);
   };
   const planLine=(r,plan,altaKey,renKey,altaItemsKey,renItemsKey)=>(
     <div>
@@ -1839,6 +1840,15 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
     </div>
   );
   const detalleItems=detalle?.items||[];
+  useEffect(()=>{
+    if(detalle||!clientePendiente)return;
+    const c=clientePendiente;
+    const timer=setTimeout(()=>{
+      setClientePendiente(null);
+      onClienteClick?.(c);
+    },80);
+    return()=>clearTimeout(timer);
+  },[detalle,clientePendiente,onClienteClick]);
   useEffect(()=>{
     if(!detalle)return;
     const prev=document.body.style.overflow;
@@ -1911,21 +1921,27 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
                   </div>
                   <div style={{display:"grid",gap:8}}>
                     {detalleItems.map((it,idx)=>(
-                      <button
-                        type="button"
+                      <div
                         key={`${it.key}-${idx}`}
-                        onClick={()=>abrirCliente(it)}
-                        title="Abrir historial del cliente"
-                        style={{all:"unset",cursor:"pointer",display:"grid",gridTemplateColumns:"minmax(230px,1.6fr) 110px 105px 130px",gap:12,alignItems:"center",padding:"11px 12px",border:`1px solid ${t.border}`,borderRadius:14,background:"#0c1422",fontSize:12}}
+                        style={{display:"grid",gridTemplateColumns:"minmax(230px,1.6fr) 110px 105px 130px",gap:12,alignItems:"center",padding:"11px 12px",border:`1px solid ${t.border}`,borderRadius:14,background:"#0c1422",fontSize:12}}
                       >
                         <div style={{minWidth:0}}>
-                          <div style={{color:t.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:"underline",textUnderlineOffset:3,textDecorationColor:t.accent}}>{it.nombre||"Sin nombre"}</div>
-                          <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{it.email||"Sin email"}</div>
+                          <button
+                            type="button"
+                            onClick={(e)=>{e.stopPropagation();abrirCliente(it);}}
+                            title="Abrir historial del cliente"
+                            style={{all:"unset",cursor:"pointer",display:"block",maxWidth:"100%"}}
+                          >
+                            <div style={{color:t.text,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:"underline",textUnderlineOffset:3,textDecorationThickness:1.5,textDecorationColor:t.accent}}>
+                              {it.nombre||"Sin nombre"}
+                            </div>
+                            <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{it.email||"Sin email"}</div>
+                          </button>
                         </div>
                         <div style={{color:t.textMuted,whiteSpace:"nowrap"}}>{formatDate(it.fecha)}</div>
                         <div style={{color:t.accent,fontWeight:900,whiteSpace:"nowrap"}}>{money(it.monto)}</div>
                         <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.metodo||"Sin método"}</div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
