@@ -1815,11 +1815,20 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
     const byPersona=pk?allClientes.find(c=>personaKeyFromData(c)===pk):null;
     const byEmail=it.email?allClientes.find(c=>String(c.email||"").toLowerCase().trim()===String(it.email||"").toLowerCase().trim()):null;
     const byName=it.nombre?allClientes.find(c=>normName(c.nombre)===normName(it.nombre)):null;
-    const found=byId||byPersona||byEmail||byName;
-    if(found){
-      setDetalle(null);
-      setTimeout(()=>onClienteClick?.(found),0);
-    }
+    const found=byId||byPersona||byEmail||byName||{
+      id:`listado-${it.key}`,
+      nombre:it.nombre||"Sin nombre",
+      email:it.email||"",
+      servicio:it.servicio||"",
+      monto:it.monto||0,
+      fecha_inicio:it.fecha||null,
+      vencimiento:null,
+      estado:"historial",
+      estadoSistema:"historial",
+      __desdeListado:true
+    };
+    setDetalle(null);
+    setTimeout(()=>onClienteClick?.(found),0);
   };
   const planLine=(r,plan,altaKey,renKey,altaItemsKey,renItemsKey)=>(
     <div>
