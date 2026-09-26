@@ -1146,6 +1146,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
   },[onClose]);
+  useEffect(()=>{
+    const prev=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    return()=>{document.body.style.overflow=prev;};
+  },[]);
 
   // ID lógico de persona: agrupa por email si existe, y también por nombre normalizado.
   // Si un registro no tiene email pero otro del mismo nombre sí lo tiene, ambos muestran el mismo ID.
@@ -1339,8 +1344,13 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.74)",backdropFilter:"blur(4px)",zIndex:12000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflowY:"auto"}} {...backdropProps}>
-      <div {...modalProps} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column"}}>
+    <div
+      style={{position:"fixed",inset:0,background:"rgba(8,14,26,0.74)",backdropFilter:"blur(4px)",zIndex:12000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 16px",overflow:"hidden",overscrollBehavior:"contain"}}
+      onWheel={e=>e.preventDefault()}
+      onTouchMove={e=>e.preventDefault()}
+      {...backdropProps}
+    >
+      <div {...modalProps} style={{background:t.cardBg,borderRadius:20,border:`1px solid ${t.cardBorder}`,maxWidth:680,width:"100%",maxHeight:"calc(100vh - 48px)",boxShadow:"0 32px 80px rgba(0,0,0,0.6)",marginTop:8,marginBottom:24,display:"flex",flexDirection:"column",overflow:"hidden"}}>
 
         {/* Header */}
         <div style={{padding:"24px 28px 0",flexShrink:0}}>
@@ -1384,7 +1394,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
         </div>
 
         {/* Contenido scrollable */}
-        <div style={{padding:"0 28px 28px",flexShrink:0}}>
+        <div
+          style={{padding:"0 28px 28px",flex:1,overflowY:"auto",overscrollBehavior:"contain"}}
+          onWheel={e=>e.stopPropagation()}
+          onTouchMove={e=>e.stopPropagation()}
+        >
 
           {/* Nueva nota */}
           <div style={{borderTop:`1px solid ${t.tdBorder}`,paddingTop:18,marginBottom:18}}>
@@ -1936,7 +1950,6 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
                               {it.nombre||"Sin nombre"}
                             </div>
                             <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{it.email||"Sin email"}</div>
-                            <div style={{color:t.accent,fontSize:11,fontWeight:900,marginTop:3}}>Ver historial ↗</div>
                           </button>
                         </div>
                         <div style={{color:t.textMuted,whiteSpace:"nowrap"}}>{formatDate(it.fecha)}</div>
