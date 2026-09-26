@@ -1816,7 +1816,10 @@ function AltasRenovacionesCard({rows,t,allClientes=[],onClienteClick}){
     const byEmail=it.email?allClientes.find(c=>String(c.email||"").toLowerCase().trim()===String(it.email||"").toLowerCase().trim()):null;
     const byName=it.nombre?allClientes.find(c=>normName(c.nombre)===normName(it.nombre)):null;
     const found=byId||byPersona||byEmail||byName;
-    if(found)onClienteClick?.(found);
+    if(found){
+      setDetalle(null);
+      setTimeout(()=>onClienteClick?.(found),0);
+    }
   };
   const planLine=(r,plan,altaKey,renKey,altaItemsKey,renItemsKey)=>(
     <div>
