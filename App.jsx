@@ -1850,32 +1850,40 @@ function AltasRenovacionesCard({rows,t}){
         </div>
       )}
       {detalle&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.62)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={()=>setDetalle(null)}>
-          <div style={{width:"min(720px,96vw)",maxHeight:"82vh",overflow:"hidden",background:t.panel,border:`1px solid ${t.border}`,borderRadius:18,boxShadow:"0 24px 80px rgba(0,0,0,.45)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"flex-start",padding:"18px 18px 12px",borderBottom:`1px solid ${t.border}`}}>
-              <div>
-                <div style={{color:t.accent,fontSize:12,fontWeight:900,letterSpacing:.3,textTransform:"uppercase"}}>{detalle.mes}</div>
-                <h3 style={{margin:"4px 0 0",color:t.text,fontSize:18}}>{detalle.titulo}</h3>
-                <div style={{marginTop:4,color:t.textMuted,fontSize:12}}>{detalleItems.length} registro{detalleItems.length!==1?"s":""}</div>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:22,backdropFilter:"blur(6px)"}} onClick={()=>setDetalle(null)}>
+          <div style={{width:"min(760px,calc(100vw - 32px))",maxHeight:"84vh",overflow:"hidden",background:"#070d17",border:`1px solid ${t.border}`,borderRadius:20,boxShadow:"0 28px 90px rgba(0,0,0,.72)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:14,alignItems:"flex-start",padding:"20px 22px 14px",borderBottom:`1px solid ${t.border}`,background:"linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0))"}}>
+              <div style={{minWidth:0}}>
+                <div style={{color:t.accent,fontSize:12,fontWeight:900,letterSpacing:.35,textTransform:"uppercase"}}>{detalle.mes}</div>
+                <h3 style={{margin:"5px 0 0",color:t.text,fontSize:20,lineHeight:1.15}}>{detalle.titulo}</h3>
+                <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>{detalleItems.length} registro{detalleItems.length!==1?"s":""}</div>
               </div>
-              <button type="button" onClick={()=>setDetalle(null)} style={{border:`1px solid ${t.border}`,background:t.soft,color:t.text,borderRadius:10,padding:"8px 11px",fontWeight:900,cursor:"pointer"}}>Cerrar</button>
+              <button type="button" onClick={()=>setDetalle(null)} style={{border:`1px solid ${t.border}`,background:"#111827",color:t.text,borderRadius:999,padding:"8px 15px",fontWeight:900,cursor:"pointer",boxShadow:"0 8px 24px rgba(0,0,0,.25)"}}>Cerrar</button>
             </div>
-            <div style={{padding:16,maxHeight:"62vh",overflow:"auto"}}>
+            <div style={{padding:18,maxHeight:"64vh",overflow:"auto",background:"#070d17"}}>
               {!detalleItems.length?(
                 <div style={{color:t.textMuted,fontSize:13}}>No hay registros para este filtro.</div>
               ):(
-                <div style={{display:"grid",gap:8}}>
-                  {detalleItems.map((it,idx)=>(
-                    <div key={`${it.key}-${idx}`} style={{display:"grid",gridTemplateColumns:"1.3fr .9fr .75fr .75fr",gap:10,alignItems:"center",padding:"10px 12px",border:`1px solid ${t.border}`,borderRadius:12,background:t.soft,fontSize:12}}>
-                      <div style={{minWidth:0}}>
-                        <div style={{color:t.text,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.nombre||"Sin nombre"}</div>
-                        <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.email||"Sin email"}</div>
+                <div style={{minWidth:620}}>
+                  <div style={{display:"grid",gridTemplateColumns:"minmax(230px,1.6fr) 110px 105px 130px",gap:12,padding:"0 12px 8px",fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase",letterSpacing:.3}}>
+                    <div>Cliente</div>
+                    <div>Fecha</div>
+                    <div>Monto</div>
+                    <div>Método</div>
+                  </div>
+                  <div style={{display:"grid",gap:8}}>
+                    {detalleItems.map((it,idx)=>(
+                      <div key={`${it.key}-${idx}`} style={{display:"grid",gridTemplateColumns:"minmax(230px,1.6fr) 110px 105px 130px",gap:12,alignItems:"center",padding:"11px 12px",border:`1px solid ${t.border}`,borderRadius:14,background:"#0c1422",fontSize:12}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{color:t.text,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.nombre||"Sin nombre"}</div>
+                          <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{it.email||"Sin email"}</div>
+                        </div>
+                        <div style={{color:t.textMuted,whiteSpace:"nowrap"}}>{formatDate(it.fecha)}</div>
+                        <div style={{color:t.accent,fontWeight:900,whiteSpace:"nowrap"}}>{money(it.monto)}</div>
+                        <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.metodo||"Sin método"}</div>
                       </div>
-                      <div style={{color:t.textMuted}}>{formatDate(it.fecha)}</div>
-                      <div style={{color:t.text,fontWeight:800}}>{money(it.monto)}</div>
-                      <div style={{color:t.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.metodo||"Sin método"}</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
