@@ -654,7 +654,12 @@ async function logH(email,accion,entidad,eid,detalle){
   try{await supabase.from("historial_cambios").insert([{usuario_email:email,accion,entidad:entidad||null,entidad_id:eid||null,detalle:detalle||null}]);}catch(_){}
 }
 async function limpiarHistorial(){
-  try{const c=new Date(Date.now()-24*3600000).toISOString();await supabase.from("historial_cambios").delete().lt("created_at",c);}catch(_){}
+  // Retención amplia: antes se limpiaba cada 24 hs y podía dejar el historial vacío.
+  // Ahora conserva 10 días de cambios reales para auditoría operativa.
+  try{
+    const c=new Date(Date.now()-10*24*3600000).toISOString();
+    await supabase.from("historial_cambios").delete().lt("created_at",c);
+  }catch(_){}
 }
 
 // ─── notas_cliente helper ─────────────────────────────────────────────────────
@@ -2195,16 +2200,87 @@ function HistorialView({t}){
     };
   }
 
+  function notaComoHistorial(n,clienteMap={}){
+    const d=n.detalle||{};
+    const c=n.cliente_id?clienteMap[String(n.cliente_id)]:null;
+    const tipo=String(n.tipo||"nota").toLowerCase();
+    const contenido=String(n.contenido||"").trim();
+    let accion="nota de cliente";
+    if(tipo.includes("renov"))accion="renovación de cliente";
+    else if(tipo==="alta")accion="guardó nuevo cliente";
+    else if(tipo==="estado")accion="cambio de estado";
+    else if(tipo==="pago"||contenido.toLowerCase().includes("transferencia"))accion="pago / transferencia";
+    else if(tipo==="drive_pending")accion="Drive pendiente";
+    else if(tipo==="caja")accion="registró caja";
+    else if(tipo&&tipo!=="nota")accion=tipo;
+    return{
+      id:`nota-${n.id}`,
+      created_at:n.created_at||new Date().toISOString(),
+      usuario_email:n.usuario_email||"Sistema",
+      accion,
+      entidad:accion.toLowerCase().includes("drive")?"Drive":(accion.toLowerCase().includes("caja")?"Caja diaria":"cliente"),
+      entidad_id:n.cliente_id||null,
+      detalle:{
+        nombre:c?.nombre||d.nombre||d.cliente||d.venta||d.email||contenido||"Cliente",
+        email:c?.email||d.email||"",
+        nota:contenido,
+        ...d
+      }
+    };
+  }
+
+  function dedupeHistorial(rows){
+    const vistos=new Set();
+    const out=[];
+    (rows||[])
+      .filter(Boolean)
+      .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")))
+      .forEach(h=>{
+        const d=h.detalle||{};
+        const ingresoId=d.ingreso_id?`ingreso:${d.ingreso_id}`:"";
+        const notaId=String(h.id||"");
+        const base=[
+          ingresoId||notaId,
+          String(h.accion||"").toLowerCase(),
+          String(h.entidad||"").toLowerCase(),
+          String(h.entidad_id||""),
+          String(d.nombre||"").toLowerCase(),
+          String(d.email||"").toLowerCase(),
+          String(d.monto??"")
+        ].join("|");
+        if(vistos.has(base))return;
+        vistos.add(base);
+        out.push(h);
+      });
+    return out.slice(0,300);
+  }
+
   useEffect(()=>{
     let alive=true;
     async function load(){
       setLoading(true);
-      const {data,error}=await supabase
-        .from("historial_cambios")
-        .select("*")
-        .order("created_at",{ascending:false})
-        .limit(200);
-      if(alive){setHist(error?[]:(data||[]));setLoading(false);}
+      const [hRes,nRes,iRes,cRes]=await Promise.all([
+        supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500),
+        supabase.from("notas_cliente").select("*").order("created_at",{ascending:false}).limit(500),
+        supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(500),
+        supabase.from("clientes").select("id,nombre,email").limit(2000)
+      ]);
+      const clientesMap={};
+      (cRes.data||[]).forEach(c=>{clientesMap[String(c.id)]=c;});
+      const histBase=hRes.error?[]:(hRes.data||[]);
+      const notasExtra=(nRes.error?[]:(nRes.data||[]))
+        .filter(n=>String(n.tipo||"").toLowerCase()!=="drive_pending" || String(n.detalle?.last_error||n.detalle?.error||"").trim())
+        .map(n=>notaComoHistorial(n,clientesMap));
+      const existentesIngreso=new Set(
+        [...histBase,...notasExtra]
+          .map(h=>String(h.detalle?.ingreso_id||""))
+          .filter(Boolean)
+      );
+      const ingresosExtra=(iRes.error?[]:(iRes.data||[]))
+        .filter(i=>i.id&&!existentesIngreso.has(String(i.id)))
+        .map(ingresoComoHistorial);
+      const combinado=dedupeHistorial([...histBase,...notasExtra,...ingresosExtra]);
+      if(alive){setHist(combinado);setLoading(false);}
     }
     load();
     return()=>{alive=false;};
@@ -2244,7 +2320,7 @@ function HistorialView({t}){
     const labels={
       email:"Email",servicio:"Servicio",monto:"Monto",recibe:"Cobró",recibio_venta:"Cobró",recibe_final:"Recibió finalmente",vendedor:"Vendedor",
       pendiente_transferencia:"Estado",estado:"Estado",ingreso_id:"Ingreso",fecha_recepcion:"Fecha de recepción",caja_id:"Caja",pendiente_id:"Pendiente",
-      nota:"Nota",cliente:"Cliente",rollback:"Reversión",caja_eliminada:"Caja eliminada",origen:"Origen",venta:"Venta"
+      nota:"Nota",contenido:"Contenido",cliente:"Cliente",rollback:"Reversión",caja_eliminada:"Caja eliminada",origen:"Origen",venta:"Venta"
     };
     return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>{
       let valor=v;
