@@ -855,6 +855,7 @@ const VENDEDORES = ["Bahiano", "Luigi", "Jeremy"];
 const vendedorPermitido = v => VENDEDORES.includes(v) ? v : "";
 const METODOS_PAGO = ["Banco Europa","Banco México","Banco Perú","Banco USA","Binance","Mercado Pago","PayPal","Prex","Remitly","Western Union"];
 const metodoPagoValido = v => METODOS_PAGO.includes(v) ? v : "";
+const TEMAS_VIVOS = ["Líneas de tendencia","Smart Money","Wyckoff","Chartismo","Triángulos","Canales","Soportes y resistencias"];
 const FORM_DEF={nombre:"",email:"",servicio:"mensual",fecha_inicio:toISODate(getToday()),monto:35,duracion_dias:30,estado_manual:"activo",deuda_restante:0,notas:"",vendedor:"",transferido:true,metodo_pago:""};
 
 // ─── Tema premium ─────────────────────────────────────────────────────────────
@@ -2151,6 +2152,222 @@ function ClienteForm({title,subtitle,form,setForm,onGuardar,onCancelar,guardando
 function Field({label,children,spanAll=false,t}){
   const S=makeS(t);
   return(<div style={{gridColumn:spanAll?"1 / -1":"auto"}}><label style={S.label}>{label}</label>{children}</div>);
+}
+
+// ─── Vista Vivos ──────────────────────────────────────────────────────────────
+function VivosView({t,userEmail}){
+  const S=makeS(t);const btn=makeBtn(t);
+  const[rows,setRows]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[saving,setSaving]=useState(false);
+  const[error,setError]=useState("");
+  const[form,setForm]=useState({fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""});
+  const ref=useRef(null);
+  const pag=usePagination(rows,PAGE.hist);
+
+  async function fetchVivos(){
+    setLoading(true);setError("");
+    const{data,error:e}=await supabase
+      .from("vivos_metricas")
+      .select("*")
+      .order("fecha",{ascending:false})
+      .order("created_at",{ascending:false});
+    if(e){
+      setRows([]);
+      setError("Falta crear la tabla vivos_metricas en Supabase o revisar permisos.");
+      setLoading(false);
+      return;
+    }
+    setRows(data||[]);
+    setLoading(false);
+  }
+
+  useEffect(()=>{fetchVivos();},[]);
+
+  function n(v){return Math.max(0,Math.round(safeNum(v)));}
+  async function guardarVivo(){
+    if(!form.fecha){setError("Cargá la fecha del vivo.");return;}
+    if(!TEMAS_VIVOS.includes(form.tema)){setError("Elegí un tema válido.");return;}
+    const payload={
+      fecha:form.fecha,
+      tema:form.tema,
+      entraron:n(form.entraron),
+      promedio:n(form.promedio),
+      hablaron:n(form.hablaron),
+      compraron:n(form.compraron),
+      creado_por:userEmail||"Sistema"
+    };
+    setSaving(true);setError("");
+    const{data,error:e}=await supabase.from("vivos_metricas").insert([payload]).select().single();
+    setSaving(false);
+    if(e){setError("No se pudo guardar. Revisá que la tabla vivos_metricas exista y tenga permisos.");return;}
+    setRows(prev=>[data||{...payload,id:`tmp-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    setForm({fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""});
+  }
+
+  const stats=useMemo(()=>{
+    const ordered=(rows||[]).slice().sort((a,b)=>String(a.fecha||"").localeCompare(String(b.fecha||""))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+    const total=ordered.length;
+    const sum=(key)=>ordered.reduce((a,r)=>a+n(r[key]),0);
+    const entraron=sum("entraron"), promedioSum=sum("promedio"), hablaron=sum("hablaron"), compraron=sum("compraron");
+    const avg=(val)=>total?Math.round((val/total)*10)/10:0;
+    const byTema=TEMAS_VIVOS.map(tema=>{
+      const rs=ordered.filter(r=>r.tema===tema);
+      const vivos=rs.length;
+      const entraronTotal=rs.reduce((a,r)=>a+n(r.entraron),0);
+      const promedioTotal=rs.reduce((a,r)=>a+n(r.promedio),0);
+      const hablaronTotal=rs.reduce((a,r)=>a+n(r.hablaron),0);
+      const compraronTotal=rs.reduce((a,r)=>a+n(r.compraron),0);
+      return{
+        tema,vivos,entraronTotal,promedioTotal,hablaronTotal,compraronTotal,
+        entraronAvg:vivos?Math.round((entraronTotal/vivos)*10)/10:0,
+        promedioAvg:vivos?Math.round((promedioTotal/vivos)*10)/10:0,
+        hablaronAvg:vivos?Math.round((hablaronTotal/vivos)*10)/10:0,
+        compraronAvg:vivos?Math.round((compraronTotal/vivos)*10)/10:0,
+        conversionEntrada:entraronTotal?Math.round((compraronTotal/entraronTotal)*1000)/10:0,
+        conversionCharla:hablaronTotal?Math.round((compraronTotal/hablaronTotal)*1000)/10:0
+      };
+    }).filter(x=>x.vivos>0);
+    const best=(key)=>byTema.length?byTema.slice().sort((a,b)=>safeNum(b[key])-safeNum(a[key]))[0]:null;
+    return{
+      ordered,total,entraron,promedioAvg:avg(promedioSum),hablaron,compraron,
+      conversionEntrada:entraron?Math.round((compraron/entraron)*1000)/10:0,
+      conversionCharla:hablaron?Math.round((compraron/hablaron)*1000)/10:0,
+      byTema,
+      bestEntraron:best("entraronAvg"),
+      bestPromedio:best("promedioAvg"),
+      bestHablaron:best("hablaronAvg"),
+      bestCompraron:best("compraronTotal")
+    };
+  },[rows]);
+
+  const maxEvo=Math.max(...(stats.ordered||[]).flatMap(r=>[n(r.entraron),n(r.promedio),n(r.hablaron),n(r.compraron)]),1);
+  const maxTema=Math.max(...(stats.byTema||[]).flatMap(r=>[n(r.entraronAvg),n(r.promedioAvg),n(r.hablaronAvg),n(r.compraronTotal)]),1);
+  const miniBar=(value,color=t.accent)=>(
+    <div style={{height:7,background:t.barBg,borderRadius:999,overflow:"hidden",marginTop:5}}>
+      <div style={{width:`${Math.max((safeNum(value)/maxEvo)*100,value>0?4:0)}%`,height:"100%",borderRadius:999,background:color}}/>
+    </div>
+  );
+  const temaBar=(value,color=t.accent)=>(
+    <div style={{height:7,background:t.barBg,borderRadius:999,overflow:"hidden",marginTop:5}}>
+      <div style={{width:`${Math.max((safeNum(value)/maxTema)*100,value>0?4:0)}%`,height:"100%",borderRadius:999,background:color}}/>
+    </div>
+  );
+
+  return(
+    <div ref={ref} style={{display:"grid",gap:24}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+        <MetricCard title="Vivos cargados" value={stats.total} accent t={t}/>
+        <MetricCard title="Entraron" value={stats.entraron} sub="total de asistentes únicos" t={t}/>
+        <MetricCard title="Media promedio" value={stats.promedioAvg} sub="promedio por vivo" t={t}/>
+        <MetricCard title="Hablaron" value={stats.hablaron} sub="personas que consultaron" t={t}/>
+        <MetricCard title="Compraron" value={stats.compraron} sub={`Conv. entrada ${stats.conversionEntrada}%`} t={t}/>
+        <MetricCard title="Conv. charla" value={`${stats.conversionCharla}%`} sub="compras ÷ consultas" t={t}/>
+      </div>
+
+      <div style={S.card}>
+        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:6}}>Registrar vivo</h3>
+        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables.</div>
+        {error&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:12,border:`1px solid ${t.danger}`,background:"rgba(239,68,68,.08)",color:t.danger,fontSize:13,fontWeight:700}}>{error}</div>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
+          <Field label="Fecha del vivo" t={t}><input type="date" style={S.input} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></Field>
+          <Field label="Tema" t={t}>
+            <select style={S.select} value={form.tema} onChange={e=>setForm({...form,tema:e.target.value})}>
+              {TEMAS_VIVOS.map(x=><option key={x} value={x}>{x}</option>)}
+            </select>
+          </Field>
+          <Field label="Cantidad que entró" t={t}><input type="number" min="0" style={S.input} value={form.entraron} onChange={e=>setForm({...form,entraron:e.target.value})} placeholder="Ej. 120"/></Field>
+          <Field label="Media del vivo" t={t}><input type="number" min="0" style={S.input} value={form.promedio} onChange={e=>setForm({...form,promedio:e.target.value})} placeholder="Ej. 65"/></Field>
+          <Field label="Personas que hablaron" t={t}><input type="number" min="0" style={S.input} value={form.hablaron} onChange={e=>setForm({...form,hablaron:e.target.value})} placeholder="Ej. 18"/></Field>
+          <Field label="Compraron ese día" t={t}><input type="number" min="0" style={S.input} value={form.compraron} onChange={e=>setForm({...form,compraron:e.target.value})} placeholder="Ej. 5"/></Field>
+        </div>
+        <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:10}}>
+          <button style={btn(false)} onClick={fetchVivos} disabled={loading}>Actualizar</button>
+          <button style={btn(false,true)} onClick={guardarVivo} disabled={saving}>{saving?"Guardando...":"Guardar vivo"}</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:14}}>
+        <div style={S.card}><div style={{fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase"}}>Más visitas</div><div style={{fontSize:20,fontWeight:900,color:t.text,marginTop:6}}>{stats.bestEntraron?.tema||"—"}</div><div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{stats.bestEntraron?`${stats.bestEntraron.entraronAvg} entraron promedio`:"Sin datos"}</div></div>
+        <div style={S.card}><div style={{fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase"}}>Mayor media</div><div style={{fontSize:20,fontWeight:900,color:t.text,marginTop:6}}>{stats.bestPromedio?.tema||"—"}</div><div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{stats.bestPromedio?`${stats.bestPromedio.promedioAvg} media promedio`:"Sin datos"}</div></div>
+        <div style={S.card}><div style={{fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase"}}>Más consultas</div><div style={{fontSize:20,fontWeight:900,color:t.text,marginTop:6}}>{stats.bestHablaron?.tema||"—"}</div><div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{stats.bestHablaron?`${stats.bestHablaron.hablaronAvg} hablan promedio`:"Sin datos"}</div></div>
+        <div style={S.card}><div style={{fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase"}}>Más compras</div><div style={{fontSize:20,fontWeight:900,color:t.text,marginTop:6}}>{stats.bestCompraron?.tema||"—"}</div><div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{stats.bestCompraron?`${stats.bestCompraron.compraronTotal} compras totales`:"Sin datos"}</div></div>
+      </div>
+
+      <div style={S.card}>
+        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Evolución vivo a vivo</h3>
+        {loading?<Skeleton rows={5} cols={4} t={t}/>:!stats.ordered.length?<div style={{color:t.textMuted}}>Sin vivos cargados todavía.</div>:(
+          <div style={{display:"grid",gap:12}}>
+            {stats.ordered.map(r=>(
+              <div key={r.id} style={{padding:"12px 14px",border:`1px solid ${t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                  <div>
+                    <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
+                    <div style={{fontSize:12,color:t.textMuted}}>Compras ÷ entraron: {n(r.entraron)?Math.round((n(r.compraron)/n(r.entraron))*1000)/10:0}%</div>
+                  </div>
+                  <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
+                  <div><b style={{color:t.text}}>Entraron:</b> {n(r.entraron)}{miniBar(n(r.entraron))}</div>
+                  <div><b style={{color:t.text}}>Media:</b> {n(r.promedio)}{miniBar(n(r.promedio),"#60a5fa")}</div>
+                  <div><b style={{color:t.text}}>Hablaron:</b> {n(r.hablaron)}{miniBar(n(r.hablaron),"#f59e0b")}</div>
+                  <div><b style={{color:t.text}}>Compraron:</b> {n(r.compraron)}{miniBar(n(r.compraron),"#22c55e")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
+        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Rendimiento por tema</h3>
+        {!stats.byTema.length?<div style={{color:t.textMuted}}>Sin datos por tema todavía.</div>:(
+          <div style={{display:"grid",gap:12}}>
+            {stats.byTema.map(r=>(
+              <div key={r.tema} style={{padding:"12px 14px",border:`1px solid ${t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                  <strong style={{color:t.text}}>{r.tema}</strong>
+                  <span style={{color:t.textMuted,fontSize:12}}>{r.vivos} vivo{r.vivos!==1?"s":""} · conv. entrada {r.conversionEntrada}% · conv. charla {r.conversionCharla}%</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
+                  <div><b style={{color:t.text}}>Entraron prom.:</b> {r.entraronAvg}{temaBar(r.entraronAvg)}</div>
+                  <div><b style={{color:t.text}}>Media prom.:</b> {r.promedioAvg}{temaBar(r.promedioAvg,"#60a5fa")}</div>
+                  <div><b style={{color:t.text}}>Hablaron prom.:</b> {r.hablaronAvg}{temaBar(r.hablaronAvg,"#f59e0b")}</div>
+                  <div><b style={{color:t.text}}>Compras totales:</b> {r.compraronTotal}{temaBar(r.compraronTotal,"#22c55e")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
+        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Registros cargados</h3>
+        {loading?<Skeleton rows={5} cols={6} t={t}/>:!rows.length?<div style={{color:t.textMuted}}>Sin registros.</div>:(
+          <>
+            <div className="sc-table-wrap" style={{overflowX:"auto"}}>
+              <table style={S.table}>
+                <thead><TableHeader cols={["Fecha","Tema","Entraron","Media","Hablaron","Compraron"]} t={t}/></thead>
+                <tbody>
+                  {pag.rows.map(r=>(
+                    <tr key={r.id}>
+                      <td style={S.td}>{formatDate(r.fecha)}</td>
+                      <td style={{...S.td,fontWeight:800,color:t.text}}>{r.tema}</td>
+                      <td style={S.td}>{n(r.entraron)}</td>
+                      <td style={S.td}>{n(r.promedio)}</td>
+                      <td style={S.td}>{n(r.hablaron)}</td>
+                      <td style={{...S.td,fontWeight:900,color:t.accent}}>{n(r.compraron)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={pag.page} totalPages={pag.totalPages} setPage={pag.setPage} sectionRef={ref} t={t}/>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── Vista Historial ──────────────────────────────────────────────────────────
@@ -4641,6 +4858,7 @@ export default function App(){
             <button style={navBtn(activeView==="semanal")} onClick={()=>handleSetView("semanal")}>Semanal</button>
             <button style={navBtn(activeView==="caja")} onClick={()=>handleSetView("caja")}>Caja</button>
             <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
+            <button style={navBtn(activeView==="vivos")} onClick={()=>handleSetView("vivos")}>Vivos</button>
             <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
             <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
             <button onClick={()=>setDark(!dark)} title={dark?"Modo claro":"Modo oscuro"} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15,minWidth:42}}>
@@ -4655,6 +4873,9 @@ export default function App(){
             <ClienteForm title="Alta de cliente" form={form} setForm={setForm} onGuardar={guardarCliente} onCancelar={()=>setShowForm(false)} guardando={guardando} t={t}/>
           </div>
         )}
+
+        {/* ── VIVOS ── */}
+        {activeView==="vivos"&&<VivosView t={t} userEmail={user?.email}/>}
 
         {/* ── HISTORIAL ── */}
         {activeView==="historial"&&<HistorialView t={t}/>}
