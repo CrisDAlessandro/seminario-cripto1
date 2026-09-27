@@ -2182,13 +2182,16 @@ function VivosView({t,userEmail,askConfirm}){
   const[rows,setRows]=useState([]);
   const[loading,setLoading]=useState(true);
   const[saving,setSaving]=useState(false);
+  const[editSaving,setEditSaving]=useState(false);
   const[error,setError]=useState("");
   const initialForm={fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""};
   const[form,setForm]=useState(initialForm);
   const[editingId,setEditingId]=useState(null);
+  const[editForm,setEditForm]=useState(initialForm);
   const ref=useRef(null);
   const pag=usePagination(rows,PAGE.hist);
-  function resetForm(){setForm({...initialForm});setEditingId(null);}
+  function resetForm(){setForm({...initialForm});}
+  function resetEdit(){setEditingId(null);setEditForm({...initialForm});}
 
   async function fetchVivos(){
     setLoading(true);setError("");
@@ -2210,24 +2213,47 @@ function VivosView({t,userEmail,askConfirm}){
   useEffect(()=>{fetchVivos();},[]);
 
   function n(v){return Math.max(0,Math.round(safeNum(v)));}
-  function editarRegistro(r){
-    setEditingId(r.id);
-    setForm({
+  function formDesdeRegistro(r){
+    return{
       fecha:dateOnly(r.fecha)||toISODate(getToday()),
       tema:r.tema||TEMAS_VIVOS[0],
       entraron:String(n(r.entraron)),
       promedio:String(n(r.promedio)),
       hablaron:String(n(r.hablaron)),
       compraron:String(n(r.compraron))
-    });
-    ref.current?.scrollIntoView?.({behavior:"smooth",block:"start"});
+    };
+  }
+  function payloadDesdeForm(f){
+    return{
+      fecha:f.fecha,
+      tema:f.tema,
+      entraron:n(f.entraron),
+      promedio:n(f.promedio),
+      hablaron:n(f.hablaron),
+      compraron:n(f.compraron),
+      creado_por:userEmail||"Sistema"
+    };
+  }
+  function detalleVivo(payload,id=null,extra={}){
+    return{nombre:"Vivos",vivo_id:id,fecha:payload.fecha,tema:payload.tema,entraron:payload.entraron,promedio:payload.promedio,hablaron:payload.hablaron,compraron:payload.compraron,...extra};
+  }
+  function editarRegistro(r){
+    setError("");
+    setEditingId(r.id);
+    setEditForm(formDesdeRegistro(r));
   }
   async function eliminarRegistro(id){
+    const actual=rows.find(r=>String(r.id)===String(id));
     setError("");
     const{error:e}=await supabase.from("vivos_metricas").delete().eq("id",id);
     if(e){setError("No se pudo eliminar el vivo.");return;}
-    setRows(prev=>prev.filter(r=>r.id!==id));
-    if(editingId===id)resetForm();
+    setRows(prev=>prev.filter(r=>String(r.id)!==String(id)));
+    if(editingId===id)resetEdit();
+    if(actual){
+      await logH(userEmail||"Sistema","eliminó vivo","Vivos",id,detalleVivo({
+        fecha:actual.fecha,tema:actual.tema,entraron:n(actual.entraron),promedio:n(actual.promedio),hablaron:n(actual.hablaron),compraron:n(actual.compraron)
+      },id));
+    }
   }
   function confirmarEliminarRegistro(r){
     const msg=`¿Eliminar el vivo de ${formatDate(r.fecha)} sobre ${r.tema}? Esta acción no se puede deshacer.`;
@@ -2243,32 +2269,37 @@ function VivosView({t,userEmail,askConfirm}){
     background:danger?"rgba(239,68,68,0.10)":t.btnLtBg,
     color:danger?"#ef4444":t.btnLtTx
   });
+  const miniInput={...S.input,padding:"8px 10px",fontSize:12,borderRadius:10};
+  const miniSelect={...S.select,padding:"8px 32px 8px 10px",fontSize:12,borderRadius:10,backgroundPosition:"right 10px center"};
+
   async function guardarVivo(){
     if(!form.fecha){setError("Cargá la fecha del vivo.");return;}
     if(!TEMAS_VIVOS.includes(form.tema)){setError("Elegí un tema válido.");return;}
-    const payload={
-      fecha:form.fecha,
-      tema:form.tema,
-      entraron:n(form.entraron),
-      promedio:n(form.promedio),
-      hablaron:n(form.hablaron),
-      compraron:n(form.compraron),
-      creado_por:userEmail||"Sistema"
-    };
+    const payload=payloadDesdeForm(form);
     setSaving(true);setError("");
-    if(editingId){
-      const{data,error:e}=await supabase.from("vivos_metricas").update(payload).eq("id",editingId).select().single();
-      setSaving(false);
-      if(e){setError("No se pudo actualizar el vivo.");return;}
-      setRows(prev=>prev.map(r=>r.id===editingId?(data||{...r,...payload}):r));
-      resetForm();
-      return;
-    }
     const{data,error:e}=await supabase.from("vivos_metricas").insert([payload]).select().single();
     setSaving(false);
     if(e){setError("No se pudo guardar. Revisá que la tabla vivos_metricas exista y tenga permisos.");return;}
-    setRows(prev=>[data||{...payload,id:`tmp-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
+    const row=data||{...payload,id:`tmp-${Date.now()}`,created_at:new Date().toISOString()};
+    setRows(prev=>[row,...prev]);
+    await logH(userEmail||"Sistema","registró vivo","Vivos",row.id||null,detalleVivo(payload,row.id||null));
     resetForm();
+  }
+  async function guardarEdicion(id){
+    if(!editForm.fecha){setError("Cargá la fecha del vivo.");return;}
+    if(!TEMAS_VIVOS.includes(editForm.tema)){setError("Elegí un tema válido.");return;}
+    const anterior=rows.find(r=>String(r.id)===String(id));
+    const payload=payloadDesdeForm(editForm);
+    setEditSaving(true);setError("");
+    const{data,error:e}=await supabase.from("vivos_metricas").update(payload).eq("id",id).select().single();
+    setEditSaving(false);
+    if(e){setError("No se pudo actualizar el vivo.");return;}
+    const row=data||{...(anterior||{}),...payload,id};
+    setRows(prev=>prev.map(r=>String(r.id)===String(id)?row:r));
+    await logH(userEmail||"Sistema","editó vivo","Vivos",id,detalleVivo(payload,id,{anterior:anterior?{
+      fecha:anterior.fecha,tema:anterior.tema,entraron:n(anterior.entraron),promedio:n(anterior.promedio),hablaron:n(anterior.hablaron),compraron:n(anterior.compraron)
+    }:null}));
+    resetEdit();
   }
 
   const stats=useMemo(()=>{
@@ -2319,6 +2350,25 @@ function VivosView({t,userEmail,askConfirm}){
       <div style={{width:`${Math.max((safeNum(value)/maxTema)*100,value>0?4:0)}%`,height:"100%",borderRadius:999,background:color}}/>
     </div>
   );
+  const editPanel=(r)=>editingId===r.id?(
+    <div style={{marginTop:12,padding:12,border:`1px solid ${t.accent}`,borderRadius:14,background:t.dark?"rgba(212,162,58,.08)":"rgba(209,154,50,.08)"}}>
+      <div style={{fontSize:11,color:t.accent,fontWeight:900,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Editando este vivo</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+        <input type="date" style={miniInput} value={editForm.fecha} onChange={e=>setEditForm({...editForm,fecha:e.target.value})}/>
+        <select style={miniSelect} value={editForm.tema} onChange={e=>setEditForm({...editForm,tema:e.target.value})}>
+          {TEMAS_VIVOS.map(x=><option key={x} value={x}>{x}</option>)}
+        </select>
+        <input type="number" min="0" style={miniInput} value={editForm.entraron} onChange={e=>setEditForm({...editForm,entraron:e.target.value})} placeholder="Entraron"/>
+        <input type="number" min="0" style={miniInput} value={editForm.promedio} onChange={e=>setEditForm({...editForm,promedio:e.target.value})} placeholder="Media"/>
+        <input type="number" min="0" style={miniInput} value={editForm.hablaron} onChange={e=>setEditForm({...editForm,hablaron:e.target.value})} placeholder="Hablaron"/>
+        <input type="number" min="0" style={miniInput} value={editForm.compraron} onChange={e=>setEditForm({...editForm,compraron:e.target.value})} placeholder="Compraron"/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <button style={{...btn(false),padding:"7px 11px",fontSize:12}} onClick={resetEdit} disabled={editSaving}>Cancelar</button>
+        <button style={{...btn(false,true),padding:"7px 12px",fontSize:12}} onClick={()=>guardarEdicion(r.id)} disabled={editSaving}>{editSaving?"Guardando...":"Guardar cambios"}</button>
+      </div>
+    </div>
+  ):null;
 
   return(
     <div ref={ref} style={{display:"grid",gap:24}}>
@@ -2333,7 +2383,7 @@ function VivosView({t,userEmail,askConfirm}){
 
       <div style={S.card}>
         <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:6}}>Registrar vivo</h3>
-        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables y puedas editar o eliminar cualquier registro después.</div>
+        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables.</div>
         {error&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:12,border:`1px solid ${t.danger}`,background:"rgba(239,68,68,.08)",color:t.danger,fontSize:13,fontWeight:700}}>{error}</div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
           <Field label="Fecha del vivo" t={t}><input type="date" style={S.input} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></Field>
@@ -2348,9 +2398,8 @@ function VivosView({t,userEmail,askConfirm}){
           <Field label="Compraron ese día" t={t}><input type="number" min="0" style={S.input} value={form.compraron} onChange={e=>setForm({...form,compraron:e.target.value})} placeholder="Ej. 5"/></Field>
         </div>
         <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
-          {editingId&&<button style={btn(false)} onClick={resetForm} disabled={saving}>Cancelar edición</button>}
           <button style={btn(false)} onClick={fetchVivos} disabled={loading||saving}>Actualizar</button>
-          <button style={btn(false,true)} onClick={guardarVivo} disabled={saving}>{saving?"Guardando...":editingId?"Guardar cambios":"Guardar vivo"}</button>
+          <button style={btn(false,true)} onClick={guardarVivo} disabled={saving}>{saving?"Guardando...":"Guardar vivo"}</button>
         </div>
       </div>
 
@@ -2366,7 +2415,7 @@ function VivosView({t,userEmail,askConfirm}){
         {loading?<Skeleton rows={5} cols={4} t={t}/>:!stats.ordered.length?<div style={{color:t.textMuted}}>Sin vivos cargados todavía.</div>:(
           <div style={{display:"grid",gap:12}}>
             {stats.ordered.map(r=>(
-              <div key={r.id} style={{padding:"12px 14px",border:`1px solid ${t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
+              <div key={r.id} style={{padding:"12px 14px",border:`1px solid ${editingId===r.id?t.accent:t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
                   <div>
                     <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
@@ -2384,6 +2433,7 @@ function VivosView({t,userEmail,askConfirm}){
                   <div><b style={{color:t.text}}>Hablaron:</b> {n(r.hablaron)}{miniBar(n(r.hablaron),"#f59e0b")}</div>
                   <div><b style={{color:t.text}}>Compraron:</b> {n(r.compraron)}{miniBar(n(r.compraron),"#22c55e")}</div>
                 </div>
+                {editPanel(r)}
               </div>
             ))}
           </div>
@@ -2420,8 +2470,8 @@ function VivosView({t,userEmail,askConfirm}){
               <table style={S.table}>
                 <thead><TableHeader cols={["Fecha","Tema","Entraron","Media","Hablaron","Compraron","Acciones"]} t={t}/></thead>
                 <tbody>
-                  {pag.rows.map(r=>(
-                    <tr key={r.id}>
+                  {pag.rows.map(r=>[
+                    <tr key={`${r.id}-row`}>
                       <td style={S.td}>{formatDate(r.fecha)}</td>
                       <td style={{...S.td,fontWeight:800,color:t.text}}>{r.tema}</td>
                       <td style={S.td}>{n(r.entraron)}</td>
@@ -2434,8 +2484,9 @@ function VivosView({t,userEmail,askConfirm}){
                           <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                    </tr>,
+                    editingId===r.id?<tr key={`${r.id}-edit`}><td colSpan={7} style={{...S.td,background:t.dark?"#0b111d":"#fbfcfe"}}>{editPanel(r)}</td></tr>:null
+                  ])}
                 </tbody>
               </table>
             </div>
@@ -2526,24 +2577,48 @@ function HistorialView({t}){
   function dedupeHistorial(rows){
     const vistos=new Set();
     const out=[];
+    function cat(h){
+      const a=String(h.accion||"").toLowerCase();
+      if(a.includes("drive"))return "drive";
+      if(a.includes("vivo"))return "vivo";
+      if(a.includes("caja"))return "caja";
+      if(a.includes("renov"))return "renovacion";
+      if(a.includes("nuevo")||a.includes("alta"))return "alta";
+      if(a.includes("pago")||a.includes("transferencia"))return "pago";
+      if(a.includes("ingreso"))return "ingreso";
+      if(a.includes("estado")||a.includes("baja"))return "estado";
+      return a||"otro";
+    }
     (rows||[])
       .filter(Boolean)
       .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")))
       .forEach(h=>{
         const d=h.detalle||{};
-        const ingresoId=d.ingreso_id?`ingreso:${d.ingreso_id}`:"";
-        const notaId=String(h.id||"");
-        const base=[
-          ingresoId||notaId,
-          String(h.accion||"").toLowerCase(),
-          String(h.entidad||"").toLowerCase(),
-          String(h.entidad_id||""),
-          String(d.nombre||"").toLowerCase(),
-          String(d.email||"").toLowerCase(),
-          String(d.monto??"")
-        ].join("|");
-        if(vistos.has(base))return;
-        vistos.add(base);
+        const c=cat(h);
+        const ingresoId=String(d.ingreso_id||"").trim();
+        const vivoId=String(d.vivo_id||h.entidad_id||"").trim();
+        const fecha=String(d.fecha||String(h.created_at||"").slice(0,10));
+        let key="";
+        if(ingresoId&&(c==="renovacion"||c==="alta"||c==="pago"||c==="ingreso")){
+          key=`ingreso:${ingresoId}:${c}`;
+        }else if(c==="caja"){
+          key=`caja:${fecha}:${String(d.monto??"")}:${String(d.recibe||d.recibio_venta||"").toLowerCase()}:${String(d.ingreso_id||"")}`;
+        }else if(c==="vivo"&&vivoId){
+          key=`vivo:${vivoId}:${c}:${String(h.accion||"").toLowerCase()}`;
+        }else{
+          const bucket=String(h.created_at||"").slice(0,16);
+          key=[
+            c,bucket,
+            String(h.entidad||"").toLowerCase(),
+            String(h.entidad_id||""),
+            String(d.nombre||"").toLowerCase(),
+            String(d.email||"").toLowerCase(),
+            String(d.monto??""),
+            String(d.nota||d.contenido||"").slice(0,80).toLowerCase()
+          ].join("|");
+        }
+        if(vistos.has(key))return;
+        vistos.add(key);
         out.push(h);
       });
     return out.slice(0,300);
