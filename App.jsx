@@ -2551,6 +2551,7 @@ function HistorialView({t}){
       }
     };
   }
+  function vivoNum(v){return Math.max(0,Math.round(safeNum(v)));}
   function vivoComoHistorial(v){
     return{
       id:`vivo-${v.id}`,
@@ -2564,10 +2565,10 @@ function HistorialView({t}){
         vivo_id:v.id||null,
         fecha:v.fecha,
         tema:v.tema,
-        entraron:n(v.entraron),
-        promedio:n(v.promedio),
-        hablaron:n(v.hablaron),
-        compraron:n(v.compraron)
+        entraron:vivoNum(v.entraron),
+        promedio:vivoNum(v.promedio),
+        hablaron:vivoNum(v.hablaron),
+        compraron:vivoNum(v.compraron)
       }
     };
   }
@@ -2656,30 +2657,37 @@ function HistorialView({t}){
     let alive=true;
     async function load(){
       setLoading(true);
-      const [hRes,nRes,iRes,vRes,cRes]=await Promise.all([
-        supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500),
-        supabase.from("notas_cliente").select("*").order("created_at",{ascending:false}).limit(500),
-        supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(500),
-        supabase.from("vivos_metricas").select("*").order("created_at",{ascending:false}).limit(500),
-        supabase.from("clientes").select("id,nombre,email").limit(2000)
-      ]);
-      const clientesMap={};
-      (cRes.data||[]).forEach(c=>{clientesMap[String(c.id)]=c;});
-      const histBase=hRes.error?[]:(hRes.data||[]);
-      const notasExtra=(nRes.error?[]:(nRes.data||[]))
-        .filter(n=>String(n.tipo||"").toLowerCase()!=="drive_pending" || String(n.detalle?.last_error||n.detalle?.error||"").trim())
-        .map(n=>notaComoHistorial(n,clientesMap));
-      const existentesIngreso=new Set(
-        [...histBase,...notasExtra]
-          .map(h=>String(h.detalle?.ingreso_id||""))
-          .filter(Boolean)
-      );
-      const ingresosExtra=(iRes.error?[]:(iRes.data||[]))
-        .filter(i=>i.id&&!existentesIngreso.has(String(i.id)))
-        .map(ingresoComoHistorial);
-      const vivosExtra=(vRes.error?[]:(vRes.data||[])).map(vivoComoHistorial);
-      const combinado=dedupeHistorial([...histBase,...notasExtra,...vivosExtra,...ingresosExtra]);
-      if(alive){setHist(combinado);setLoading(false);}
+      try{
+        const [hRes,nRes,iRes,vRes,cRes]=await Promise.all([
+          supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500),
+          supabase.from("notas_cliente").select("*").order("created_at",{ascending:false}).limit(500),
+          supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(500),
+          supabase.from("vivos_metricas").select("*").order("created_at",{ascending:false}).limit(500),
+          supabase.from("clientes").select("id,nombre,email").limit(2000)
+        ]);
+        const clientesMap={};
+        (cRes?.data||[]).forEach(c=>{clientesMap[String(c.id)]=c;});
+        const histBase=hRes?.error?[]:(hRes?.data||[]);
+        const notasExtra=(nRes?.error?[]:(nRes?.data||[]))
+          .filter(n=>String(n.tipo||"").toLowerCase()!=="drive_pending" || String(n.detalle?.last_error||n.detalle?.error||"").trim())
+          .map(n=>notaComoHistorial(n,clientesMap));
+        const existentesIngreso=new Set(
+          [...histBase,...notasExtra]
+            .map(h=>String(h.detalle?.ingreso_id||""))
+            .filter(Boolean)
+        );
+        const ingresosExtra=(iRes?.error?[]:(iRes?.data||[]))
+          .filter(i=>i.id&&!existentesIngreso.has(String(i.id)))
+          .map(ingresoComoHistorial);
+        const vivosExtra=(vRes?.error?[]:(vRes?.data||[])).map(vivoComoHistorial);
+        const combinado=dedupeHistorial([...histBase,...notasExtra,...vivosExtra,...ingresosExtra]);
+        if(alive)setHist(combinado);
+      }catch(err){
+        console.warn("No se pudo cargar historial",err);
+        if(alive)setHist([]);
+      }finally{
+        if(alive)setLoading(false);
+      }
     }
     load();
     return()=>{alive=false;};
