@@ -2199,24 +2199,12 @@ function HistorialView({t}){
     let alive=true;
     async function load(){
       setLoading(true);
-      const [hRes,iRes]=await Promise.all([
-        supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(200),
-        supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(200)
-      ]);
-      const histBase=hRes.error?[]:(hRes.data||[]);
-      const existentes=new Set(
-        histBase
-          .filter(h=>!String(h.accion||"").toLowerCase().includes("caja"))
-          .map(h=>String(h.detalle?.ingreso_id||""))
-          .filter(Boolean)
-      );
-      const ingresosExtra=(iRes.error?[]:(iRes.data||[]))
-        .filter(i=>i.id&&!existentes.has(String(i.id)))
-        .map(ingresoComoHistorial);
-      const combinado=[...histBase,...ingresosExtra]
-        .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")))
-        .slice(0,200);
-      if(alive){setHist(combinado);setLoading(false);}
+      const {data,error}=await supabase
+        .from("historial_cambios")
+        .select("*")
+        .order("created_at",{ascending:false})
+        .limit(200);
+      if(alive){setHist(error?[]:(data||[]));setLoading(false);}
     }
     load();
     return()=>{alive=false;};
