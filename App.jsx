@@ -2237,6 +2237,18 @@ function VivosView({t,userEmail,askConfirm}){
   function detalleVivo(payload,id=null,extra={}){
     return{nombre:"Vivos",vivo_id:id,fecha:payload.fecha,tema:payload.tema,entraron:payload.entraron,promedio:payload.promedio,hablaron:payload.hablaron,compraron:payload.compraron,...extra};
   }
+  async function registrarHistorialVivo(accion,payload,id=null,extra={}){
+    const detalle=detalleVivo(payload,id,{accion,...extra});
+    const base={usuario_email:userEmail||"Sistema",accion,entidad:"Vivos",entidad_id:id||null,detalle};
+    const [hRes,nRes]=await Promise.allSettled([
+      supabase.from("historial_cambios").insert([base]),
+      supabase.from("notas_cliente").insert([{cliente_id:null,usuario_email:userEmail||"Sistema",tipo:"vivo",contenido:accion,detalle}])
+    ]);
+    const histOk=hRes.status==="fulfilled"&&!hRes.value?.error;
+    const notaOk=nRes.status==="fulfilled"&&!nRes.value?.error;
+    if(!histOk&&!notaOk)console.warn("No se pudo guardar historial de vivo",hRes,nRes);
+    return histOk||notaOk;
+  }
   function editarRegistro(r){
     setError("");
     setEditingId(r.id);
@@ -2250,9 +2262,7 @@ function VivosView({t,userEmail,askConfirm}){
     setRows(prev=>prev.filter(r=>String(r.id)!==String(id)));
     if(editingId===id)resetEdit();
     if(actual){
-      await logH(userEmail||"Sistema","eliminó vivo","Vivos",id,detalleVivo({
-        fecha:actual.fecha,tema:actual.tema,entraron:n(actual.entraron),promedio:n(actual.promedio),hablaron:n(actual.hablaron),compraron:n(actual.compraron)
-      },id));
+      await registrarHistorialVivo("eliminó vivo",{fecha:actual.fecha,tema:actual.tema,entraron:n(actual.entraron),promedio:n(actual.promedio),hablaron:n(actual.hablaron),compraron:n(actual.compraron)},id);
     }
   }
   function confirmarEliminarRegistro(r){
@@ -2282,7 +2292,7 @@ function VivosView({t,userEmail,askConfirm}){
     if(e){setError("No se pudo guardar. Revisá que la tabla vivos_metricas exista y tenga permisos.");return;}
     const row=data||{...payload,id:`tmp-${Date.now()}`,created_at:new Date().toISOString()};
     setRows(prev=>[row,...prev]);
-    await logH(userEmail||"Sistema","registró vivo","Vivos",row.id||null,detalleVivo(payload,row.id||null));
+    await registrarHistorialVivo("registró vivo",payload,row.id||null);
     resetForm();
   }
   async function guardarEdicion(id){
@@ -2296,9 +2306,7 @@ function VivosView({t,userEmail,askConfirm}){
     if(e){setError("No se pudo actualizar el vivo.");return;}
     const row=data||{...(anterior||{}),...payload,id};
     setRows(prev=>prev.map(r=>String(r.id)===String(id)?row:r));
-    await logH(userEmail||"Sistema","editó vivo","Vivos",id,detalleVivo(payload,id,{anterior:anterior?{
-      fecha:anterior.fecha,tema:anterior.tema,entraron:n(anterior.entraron),promedio:n(anterior.promedio),hablaron:n(anterior.hablaron),compraron:n(anterior.compraron)
-    }:null}));
+    await registrarHistorialVivo("editó vivo",payload,id,{anterior:anterior?{fecha:anterior.fecha,tema:anterior.tema,entraron:n(anterior.entraron),promedio:n(anterior.promedio),hablaron:n(anterior.hablaron),compraron:n(anterior.compraron)}:null});
     resetEdit();
   }
 
@@ -2543,6 +2551,26 @@ function HistorialView({t}){
       }
     };
   }
+  function vivoComoHistorial(v){
+    return{
+      id:`vivo-${v.id}`,
+      created_at:v.created_at||v.fecha||new Date().toISOString(),
+      usuario_email:v.creado_por||"Sistema",
+      accion:"registró vivo",
+      entidad:"Vivos",
+      entidad_id:v.id||null,
+      detalle:{
+        nombre:"Vivos",
+        vivo_id:v.id||null,
+        fecha:v.fecha,
+        tema:v.tema,
+        entraron:n(v.entraron),
+        promedio:n(v.promedio),
+        hablaron:n(v.hablaron),
+        compraron:n(v.compraron)
+      }
+    };
+  }
 
   function notaComoHistorial(n,clienteMap={}){
     const d=n.detalle||{};
@@ -2556,6 +2584,7 @@ function HistorialView({t}){
     else if(tipo==="pago"||contenido.toLowerCase().includes("transferencia"))accion="pago / transferencia";
     else if(tipo==="drive_pending")accion="Drive pendiente";
     else if(tipo==="caja")accion="registró caja";
+    else if(tipo==="vivo")accion=d.accion||contenido||"vivo";
     else if(tipo&&tipo!=="nota")accion=tipo;
     return{
       id:`nota-${n.id}`,
@@ -2627,10 +2656,11 @@ function HistorialView({t}){
     let alive=true;
     async function load(){
       setLoading(true);
-      const [hRes,nRes,iRes,cRes]=await Promise.all([
+      const [hRes,nRes,iRes,vRes,cRes]=await Promise.all([
         supabase.from("historial_cambios").select("*").order("created_at",{ascending:false}).limit(500),
         supabase.from("notas_cliente").select("*").order("created_at",{ascending:false}).limit(500),
         supabase.from("ingresos").select("*").order("created_at",{ascending:false}).limit(500),
+        supabase.from("vivos_metricas").select("*").order("created_at",{ascending:false}).limit(500),
         supabase.from("clientes").select("id,nombre,email").limit(2000)
       ]);
       const clientesMap={};
@@ -2647,7 +2677,8 @@ function HistorialView({t}){
       const ingresosExtra=(iRes.error?[]:(iRes.data||[]))
         .filter(i=>i.id&&!existentesIngreso.has(String(i.id)))
         .map(ingresoComoHistorial);
-      const combinado=dedupeHistorial([...histBase,...notasExtra,...ingresosExtra]);
+      const vivosExtra=(vRes.error?[]:(vRes.data||[])).map(vivoComoHistorial);
+      const combinado=dedupeHistorial([...histBase,...notasExtra,...vivosExtra,...ingresosExtra]);
       if(alive){setHist(combinado);setLoading(false);}
     }
     load();
@@ -2690,7 +2721,7 @@ function HistorialView({t}){
       pendiente_transferencia:"Estado",estado:"Estado",ingreso_id:"Ingreso",fecha_recepcion:"Fecha de recepción",caja_id:"Caja",pendiente_id:"Pendiente",
       nota:"Nota",contenido:"Contenido",cliente:"Cliente",rollback:"Reversión",caja_eliminada:"Caja eliminada",origen:"Origen",venta:"Venta"
     };
-    return Object.entries(d).filter(([k])=>k!=="nombre").map(([k,v])=>{
+    return Object.entries(d).filter(([k])=>k!=="nombre"&&k!=="accion").map(([k,v])=>{
       let valor=v;
       if(k==="pendiente_transferencia")valor=v?"Pendiente de recepción":"Cobrado";
       if(k==="fecha_recepcion")valor=formatDate(v);
