@@ -920,6 +920,28 @@ function makeS(t){
       colorScheme:t.dark?"dark":"light",
       boxShadow:"0 1px 2px rgba(16,24,40,.025)"
     },
+    select:{
+      width:"100%",
+      padding:"11px 38px 11px 13px",
+      borderRadius:12,
+      border:`1px solid ${t.inputBorder}`,
+      fontSize:14,
+      outline:"none",
+      boxSizing:"border-box",
+      background:t.inputBg,
+      backgroundColor:t.inputBg,
+      backgroundClip:"padding-box",
+      color:t.inputText,
+      colorScheme:t.dark?"dark":"light",
+      boxShadow:"0 1px 2px rgba(16,24,40,.025)",
+      appearance:"none",
+      WebkitAppearance:"none",
+      MozAppearance:"none",
+      backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(t.inputText||"#ffffff")}' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+      backgroundRepeat:"no-repeat",
+      backgroundPosition:"right 12px center",
+      backgroundSize:"14px 14px"
+    },
     label:{display:"block",fontSize:10.5,fontWeight:850,color:t.textMuted,marginBottom:7,letterSpacing:"0.075em",textTransform:"uppercase"},
     table:{width:"100%",borderCollapse:"separate",borderSpacing:0,fontSize:14,background:t.cardBg},
     td:   {padding:"13px 16px",borderBottom:`1px solid ${t.tdBorder}`,color:t.text,verticalAlign:"middle"},
@@ -2155,15 +2177,18 @@ function Field({label,children,spanAll=false,t}){
 }
 
 // ─── Vista Vivos ──────────────────────────────────────────────────────────────
-function VivosView({t,userEmail}){
+function VivosView({t,userEmail,askConfirm}){
   const S=makeS(t);const btn=makeBtn(t);
   const[rows,setRows]=useState([]);
   const[loading,setLoading]=useState(true);
   const[saving,setSaving]=useState(false);
   const[error,setError]=useState("");
-  const[form,setForm]=useState({fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""});
+  const initialForm={fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""};
+  const[form,setForm]=useState(initialForm);
+  const[editingId,setEditingId]=useState(null);
   const ref=useRef(null);
   const pag=usePagination(rows,PAGE.hist);
+  function resetForm(){setForm({...initialForm});setEditingId(null);}
 
   async function fetchVivos(){
     setLoading(true);setError("");
@@ -2185,6 +2210,39 @@ function VivosView({t,userEmail}){
   useEffect(()=>{fetchVivos();},[]);
 
   function n(v){return Math.max(0,Math.round(safeNum(v)));}
+  function editarRegistro(r){
+    setEditingId(r.id);
+    setForm({
+      fecha:dateOnly(r.fecha)||toISODate(getToday()),
+      tema:r.tema||TEMAS_VIVOS[0],
+      entraron:String(n(r.entraron)),
+      promedio:String(n(r.promedio)),
+      hablaron:String(n(r.hablaron)),
+      compraron:String(n(r.compraron))
+    });
+    ref.current?.scrollIntoView?.({behavior:"smooth",block:"start"});
+  }
+  async function eliminarRegistro(id){
+    setError("");
+    const{error:e}=await supabase.from("vivos_metricas").delete().eq("id",id);
+    if(e){setError("No se pudo eliminar el vivo.");return;}
+    setRows(prev=>prev.filter(r=>r.id!==id));
+    if(editingId===id)resetForm();
+  }
+  function confirmarEliminarRegistro(r){
+    const msg=`¿Eliminar el vivo de ${formatDate(r.fecha)} sobre ${r.tema}? Esta acción no se puede deshacer.`;
+    if(askConfirm)askConfirm("Eliminar vivo",msg,()=>eliminarRegistro(r.id),{danger:true,label:"Eliminar"});
+    else if(window.confirm(msg))eliminarRegistro(r.id);
+  }
+  const actionBtn=(danger=false)=>({
+    ...btn(false),
+    padding:"6px 10px",
+    fontSize:12,
+    lineHeight:1,
+    minWidth:36,
+    background:danger?"rgba(239,68,68,0.10)":t.btnLtBg,
+    color:danger?"#ef4444":t.btnLtTx
+  });
   async function guardarVivo(){
     if(!form.fecha){setError("Cargá la fecha del vivo.");return;}
     if(!TEMAS_VIVOS.includes(form.tema)){setError("Elegí un tema válido.");return;}
@@ -2198,11 +2256,19 @@ function VivosView({t,userEmail}){
       creado_por:userEmail||"Sistema"
     };
     setSaving(true);setError("");
+    if(editingId){
+      const{data,error:e}=await supabase.from("vivos_metricas").update(payload).eq("id",editingId).select().single();
+      setSaving(false);
+      if(e){setError("No se pudo actualizar el vivo.");return;}
+      setRows(prev=>prev.map(r=>r.id===editingId?(data||{...r,...payload}):r));
+      resetForm();
+      return;
+    }
     const{data,error:e}=await supabase.from("vivos_metricas").insert([payload]).select().single();
     setSaving(false);
     if(e){setError("No se pudo guardar. Revisá que la tabla vivos_metricas exista y tenga permisos.");return;}
     setRows(prev=>[data||{...payload,id:`tmp-${Date.now()}`,created_at:new Date().toISOString()},...prev]);
-    setForm({fecha:toISODate(getToday()),tema:TEMAS_VIVOS[0],entraron:"",promedio:"",hablaron:"",compraron:""});
+    resetForm();
   }
 
   const stats=useMemo(()=>{
@@ -2262,12 +2328,12 @@ function VivosView({t,userEmail}){
         <MetricCard title="Media promedio" value={stats.promedioAvg} sub="promedio por vivo" t={t}/>
         <MetricCard title="Hablaron" value={stats.hablaron} sub="personas que consultaron" t={t}/>
         <MetricCard title="Compraron" value={stats.compraron} sub={`Conv. entrada ${stats.conversionEntrada}%`} t={t}/>
-        <MetricCard title="Conv. charla" value={`${stats.conversionCharla}%`} sub="compras ÷ consultas" t={t}/>
+        <MetricCard title="Conversión" value={`${stats.conversionCharla}%`} sub="compras ÷ consultas" t={t}/>
       </div>
 
       <div style={S.card}>
         <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:6}}>Registrar vivo</h3>
-        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables.</div>
+        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables y puedas editar o eliminar cualquier registro después.</div>
         {error&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:12,border:`1px solid ${t.danger}`,background:"rgba(239,68,68,.08)",color:t.danger,fontSize:13,fontWeight:700}}>{error}</div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
           <Field label="Fecha del vivo" t={t}><input type="date" style={S.input} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></Field>
@@ -2281,9 +2347,10 @@ function VivosView({t,userEmail}){
           <Field label="Personas que hablaron" t={t}><input type="number" min="0" style={S.input} value={form.hablaron} onChange={e=>setForm({...form,hablaron:e.target.value})} placeholder="Ej. 18"/></Field>
           <Field label="Compraron ese día" t={t}><input type="number" min="0" style={S.input} value={form.compraron} onChange={e=>setForm({...form,compraron:e.target.value})} placeholder="Ej. 5"/></Field>
         </div>
-        <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:10}}>
-          <button style={btn(false)} onClick={fetchVivos} disabled={loading}>Actualizar</button>
-          <button style={btn(false,true)} onClick={guardarVivo} disabled={saving}>{saving?"Guardando...":"Guardar vivo"}</button>
+        <div style={{marginTop:16,display:"flex",justifyContent:"flex-end",gap:10,flexWrap:"wrap"}}>
+          {editingId&&<button style={btn(false)} onClick={resetForm} disabled={saving}>Cancelar edición</button>}
+          <button style={btn(false)} onClick={fetchVivos} disabled={loading||saving}>Actualizar</button>
+          <button style={btn(false,true)} onClick={guardarVivo} disabled={saving}>{saving?"Guardando...":editingId?"Guardar cambios":"Guardar vivo"}</button>
         </div>
       </div>
 
@@ -2305,7 +2372,11 @@ function VivosView({t,userEmail}){
                     <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
                     <div style={{fontSize:12,color:t.textMuted}}>Compras ÷ entraron: {n(r.entraron)?Math.round((n(r.compraron)/n(r.entraron))*1000)/10:0}%</div>
                   </div>
-                  <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
+                    <button title="Editar vivo" style={actionBtn(false)} onClick={()=>editarRegistro(r)}>✏️</button>
+                    <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
+                  </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
                   <div><b style={{color:t.text}}>Entraron:</b> {n(r.entraron)}{miniBar(n(r.entraron))}</div>
@@ -2347,7 +2418,7 @@ function VivosView({t,userEmail}){
           <>
             <div className="sc-table-wrap" style={{overflowX:"auto"}}>
               <table style={S.table}>
-                <thead><TableHeader cols={["Fecha","Tema","Entraron","Media","Hablaron","Compraron"]} t={t}/></thead>
+                <thead><TableHeader cols={["Fecha","Tema","Entraron","Media","Hablaron","Compraron","Acciones"]} t={t}/></thead>
                 <tbody>
                   {pag.rows.map(r=>(
                     <tr key={r.id}>
@@ -2357,6 +2428,12 @@ function VivosView({t,userEmail}){
                       <td style={S.td}>{n(r.promedio)}</td>
                       <td style={S.td}>{n(r.hablaron)}</td>
                       <td style={{...S.td,fontWeight:900,color:t.accent}}>{n(r.compraron)}</td>
+                      <td style={S.td}>
+                        <div style={{display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
+                          <button title="Editar vivo" style={actionBtn(false)} onClick={()=>editarRegistro(r)}>✏️</button>
+                          <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2628,6 +2705,8 @@ export default function App(){
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
   const t=getT(dark);const S=makeS(t);const btn=makeBtn(t);const navBtn=makeNavBtn(t);
+  const topNavBtn=(active=false)=>({...navBtn(active),padding:"8px 11px",fontSize:12.5,minHeight:39,whiteSpace:"nowrap"});
+  const topMiniBtn={padding:"8px 10px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:12.5,fontWeight:700,minHeight:39,whiteSpace:"nowrap"};
 
   // Ctrl+K
   useEffect(()=>{
@@ -4840,31 +4919,31 @@ export default function App(){
       <div style={{maxWidth:1440,margin:"0 auto",padding:"30px 36px 52px"}} className="sc-pad">
 
         {/* ── Header ── */}
-        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"center",marginBottom:30,flexWrap:"wrap",padding:"16px 18px",borderRadius:18}}>
-          <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div className="sc-header sc-topbar" style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",marginBottom:30,flexWrap:"nowrap",padding:"14px 16px",borderRadius:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
             <img src={LOGO_SRC} alt="Logo" style={{width:46,height:46,objectFit:"contain",filter:dark?"drop-shadow(0 8px 18px rgba(0,0,0,.30))":"drop-shadow(0 8px 16px rgba(178,124,24,.14))"}} onError={e=>{e.target.style.display="none";}}/>
             <div>
-              <h1 style={{margin:0,fontSize:24,fontWeight:950,color:t.text,letterSpacing:"-0.045em",lineHeight:1}}>Seminario Cripto</h1>
+              <h1 style={{margin:0,fontSize:22,fontWeight:950,color:t.text,letterSpacing:"-0.045em",lineHeight:1}}>Seminario Cripto</h1>
               <div className="sc-hide-mobile" style={{color:t.textMuted,fontSize:13,marginTop:5}}>Panel de gestión comercial y operativa</div>
             </div>
           </div>
-          <div className="sc-nav" style={{display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
-            <button onClick={()=>setBusquedaRapida(true)} style={navBtn(false)}>🔍 Buscar</button>
-            <button style={navBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
+          <div className="sc-nav" style={{display:"flex",gap:7,flexWrap:"nowrap",alignItems:"center",overflowX:"auto",paddingBottom:2,scrollbarWidth:"thin"}}>
+            <button onClick={()=>setBusquedaRapida(true)} style={topNavBtn(false)}>Buscar</button>
+            <button style={topNavBtn(activeView==="operativa")} onClick={()=>handleSetView("operativa")}>
               Operativa
               {totalCriticos>0&&<span style={{marginLeft:5,background:"#ef4444",color:"#fff",borderRadius:999,fontSize:10,fontWeight:800,padding:"1px 5px",verticalAlign:"middle"}}>{totalCriticos}</span>}
             </button>
-            <button style={navBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
-            <button style={navBtn(activeView==="semanal")} onClick={()=>handleSetView("semanal")}>Semanal</button>
-            <button style={navBtn(activeView==="caja")} onClick={()=>handleSetView("caja")}>Caja</button>
-            <button style={navBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
-            <button style={navBtn(activeView==="vivos")} onClick={()=>handleSetView("vivos")}>Vivos</button>
-            <button style={navBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
-            <button style={{...btn(false,true),padding:"10px 14px"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
-            <button onClick={()=>setDark(!dark)} title={dark?"Modo claro":"Modo oscuro"} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",color:t.text,fontSize:15,minWidth:42}}>
+            <button style={topNavBtn(activeView==="dashboard")} onClick={()=>handleSetView("dashboard")}>Dashboard</button>
+            <button style={topNavBtn(activeView==="semanal")} onClick={()=>handleSetView("semanal")}>Semanal</button>
+            <button style={topNavBtn(activeView==="caja")} onClick={()=>handleSetView("caja")}>Caja</button>
+            <button style={topNavBtn(activeView==="graficos")} onClick={()=>handleSetView("graficos")}>Gráficos</button>
+            <button style={topNavBtn(activeView==="vivos")} onClick={()=>handleSetView("vivos")}>Vivos</button>
+            <button style={topNavBtn(activeView==="historial")} onClick={()=>handleSetView("historial")}>Historial</button>
+            <button style={{...btn(false,true),padding:"8px 12px",fontSize:13,minHeight:40,whiteSpace:"nowrap"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Cerrar":"+ Nuevo"}</button>
+            <button onClick={()=>setDark(!dark)} title={dark?"Modo claro":"Modo oscuro"} style={{...topMiniBtn,minWidth:40,fontSize:14}}>
               {dark?"☀":"☾"}
             </button>
-            <button onClick={logout} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${t.navInBr}`,background:t.navInBg,cursor:"pointer",fontWeight:600,color:t.text,fontSize:13}}>Salir</button>
+            <button onClick={logout} style={topMiniBtn}>Salir</button>
           </div>
         </div>
 
@@ -4875,7 +4954,7 @@ export default function App(){
         )}
 
         {/* ── VIVOS ── */}
-        {activeView==="vivos"&&<VivosView t={t} userEmail={user?.email}/>}
+        {activeView==="vivos"&&<VivosView t={t} userEmail={user?.email} askConfirm={askConfirm}/>} 
 
         {/* ── HISTORIAL ── */}
         {activeView==="historial"&&<HistorialView t={t}/>}
