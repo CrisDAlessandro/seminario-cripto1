@@ -2377,13 +2377,12 @@ function VivosView({t,userEmail,askConfirm}){
         <MetricCard title="Entraron" value={stats.entraron} sub="total de asistentes únicos" t={t}/>
         <MetricCard title="Media promedio" value={stats.promedioAvg} sub="promedio por vivo" t={t}/>
         <MetricCard title="Hablaron" value={stats.hablaron} sub="personas que consultaron" t={t}/>
-        <MetricCard title="Compraron" value={stats.compraron} sub={`Conv. entrada ${stats.conversionEntrada}%`} t={t}/>
+        <MetricCard title="Compraron" value={stats.compraron} sub={`Conversión ${stats.conversionEntrada}%`} t={t}/>
         <MetricCard title="Conversión" value={`${stats.conversionCharla}%`} sub="compras ÷ consultas" t={t}/>
       </div>
 
       <div style={S.card}>
         <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:6}}>Registrar vivo</h3>
-        <div style={{fontSize:12,color:t.textMuted,marginBottom:16}}>Carga rápida para Bahiano. El tema se elige desde lista fija para que las métricas queden comparables.</div>
         {error&&<div style={{marginBottom:12,padding:"10px 12px",borderRadius:12,border:`1px solid ${t.danger}`,background:"rgba(239,68,68,.08)",color:t.danger,fontSize:13,fontWeight:700}}>{error}</div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
           <Field label="Fecha del vivo" t={t}><input type="date" style={S.input} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></Field>
