@@ -1532,6 +1532,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
           {/* Acciones */}
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4,flexWrap:"wrap"}}>
             {["mensual","anual"].includes(normalizeServicio(cliente.servicio))&&cliente.email&&<button style={btn(false)} onClick={()=>onSincronizarDrive&&onSincronizarDrive(cliente)}>Reenviar acceso Drive</button>}
+            {cliente.__requiereFixImpago&&<button style={btn(false,true)} onClick={()=>cliente.__fixImpago?.(cliente)}>Corregir crédito</button>}
             {normalizeServicio(cliente.servicio)==="anual"&&<button style={btn(false)} onClick={()=>onEditarDeuda&&onEditarDeuda(cliente)}>Editar deuda</button>}
             <button style={btn(false)} onClick={()=>{onClose();onAbrirRenovar(cliente);}}>Renovar</button>
             <button style={{...btn(false),background:"rgba(239,68,68,0.1)",color:"#ef4444"}} onClick={()=>onEliminar(cliente)}>Eliminar</button>
@@ -2828,6 +2829,7 @@ export default function App(){
   const deudRef=useRef(null);const clasesRef=useRef(null);
   const ingRef=useRef(null);const critRef=useRef(null);const pendRef=useRef(null);const semanaActualRef=useRef(null);const cajaRef=useRef(null);
   const actionLocks=useRef(new Set());
+  const impagoRepairLocks=useRef(new Set());
 
   useEffect(()=>{applyDateColorScheme(dark);},[dark]);
 
@@ -2878,6 +2880,71 @@ export default function App(){
     const fechaVencimiento=toISODate(vencDate);
     const dias=Math.max(0,diffDays(parseISODate(fechaInicio),parseISODate(fechaVencimiento)));
     return{pagado,meses,fechaInicio,fechaVencimiento,dias};
+  }
+  function esConversionImpagoAnual(cliente){
+    const txt=String(cliente?.notas||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    return normalizeServicio(cliente?.servicio)==="mensual"&&(
+      txt.includes("saldo anual impago")||
+      txt.includes("credito anual impago")||
+      txt.includes("se paso a plan trader")||
+      txt.includes("se pasa a plan trader")
+    );
+  }
+  function creditoImpagoEstaMal(cliente,credito){
+    const vencActual=dateOnly(cliente?.fecha_vencimiento||cliente?.vencimiento||resolveDueDate(cliente));
+    const inicioActual=dateOnly(cliente?.fecha_inicio);
+    const durActual=safeNum(cliente?.duracion_dias);
+    return (
+      vencActual!==credito.fechaVencimiento ||
+      inicioActual!==credito.fechaInicio ||
+      durActual!==credito.dias ||
+      normalizeServicio(cliente?.servicio)!=="mensual" ||
+      safeNum(cliente?.deuda_restante)!==0 ||
+      safeNum(cliente?.monto)!==svcAmount("mensual")
+    );
+  }
+  async function repararCreditoImpagoConvertido(cliente,{auto=false}={}){
+    const credito=calcularCreditoMensualPorImpago(cliente);
+    const mensual=svcAmount("mensual");
+    if(!cliente?.id||credito.meses<=0)return false;
+    const notasBase=String(cliente.notas||"").trim();
+    const notaFix=`Corrección crédito anual impago: pagó USD ${credito.pagado}; ${credito.pagado}/${mensual} = ${credito.meses} mes(es) completos. Acceso desde ${formatDate(credito.fechaInicio)} hasta ${formatDate(credito.fechaVencimiento)}.`;
+    const payload={
+      servicio:"mensual",
+      monto:mensual,
+      duracion_dias:credito.dias,
+      deuda_restante:0,
+      estado_manual:"activo",
+      fecha_inicio:credito.fechaInicio,
+      fecha_vencimiento:credito.fechaVencimiento,
+      notas:notasBase.includes(notaFix)?notasBase:(notasBase?`${notasBase} · ${notaFix}`:notaFix)
+    };
+    const localPayload={...payload,vencimiento:credito.fechaVencimiento};
+    const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    if(error){
+      if(!auto)toast.error("No se pudo corregir el crédito del impago anual");
+      return false;
+    }
+    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...localPayload}:c));
+    setClienteDetalle(prev=>prev&&String(prev.id)===String(cliente.id)?{...prev,...localPayload}:prev);
+    await logH(user?.email||"Sistema","corrigió crédito anual impago","cliente",cliente.id,{
+      nombre:cliente.nombre,
+      email:cliente.email,
+      pagado:credito.pagado,
+      mensual,
+      meses_credito:credito.meses,
+      dias_credito:credito.dias,
+      fecha_inicio:credito.fechaInicio,
+      fecha_vencimiento:credito.fechaVencimiento,
+      vencimiento_anterior:cliente.fecha_vencimiento||cliente.vencimiento||null,
+      nuevo_servicio:"mensual"
+    });
+    await logNC(cliente.id,user?.email||"Sistema","estado",
+      `Corrección crédito anual impago: pagó USD ${credito.pagado}; corresponde Plan trader por ${credito.meses} mes(es), desde ${formatDate(credito.fechaInicio)} hasta ${formatDate(credito.fechaVencimiento)}.`,
+      {pagado:credito.pagado,mensual,meses_credito:credito.meses,dias_credito:credito.dias,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
+    );
+    if(!auto)toast.success(`${cliente.nombre} corregido hasta ${formatDate(credito.fechaVencimiento)}`);
+    return true;
   }
 
   function driveQueueKey(accion,email){
@@ -3021,6 +3088,19 @@ export default function App(){
   }
   async function refetch(){await Promise.all([fetchClientes(),fetchIngresos(),fetchTransferenciasRecibidas(),fetchVentasPendientesNotas(),fetchCajaMovimientos()]);}
   useEffect(()=>{fetchClientes();fetchIngresos();fetchTransferenciasRecibidas();fetchVentasPendientesNotas();fetchCajaMovimientos();limpiarHistorial();},[]);
+  useEffect(()=>{
+    if(!clientes.length||!ingresos.length)return;
+    clientes.forEach(c=>{
+      if(!esConversionImpagoAnual(c))return;
+      const credito=calcularCreditoMensualPorImpago(c);
+      if(credito.meses<=0||!credito.fechaInicio||!credito.fechaVencimiento)return;
+      if(!creditoImpagoEstaMal(c,credito))return;
+      const key=`${c.id}:${credito.fechaInicio}:${credito.fechaVencimiento}:${credito.dias}`;
+      if(impagoRepairLocks.current.has(key))return;
+      impagoRepairLocks.current.add(key);
+      repararCreditoImpagoConvertido(c,{auto:true});
+    });
+  },[clientes,ingresos]);
   useEffect(()=>{
     if(!user)return;
     procesarPendientesDrive(true);
@@ -5076,7 +5156,12 @@ export default function App(){
       </ConfirmModal>}
       {busquedaRapida&&<BusquedaRapida clientes={computed} onSelect={c=>setClienteDetalle(c)} onClose={()=>setBusquedaRapida(false)} t={t}/>}
       {clienteDetalle&&(
-        <ClienteDetailModal cliente={clienteDetalle} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
+        <ClienteDetailModal cliente={(()=>{
+          const c=clienteDetalle;
+          if(!esConversionImpagoAnual(c))return c;
+          const credito=calcularCreditoMensualPorImpago(c);
+          return {...c,__requiereFixImpago:creditoImpagoEstaMal(c,credito),__fixImpago:cc=>repararCreditoImpagoConvertido(cc,{auto:false})};
+        })()} ingresos={ingresos} allClientes={computed} userEmail={user?.email} onClose={()=>setClienteDetalle(null)}
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
           onNotaGuardada={()=>toast.success("Nota guardada")}
