@@ -2849,16 +2849,16 @@ export default function App(){
   function pagosRelacionadosACliente(cliente){
     if(!cliente)return[];
     const personaBase=personaKeyFromData(cliente);
-    const inicio=dateOnly(cliente.fecha_inicio);
+    // No filtrar por fecha_inicio: si una conversión anterior pisó la fecha,
+    // se perdería el pago original. Para calcular crédito anual impago necesitamos
+    // todos los pagos de la misma persona/cliente.
     return (ingresos||[]).filter(i=>{
       const mismoId=String(i.cliente_id||"")===String(cliente.id||"");
       const mismaPersona=personaBase&&(
         personaKeyFromData({nombre:i.cliente_nombre,email:i.email})===personaBase ||
         personaCoincide({nombre:i.cliente_nombre,email:i.email},cliente)
       );
-      if(!mismoId&&!mismaPersona)return false;
-      const fp=dateOnly(i.fecha_pago||i.created_at);
-      return !inicio||!fp||fp>=inicio;
+      return !!(mismoId||mismaPersona);
     });
   }
   function montoPagadoCliente(cliente){
