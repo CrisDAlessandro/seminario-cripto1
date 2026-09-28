@@ -2447,14 +2447,7 @@ function VivosView({t,userEmail,askConfirm}){
       </div>
 
       <div ref={evoRef} style={S.card}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
-          <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Evolución vivo a vivo</h3>
-          {!loading&&vivosEvolucion.length>0&&(
-            <div style={{fontSize:12,color:t.textMuted,fontWeight:700}}>
-              Mostrando {((pagEvo.page-1)*10)+1}-{Math.min(pagEvo.page*10,vivosEvolucion.length)} de {vivosEvolucion.length}
-            </div>
-          )}
-        </div>
+        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Evolución vivo a vivo</h3>
         {loading?<Skeleton rows={5} cols={4} t={t}/>:!vivosEvolucion.length?<div style={{color:t.textMuted}}>Sin vivos cargados todavía.</div>:(
           <>
             <div style={{display:"grid",gap:12}}>
@@ -2508,38 +2501,6 @@ function VivosView({t,userEmail,askConfirm}){
         )}
       </div>
 
-      <div style={S.card}>
-        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Registros cargados</h3>
-        {loading?<Skeleton rows={5} cols={6} t={t}/>:!rows.length?<div style={{color:t.textMuted}}>Sin registros.</div>:(
-          <>
-            <div className="sc-table-wrap" style={{overflowX:"auto"}}>
-              <table style={S.table}>
-                <thead><TableHeader cols={["Fecha","Tema","Entraron","Media","Hablaron","Compraron","Acciones"]} t={t}/></thead>
-                <tbody>
-                  {pag.rows.map(r=>[
-                    <tr key={`${r.id}-row`}>
-                      <td style={S.td}>{formatDate(r.fecha)}</td>
-                      <td style={{...S.td,fontWeight:800,color:t.text}}>{r.tema}</td>
-                      <td style={S.td}>{n(r.entraron)}</td>
-                      <td style={S.td}>{n(r.promedio)}</td>
-                      <td style={S.td}>{n(r.hablaron)}</td>
-                      <td style={{...S.td,fontWeight:900,color:t.accent}}>{n(r.compraron)}</td>
-                      <td style={S.td}>
-                        <div style={{display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
-                          <button title="Editar vivo" style={actionBtn(false)} onClick={()=>editarRegistro(r)}>✏️</button>
-                          <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
-                        </div>
-                      </td>
-                    </tr>,
-                    editingId===r.id?<tr key={`${r.id}-edit`}><td colSpan={7} style={{...S.td,background:t.dark?"#0b111d":"#fbfcfe"}}>{editPanel(r)}</td></tr>:null
-                  ])}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={pag.page} totalPages={pag.totalPages} setPage={pag.setPage} sectionRef={ref} t={t}/>
-          </>
-        )}
-      </div>
     </div>
   );
 }
