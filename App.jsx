@@ -2204,6 +2204,7 @@ function VivosView({t,userEmail,askConfirm}){
   const[editingId,setEditingId]=useState(null);
   const[editForm,setEditForm]=useState(initialForm);
   const ref=useRef(null);
+  const evoRef=useRef(null);
   const pag=usePagination(rows,PAGE.hist);
   function resetForm(){setForm({...initialForm});}
   function resetEdit(){setEditingId(null);setEditForm({...initialForm});}
@@ -2361,6 +2362,13 @@ function VivosView({t,userEmail,askConfirm}){
     };
   },[rows]);
 
+  const vivosEvolucion=useMemo(()=>(
+    (stats.ordered||[]).slice().sort((a,b)=>
+      String(b.fecha||"").localeCompare(String(a.fecha||""))||
+      String(b.created_at||"").localeCompare(String(a.created_at||""))
+    )
+  ),[stats.ordered]);
+  const pagEvo=usePagination(vivosEvolucion,10);
   const pctConversionConsultas=(compraron,hablaron)=>{
     const h=n(hablaron),c=n(compraron);
     if(!h||!c)return "0%";
@@ -2438,33 +2446,43 @@ function VivosView({t,userEmail,askConfirm}){
         <div style={S.card}><div style={{fontSize:11,color:t.textMuted,fontWeight:900,textTransform:"uppercase"}}>Más compras</div><div style={{fontSize:20,fontWeight:900,color:t.text,marginTop:6}}>{stats.bestCompraron?.tema||"—"}</div><div style={{fontSize:12,color:t.textMuted,marginTop:4}}>{stats.bestCompraron?`${stats.bestCompraron.compraronTotal} compras totales`:"Sin datos"}</div></div>
       </div>
 
-      <div style={S.card}>
-        <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Evolución vivo a vivo</h3>
-        {loading?<Skeleton rows={5} cols={4} t={t}/>:!stats.ordered.length?<div style={{color:t.textMuted}}>Sin vivos cargados todavía.</div>:(
-          <div style={{display:"grid",gap:12}}>
-            {stats.ordered.map(r=>(
-              <div key={r.id} style={{padding:"12px 14px",border:`1px solid ${editingId===r.id?t.accent:t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
-                  <div>
-                    <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
-                    <div style={{fontSize:12,color:t.textMuted}}>Conversión: {pctConversionConsultas(r.compraron,r.hablaron)} <span style={{opacity:.75}}>(compras ÷ consultas)</span></div>
+      <div ref={evoRef} style={S.card}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:16}}>
+          <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:18}}>Evolución vivo a vivo</h3>
+          {!loading&&vivosEvolucion.length>0&&(
+            <div style={{fontSize:12,color:t.textMuted,fontWeight:700}}>
+              Mostrando {((pagEvo.page-1)*10)+1}-{Math.min(pagEvo.page*10,vivosEvolucion.length)} de {vivosEvolucion.length}
+            </div>
+          )}
+        </div>
+        {loading?<Skeleton rows={5} cols={4} t={t}/>:!vivosEvolucion.length?<div style={{color:t.textMuted}}>Sin vivos cargados todavía.</div>:(
+          <>
+            <div style={{display:"grid",gap:12}}>
+              {pagEvo.rows.map(r=>(
+                <div key={r.id} style={{padding:"12px 14px",border:`1px solid ${editingId===r.id?t.accent:t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                    <div>
+                      <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
+                      <div style={{fontSize:12,color:t.textMuted}}>Conversión: {pctConversionConsultas(r.compraron,r.hablaron)} <span style={{opacity:.75}}>(compras ÷ consultas)</span></div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
+                      <button title="Editar vivo" style={actionBtn(false)} onClick={()=>editarRegistro(r)}>✏️</button>
+                      <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
+                    </div>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
-                    <button title="Editar vivo" style={actionBtn(false)} onClick={()=>editarRegistro(r)}>✏️</button>
-                    <button title="Eliminar vivo" style={actionBtn(true)} onClick={()=>confirmarEliminarRegistro(r)}>🗑</button>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
+                    <div><b style={{color:t.text}}>Entraron:</b> {n(r.entraron)}{miniBar(n(r.entraron))}</div>
+                    <div><b style={{color:t.text}}>Media:</b> {n(r.promedio)}{miniBar(n(r.promedio),"#60a5fa")}</div>
+                    <div><b style={{color:t.text}}>Hablaron:</b> {n(r.hablaron)}{miniBar(n(r.hablaron),"#f59e0b")}</div>
+                    <div><b style={{color:t.text}}>Compraron:</b> {n(r.compraron)}{miniBar(n(r.compraron),"#22c55e")}</div>
                   </div>
+                  {editPanel(r)}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
-                  <div><b style={{color:t.text}}>Entraron:</b> {n(r.entraron)}{miniBar(n(r.entraron))}</div>
-                  <div><b style={{color:t.text}}>Media:</b> {n(r.promedio)}{miniBar(n(r.promedio),"#60a5fa")}</div>
-                  <div><b style={{color:t.text}}>Hablaron:</b> {n(r.hablaron)}{miniBar(n(r.hablaron),"#f59e0b")}</div>
-                  <div><b style={{color:t.text}}>Compraron:</b> {n(r.compraron)}{miniBar(n(r.compraron),"#22c55e")}</div>
-                </div>
-                {editPanel(r)}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            <Pagination page={pagEvo.page} totalPages={pagEvo.totalPages} setPage={pagEvo.setPage} sectionRef={evoRef} t={t} compact/>
+          </>
         )}
       </div>
 
