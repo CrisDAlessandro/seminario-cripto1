@@ -2866,9 +2866,14 @@ export default function App(){
     return total>0?total:safeNum(cliente?.monto);
   }
   function calcularCreditoMensualPorImpago(cliente){
-    const pagado=montoPagadoCliente(cliente);
+    const pagos=pagosRelacionadosACliente(cliente);
+    const pagado=pagos.reduce((a,i)=>a+safeNum(i.monto),0)||safeNum(cliente?.monto);
     const meses=mesesTraderPorMontoPagado(pagado);
-    const fechaInicio=dateOnly(cliente?.fecha_inicio)||dateOnly(cliente?.created_at)||toISODate(getToday());
+    const fechas=[
+      dateOnly(cliente?.fecha_inicio),
+      ...pagos.map(i=>dateOnly(i.fecha_pago||i.created_at))
+    ].filter(Boolean).sort();
+    const fechaInicio=fechas[0]||dateOnly(cliente?.created_at)||toISODate(getToday());
     const vencDate=addCalendarMonths(fechaInicio,meses)||parseISODate(fechaInicio);
     const fechaVencimiento=toISODate(vencDate);
     const dias=Math.max(0,diffDays(parseISODate(fechaInicio),parseISODate(fechaVencimiento)));
@@ -3766,7 +3771,7 @@ export default function App(){
     const dbPayload={
       servicio:"mensual",
       monto:mensual,
-      duracion_dias:30,
+      duracion_dias:credito.dias,
       deuda_restante:0,
       estado_manual:"activo",
       fecha_inicio:credito.fechaInicio,
@@ -3786,6 +3791,7 @@ export default function App(){
       pagado:credito.pagado,
       mensual,
       meses_credito:credito.meses,
+      dias_credito:credito.dias,
       nuevo_servicio:"mensual",
       monto:mensual,
       fecha_inicio:credito.fechaInicio,
@@ -3793,7 +3799,7 @@ export default function App(){
     });
     await logNC(cliente.id,user?.email,"estado",
       `Saldo anual impago: se eliminó deuda de USD ${deudaAnterior}. Pagó USD ${credito.pagado}; equivale a ${credito.meses} mes(es) completos de Plan trader. Vencimiento ajustado a ${formatDate(credito.fechaVencimiento)}.`,
-      {deuda_anterior:deudaAnterior,pagado:credito.pagado,mensual,meses_credito:credito.meses,nuevo_servicio:"mensual",monto:mensual,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
+      {deuda_anterior:deudaAnterior,pagado:credito.pagado,mensual,meses_credito:credito.meses,dias_credito:credito.dias,nuevo_servicio:"mensual",monto:mensual,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
     );
     toast.success(`${cliente.nombre} pasó a Plan trader hasta ${formatDate(credito.fechaVencimiento)}`);
     refetch();
