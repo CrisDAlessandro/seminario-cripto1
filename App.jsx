@@ -162,6 +162,20 @@ function toISODate(d) {
 function addDays(ds, days) {
   const d = new Date(`${ds}T12:00:00`); d.setDate(d.getDate()+Number(days||0)); return d;
 }
+function addCalendarMonths(ds, months){
+  const base=parseISODate(ds);
+  if(!base||Number.isNaN(base.getTime()))return null;
+  const m=Math.max(0,Math.floor(Number(months)||0));
+  const y=base.getFullYear();
+  const month=base.getMonth()+m;
+  const day=base.getDate();
+  const first=new Date(y,month,1,12,0,0);
+  const lastDay=new Date(first.getFullYear(),first.getMonth()+1,0).getDate();
+  return new Date(first.getFullYear(),first.getMonth(),Math.min(day,lastDay),12,0,0);
+}
+function mesesTraderPorMontoPagado(monto){
+  return Math.max(0,Math.floor(safeNum(monto)/svcAmount("mensual")));
+}
 function dateOnly(ds){
   if(!ds)return null;
   return String(ds).slice(0,10);
@@ -2832,6 +2846,35 @@ export default function App(){
     setConfirm({title,message,onConfirm,danger,label,showVendedor,showRecibeFinal,showFecha,montoDefault,montoRenovacion:montoDefault,fechaRenovacion:fechaDefault||toISODate(getToday()),metodoPago:metodoDefault||"",recibeFinal:showRecibeFinal?"":"Cristian",onConfirmFn});
   }
 
+  function pagosRelacionadosACliente(cliente){
+    if(!cliente)return[];
+    const personaBase=personaKeyFromData(cliente);
+    const inicio=dateOnly(cliente.fecha_inicio);
+    return (ingresos||[]).filter(i=>{
+      const mismoId=String(i.cliente_id||"")===String(cliente.id||"");
+      const mismaPersona=personaBase&&(
+        personaKeyFromData({nombre:i.cliente_nombre,email:i.email})===personaBase ||
+        personaCoincide({nombre:i.cliente_nombre,email:i.email},cliente)
+      );
+      if(!mismoId&&!mismaPersona)return false;
+      const fp=dateOnly(i.fecha_pago||i.created_at);
+      return !inicio||!fp||fp>=inicio;
+    });
+  }
+  function montoPagadoCliente(cliente){
+    const total=pagosRelacionadosACliente(cliente).reduce((a,i)=>a+safeNum(i.monto),0);
+    return total>0?total:safeNum(cliente?.monto);
+  }
+  function calcularCreditoMensualPorImpago(cliente){
+    const pagado=montoPagadoCliente(cliente);
+    const meses=mesesTraderPorMontoPagado(pagado);
+    const fechaInicio=dateOnly(cliente?.fecha_inicio)||dateOnly(cliente?.created_at)||toISODate(getToday());
+    const vencDate=addCalendarMonths(fechaInicio,meses)||parseISODate(fechaInicio);
+    const fechaVencimiento=toISODate(vencDate);
+    const dias=Math.max(0,diffDays(parseISODate(fechaInicio),parseISODate(fechaVencimiento)));
+    return{pagado,meses,fechaInicio,fechaVencimiento,dias};
+  }
+
   function driveQueueKey(accion,email){
     return `${accion}:${normalizarEmailAcceso(email)}`;
   }
@@ -3715,29 +3758,44 @@ export default function App(){
       toast.error("Esta acción solo aplica a anuales con deuda pendiente");
       return;
     }
-    const fechaHoy=toISODate(getToday());
     const deudaAnterior=safeNum(cliente.deuda_restante);
-    const notaImpago=`Saldo anual impago dado de baja el ${formatDate(fechaHoy)}. Se pasa a Plan trader mensual sin deuda. Ajustar vencimiento manualmente según crédito tomado.`;
+    const credito=calcularCreditoMensualPorImpago(cliente);
+    const mensual=svcAmount("mensual");
+    const notaImpago=`Saldo anual impago dado de baja el ${formatDate(toISODate(getToday()))}. Pagó USD ${credito.pagado}; crédito mensual: ${credito.meses} mes(es) completos a USD ${mensual}. Se pasa a Plan trader sin deuda, con vencimiento ${formatDate(credito.fechaVencimiento)}.`;
     const notasBase=String(cliente.notas||"").trim();
-    const payload={
+    const dbPayload={
       servicio:"mensual",
-      monto:35,
+      monto:mensual,
       duracion_dias:30,
       deuda_restante:0,
       estado_manual:"activo",
-      fecha_inicio:fechaHoy,
-      fecha_vencimiento:toISODate(addDays(fechaHoy,30)),
+      fecha_inicio:credito.fechaInicio,
+      fecha_vencimiento:credito.fechaVencimiento,
       notas:notasBase?`${notasBase} · ${notaImpago}`:notaImpago
     };
-    const{error}=await supabase.from("clientes").update(payload).eq("id",cliente.id);
+    const localPayload={...dbPayload,vencimiento:credito.fechaVencimiento};
+    const{error}=await supabase.from("clientes").update(dbPayload).eq("id",cliente.id);
     if(error){toast.error("No se pudo pasar el cliente a mensual");return;}
-    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...payload}:c));
-    setClienteDetalle(prev=>prev&&String(prev.id)===String(cliente.id)?{...prev,...payload}:prev);
+    setClientes(prev=>prev.map(c=>String(c.id)===String(cliente.id)?{...c,...localPayload}:c));
+    setClienteDetalle(prev=>prev&&String(prev.id)===String(cliente.id)?{...prev,...localPayload}:prev);
     setDeudaCliente(null);
     setPagoCliente(null);
-    await logH(user?.email,"marcó saldo anual impago","cliente",cliente.id,{nombre:cliente.nombre,deuda_anterior:deudaAnterior,nuevo_servicio:"mensual",monto:35,fecha_inicio:fechaHoy,fecha_vencimiento:payload.fecha_vencimiento});
-    await logNC(cliente.id,user?.email,"estado",`Saldo anual impago: se eliminó deuda de USD ${deudaAnterior} y se pasó a Plan trader mensual. Ajustar vencimiento manualmente según crédito.`,{deuda_anterior:deudaAnterior,nuevo_servicio:"mensual",monto:35,fecha_inicio:fechaHoy,fecha_vencimiento:payload.fecha_vencimiento});
-    toast.success(`${cliente.nombre} pasó a mensual y salió de deudores`);
+    await logH(user?.email,"marcó saldo anual impago","cliente",cliente.id,{
+      nombre:cliente.nombre,
+      deuda_anterior:deudaAnterior,
+      pagado:credito.pagado,
+      mensual,
+      meses_credito:credito.meses,
+      nuevo_servicio:"mensual",
+      monto:mensual,
+      fecha_inicio:credito.fechaInicio,
+      fecha_vencimiento:credito.fechaVencimiento
+    });
+    await logNC(cliente.id,user?.email,"estado",
+      `Saldo anual impago: se eliminó deuda de USD ${deudaAnterior}. Pagó USD ${credito.pagado}; equivale a ${credito.meses} mes(es) completos de Plan trader. Vencimiento ajustado a ${formatDate(credito.fechaVencimiento)}.`,
+      {deuda_anterior:deudaAnterior,pagado:credito.pagado,mensual,meses_credito:credito.meses,nuevo_servicio:"mensual",monto:mensual,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
+    );
+    toast.success(`${cliente.nombre} pasó a Plan trader hasta ${formatDate(credito.fechaVencimiento)}`);
     refetch();
   }
 
@@ -3819,14 +3877,9 @@ export default function App(){
   const totalCriticos=vencimientosCriticos.hoy.length+vencimientosCriticos.gracia.length+vencimientosCriticos.vencidos.length;
   const vencenEstaSemana=useMemo(()=>computed.filter(c=>c.dias!=null&&c.dias>=0&&c.dias<=7&&c.estadoSistema==="activo").length,[computed]);
 
-  // Deudores con alerta — calcular meses gracia según monto pagado
-  // 100 = 4 meses, 150 = 5 meses, 200 = 7 meses, resto = 1 mes
-  function mesesGracia(montoDeuda) {
-    const m = safeNum(montoDeuda);
-    if (m >= 200) return 7;
-    if (m >= 150) return 5;
-    if (m >= 100) return 4;
-    return 1;
+  // Deudores con alerta — crédito real: monto pagado ÷ mensualidad, redondeado hacia abajo.
+  function mesesGracia(montoPagado) {
+    return mesesTraderPorMontoPagado(montoPagado);
   }
   const deudoresConAlerta = useMemo(() => {
     return computed.filter(c => {
@@ -5636,7 +5689,8 @@ export default function App(){
                   <tbody>
                     {deudPag.rows.map(c=>{
                       const diasDesdePago=c.fecha_inicio?diffDays(parseISODate(c.fecha_inicio),getToday()):null;
-                      const deudaVencida=diasDesdePago!=null&&diasDesdePago>30;
+                      const mesesCredito=mesesGracia(c.monto);
+                      const deudaVencida=diasDesdePago!=null&&diasDesdePago>(mesesCredito*30+GRACE_DAYS);
                       return(
                       <tr key={c.id}>
                         <td style={{...S.td,fontWeight:700,cursor:"pointer",color:t.accent}} onClick={()=>setClienteDetalle(c)}>{c.nombre}</td>
@@ -5657,7 +5711,7 @@ export default function App(){
                             <button
                               title="No paga el saldo anual restante y se pasa a mensual"
                               style={{...btn(false),padding:"6px 12px",fontSize:12}}
-                              onClick={()=>askConfirm("Pasar anual a mensual",`¿Marcar como impago el saldo restante de ${c.nombre}? Se elimina la deuda, pasa a Plan trader mensual y no se registra ningún ingreso nuevo. Después podés ajustar manualmente el vencimiento según el crédito tomado.`,()=>marcarSaldoAnualImpago(c),{label:"Pasar a mensual"})}
+                              onClick={()=>askConfirm("Pasar anual a mensual",`¿Marcar como impago el saldo restante de ${c.nombre}? Se elimina la deuda, pasa a Plan trader y el sistema calcula automáticamente el vencimiento con monto pagado ÷ USD 35, redondeado hacia abajo.`,()=>marcarSaldoAnualImpago(c),{label:"Pasar a mensual"})}
                             >Impago</button>
                           </div>
                         </td>
