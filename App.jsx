@@ -2361,6 +2361,12 @@ function VivosView({t,userEmail,askConfirm}){
     };
   },[rows]);
 
+  const pctConversionConsultas=(compraron,hablaron)=>{
+    const h=n(hablaron),c=n(compraron);
+    if(!h||!c)return "0%";
+    const pct=(c/h)*100;
+    return `${pct<1?pct.toFixed(2):pct.toFixed(1)}%`;
+  };
   const maxEvo=Math.max(...(stats.ordered||[]).flatMap(r=>[n(r.entraron),n(r.promedio),n(r.hablaron),n(r.compraron)]),1);
   const maxTema=Math.max(...(stats.byTema||[]).flatMap(r=>[n(r.entraronAvg),n(r.promedioAvg),n(r.hablaronAvg),n(r.compraronTotal)]),1);
   const miniBar=(value,color=t.accent)=>(
@@ -2400,7 +2406,7 @@ function VivosView({t,userEmail,askConfirm}){
         <MetricCard title="Entraron" value={stats.entraron} sub="total de asistentes únicos" t={t}/>
         <MetricCard title="Media promedio" value={stats.promedioAvg} sub="promedio por vivo" t={t}/>
         <MetricCard title="Hablaron" value={stats.hablaron} sub="personas que consultaron" t={t}/>
-        <MetricCard title="Compraron" value={stats.compraron} sub={`Conversión ${stats.conversionEntrada}%`} t={t}/>
+        <MetricCard title="Compraron" value={stats.compraron} sub={`Conversión ${stats.conversionCharla}%`} t={t}/>
         <MetricCard title="Conversión" value={`${stats.conversionCharla}%`} sub="compras ÷ consultas" t={t}/>
       </div>
 
@@ -2441,7 +2447,7 @@ function VivosView({t,userEmail,askConfirm}){
                 <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
                   <div>
                     <div style={{fontWeight:900,color:t.text}}>{formatDate(r.fecha)} · {r.tema}</div>
-                    <div style={{fontSize:12,color:t.textMuted}}>Compras ÷ entraron: {n(r.entraron)?Math.round((n(r.compraron)/n(r.entraron))*1000)/10:0}%</div>
+                    <div style={{fontSize:12,color:t.textMuted}}>Conversión: {pctConversionConsultas(r.compraron,r.hablaron)} <span style={{opacity:.75}}>(compras ÷ consultas)</span></div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <strong style={{color:t.accent}}>{n(r.compraron)} compra{n(r.compraron)!==1?"s":""}</strong>
