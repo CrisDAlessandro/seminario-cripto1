@@ -2851,10 +2851,17 @@ export default function App(){
   function pagosCreditoAnualImpago(cliente){
     const pagos=pagosRelacionadosACliente(cliente);
     const anuales=pagos.filter(i=>normalizeServicio(i.servicio)==="anual");
-    // Para convertir un Plan inversor impago a Plan trader no se suman pagos
-    // mensuales anteriores de la misma persona. Solo cuentan el pago inicial
-    // del Plan inversor y sus pagos de deuda asociados.
-    return anuales.length?anuales:pagos;
+    const fechasAnuales=anuales.map(i=>dateOnly(i.fecha_pago||i.created_at)).filter(Boolean).sort();
+    const fechaBase=fechasAnuales[0]||dateOnly(cliente?.fecha_inicio)||dateOnly(cliente?.created_at)||null;
+    const mensualesPosteriores=fechaBase?pagos.filter(i=>{
+      if(normalizeServicio(i.servicio)!=="mensual")return false;
+      const fp=dateOnly(i.fecha_pago||i.created_at);
+      return fp&&fp>=fechaBase;
+    }):[];
+    // Para convertir un Plan inversor impago a Plan trader:
+    // - no se suman pagos mensuales anteriores al Plan inversor;
+    // - sí se suman los pagos mensuales posteriores, porque ya pertenecen a la etapa Plan trader.
+    return anuales.length?[...anuales,...mensualesPosteriores]:pagos;
   }
   function montoPagadoCliente(cliente){
     const total=pagosCreditoAnualImpago(cliente).reduce((a,i)=>a+safeNum(i.monto),0);
@@ -2862,14 +2869,19 @@ export default function App(){
   }
   function calcularCreditoMensualPorImpago(cliente){
     const pagos=pagosCreditoAnualImpago(cliente);
+    const anuales=pagos.filter(i=>normalizeServicio(i.servicio)==="anual");
+    const mensualesPosteriores=pagos.filter(i=>normalizeServicio(i.servicio)==="mensual");
     const pagado=pagos.reduce((a,i)=>a+safeNum(i.monto),0)||safeNum(cliente?.monto);
+    const pagadoAnual=anuales.reduce((a,i)=>a+safeNum(i.monto),0);
+    const pagadoMensualPosterior=mensualesPosteriores.reduce((a,i)=>a+safeNum(i.monto),0);
     const meses=mesesTraderPorMontoPagado(pagado);
+    const fechasAnuales=anuales.map(i=>dateOnly(i.fecha_pago||i.created_at)).filter(Boolean).sort();
     const fechasPagos=pagos.map(i=>dateOnly(i.fecha_pago||i.created_at)).filter(Boolean).sort();
-    const fechaInicio=fechasPagos[0]||dateOnly(cliente?.fecha_inicio)||dateOnly(cliente?.created_at)||toISODate(getToday());
+    const fechaInicio=fechasAnuales[0]||fechasPagos[0]||dateOnly(cliente?.fecha_inicio)||dateOnly(cliente?.created_at)||toISODate(getToday());
     const vencDate=addCalendarMonths(fechaInicio,meses)||parseISODate(fechaInicio);
     const fechaVencimiento=toISODate(vencDate);
     const dias=Math.max(0,diffDays(parseISODate(fechaInicio),parseISODate(fechaVencimiento)));
-    return{pagado,meses,fechaInicio,fechaVencimiento,dias,pagos_credito:pagos.length};
+    return{pagado,pagadoAnual,pagadoMensualPosterior,meses,fechaInicio,fechaVencimiento,dias,pagos_credito:pagos.length};
   }
   function esConversionImpagoAnual(cliente){
     const txt=String(cliente?.notas||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
@@ -2921,6 +2933,8 @@ export default function App(){
       nombre:cliente.nombre,
       email:cliente.email,
       pagado:credito.pagado,
+      pagado_anual:credito.pagadoAnual,
+      pagado_mensual_posterior:credito.pagadoMensualPosterior,
       mensual,
       meses_credito:credito.meses,
       dias_credito:credito.dias,
@@ -2932,7 +2946,7 @@ export default function App(){
     });
     await logNC(cliente.id,user?.email||"Sistema","estado",
       `Corrección crédito anual impago: pagó USD ${credito.pagado}; corresponde Plan trader por ${credito.meses} mes(es), desde ${formatDate(credito.fechaInicio)} hasta ${formatDate(credito.fechaVencimiento)}.`,
-      {pagado:credito.pagado,mensual,meses_credito:credito.meses,dias_credito:credito.dias,pagos_credito:credito.pagos_credito,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
+      {pagado:credito.pagado,pagado_anual:credito.pagadoAnual,pagado_mensual_posterior:credito.pagadoMensualPosterior,mensual,meses_credito:credito.meses,dias_credito:credito.dias,pagos_credito:credito.pagos_credito,fecha_inicio:credito.fechaInicio,fecha_vencimiento:credito.fechaVencimiento}
     );
     if(!auto)toast.success(`${cliente.nombre} corregido hasta ${formatDate(credito.fechaVencimiento)}`);
     return true;
@@ -3860,6 +3874,8 @@ export default function App(){
       nombre:cliente.nombre,
       deuda_anterior:deudaAnterior,
       pagado:credito.pagado,
+      pagado_anual:credito.pagadoAnual,
+      pagado_mensual_posterior:credito.pagadoMensualPosterior,
       mensual,
       meses_credito:credito.meses,
       dias_credito:credito.dias,
