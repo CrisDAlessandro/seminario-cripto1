@@ -335,11 +335,11 @@ function metodoPagoDesdeIngreso(i){
   const directo=String(i?.metodo_pago||i?.metodoPago||"").trim();
   if(directo)return directo;
   const notas=String(i?.notas||"");
-  const m=notas.match(/Método de pago\s*:\s*([^·\n]+)/i);
+  const m=notas.match(/M[eé]todo de pago\s*:\s*([^·\n]+)/i);
   return (m?.[1]||"Sin especificar").trim();
 }
 function notasConMetodoPago(notas,metodo){
-  const limpio=String(notas||"").replace(/\s*·?\s*Método de pago\s*:\s*[^·\n]+/ig,"").trim();
+  const limpio=String(notas||"").replace(/\s*·?\s*M[eé]todo de pago\s*:\s*[^·\n]+/ig,"").trim();
   const metodoOk=String(metodo||"").trim();
   if(!metodoOk)return limpio;
   return limpio?`${limpio} · Método de pago: ${metodoOk}`:`Método de pago: ${metodoOk}`;
@@ -1278,12 +1278,17 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const actionMini=(danger=false)=>({...btn(false),padding:"5px 8px",fontSize:12,lineHeight:1,background:danger?"rgba(239,68,68,.10)":t.btnLtBg,color:danger?"#ef4444":t.btnLtTx});
   function notaSegmentoSistema(seg){
     const s=String(seg||"").trim();
-    return /^(Cobró\s+|Cobrado$|Cobrado\b|Pendiente de recepción$|Pendiente de transferencia$|Transferencia recibida por\s+|Método de pago\s*:|recibe\s*:|recibio\s*:|recibió\s*:|pendiente_transferencia\s*:)/i.test(s);
+    return /^(Cobró\s+|Cobrado$|Cobrado\b|Pendiente de recepción$|Pendiente de transferencia$|Transferencia recibida por\s+|M[eé]todo de pago\s*:|recibe\s*:|recibio\s*:|recibió\s*:|pendiente_transferencia\s*:)/i.test(s);
   }
   function partesNotaPago(i){
     const partes=notaPagoRaw(i).split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
     const sistema=[],manual=[];
     partes.forEach(p=>(notaSegmentoSistema(p)?sistema:manual).push(p));
+    const metodo=metodoPagoDesdeIngreso(i);
+    const tieneMetodo=sistema.some(p=>/^M[eé]todo de pago\s*:/i.test(String(p||"")));
+    if(metodo&&metodo!=="Sin especificar"&&!tieneMetodo){
+      sistema.push(`Método de pago: ${metodo}`);
+    }
     return{sistema,manual};
   }
   function tieneNotaManualPago(i){return partesNotaPago(i).manual.length>0;}
