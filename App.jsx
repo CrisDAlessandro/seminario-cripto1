@@ -1278,7 +1278,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const actionMini=(danger=false)=>({...btn(false),padding:"5px 8px",fontSize:12,lineHeight:1,background:danger?"rgba(239,68,68,.10)":t.btnLtBg,color:danger?"#ef4444":t.btnLtTx});
   function notaSegmentoSistema(seg){
     const s=String(seg||"").trim();
-    return /^(Cobró\s+|Cobrado$|Pendiente de recepción$|Pendiente de transferencia$|Transferencia recibida por\s+|Método de pago\s*:|recibe\s*:|recibio\s*:|recibió\s*:|pendiente_transferencia\s*:)/i.test(s);
+    return /^(Cobró\s+|Cobrado$|Cobrado\b|Pendiente de recepción$|Pendiente de transferencia$|Transferencia recibida por\s+|Método de pago\s*:|recibe\s*:|recibio\s*:|recibió\s*:|pendiente_transferencia\s*:)/i.test(s);
   }
   function partesNotaPago(i){
     const partes=notaPagoRaw(i).split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
@@ -1533,7 +1533,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                           {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:2}}>{Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}</div>}
                           <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
                             <div style={{fontSize:11,color:t.textMuted}}>por {item.usuario_email}</div>
-                            {item.__kind==="nota"&&(
+                            {item.__kind==="nota"&&String(item.tipo||"").toLowerCase()==="nota"&&(
                               <div style={{display:"flex",gap:6}}>
                                 <button title="Eliminar nota manual" style={actionMini(true)} onClick={()=>eliminarTimelineNota(item)} disabled={savingEdit}>🗑</button>
                               </div>
