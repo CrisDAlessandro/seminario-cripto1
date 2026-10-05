@@ -1178,8 +1178,6 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const [timeline,setTimeline]=useState([]);
   const [loadingTL,setLoadingTL]=useState(true);
   const [tlPage,setTlPage]=useState(1);
-  const [editTL,setEditTL]=useState(null);
-  const [editPagoNota,setEditPagoNota]=useState(null);
   const [savingEdit,setSavingEdit]=useState(false);
   const [ingresoNotasOverride,setIngresoNotasOverride]=useState({});
   function localMinutesBetweenDates(a,b){
@@ -1278,43 +1276,43 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   }
   function notaPagoRaw(i){return Object.prototype.hasOwnProperty.call(ingresoNotasOverride,String(i.id))?ingresoNotasOverride[String(i.id)]:String(i.notas||"");}
   const actionMini=(danger=false)=>({...btn(false),padding:"5px 8px",fontSize:12,lineHeight:1,background:danger?"rgba(239,68,68,.10)":t.btnLtBg,color:danger?"#ef4444":t.btnLtTx});
-  async function guardarEdicionTimeline(){
-    if(!editTL?.id)return;
-    setSavingEdit(true);
-    const contenido=String(editTL.text||"").trim();
-    const {error}=await supabase.from("notas_cliente").update({contenido}).eq("id",editTL.id);
-    setSavingEdit(false);
-    if(error){toast.error("No se pudo editar la nota");return;}
-    setTimeline(prev=>prev.map(n=>String(n.id)===String(editTL.id)?{...n,contenido}:n));
-    setEditTL(null);
-    toast.success("Nota editada");
+  function notaSegmentoSistema(seg){
+    const s=String(seg||"").trim();
+    return /^(Cobró\s+|Cobrado$|Pendiente de recepción$|Pendiente de transferencia$|Transferencia recibida por\s+|Método de pago\s*:|recibe\s*:|recibio\s*:|recibió\s*:|pendiente_transferencia\s*:)/i.test(s);
+  }
+  function partesNotaPago(i){
+    const partes=notaPagoRaw(i).split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean);
+    const sistema=[],manual=[];
+    partes.forEach(p=>(notaSegmentoSistema(p)?sistema:manual).push(p));
+    return{sistema,manual};
+  }
+  function tieneNotaManualPago(i){return partesNotaPago(i).manual.length>0;}
+  function notasPagoVisibles(i){
+    const {sistema,manual}=partesNotaPago(i);
+    const visible=[...sistema,...manual].join(" · ");
+    return notasPagoLegibles(visible);
   }
   async function eliminarTimelineNota(item){
-    if(!item?.id||!window.confirm("¿Eliminar esta nota del historial?"))return;
+    if(!item?.id)return;
+    setSavingEdit(true);
     const {error}=await supabase.from("notas_cliente").delete().eq("id",item.id);
+    setSavingEdit(false);
     if(error){toast.error("No se pudo eliminar la nota");return;}
     setTimeline(prev=>prev.filter(n=>String(n.id)!==String(item.id)));
     toast.success("Nota eliminada");
   }
-  async function guardarNotaPago(){
-    if(!editPagoNota?.id)return;
-    setSavingEdit(true);
-    const notas=String(editPagoNota.text||"").trim();
-    const {error}=await supabase.from("ingresos").update({notas}).eq("id",editPagoNota.id);
-    setSavingEdit(false);
-    if(error){toast.error("No se pudo editar la nota del pago");return;}
-    setIngresoNotasOverride(prev=>({...prev,[String(editPagoNota.id)]:notas}));
-    onIngresoNotasGuardadas?.(editPagoNota.id,notas);
-    setEditPagoNota(null);
-    toast.success("Nota del pago editada");
-  }
   async function eliminarNotaPago(i){
-    if(!i?.id||!window.confirm("¿Eliminar la nota de este pago? El pago no se elimina, solo la nota."))return;
-    const {error}=await supabase.from("ingresos").update({notas:""}).eq("id",i.id);
+    if(!i?.id)return;
+    const {sistema,manual}=partesNotaPago(i);
+    if(!manual.length){toast.error("Ese pago no tiene nota manual para eliminar");return;}
+    setSavingEdit(true);
+    const notas=sistema.join(" · ");
+    const {error}=await supabase.from("ingresos").update({notas}).eq("id",i.id);
+    setSavingEdit(false);
     if(error){toast.error("No se pudo eliminar la nota del pago");return;}
-    setIngresoNotasOverride(prev=>({...prev,[String(i.id)]:""}));
-    onIngresoNotasGuardadas?.(i.id,"");
-    toast.success("Nota del pago eliminada");
+    setIngresoNotasOverride(prev=>({...prev,[String(i.id)]:notas}));
+    onIngresoNotasGuardadas?.(i.id,notas);
+    toast.success("Nota manual eliminada");
   }
   const timelineCompleto=useMemo(()=>{
     const notas=(timeline||[]).map(n=>({...n,__kind:"nota"}));
@@ -1531,25 +1529,13 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                             <span style={{fontSize:12,fontWeight:700,color}}>{tipoLabel(item.tipo)}</span>
                             <span style={{fontSize:11,color:t.textMuted,whiteSpace:"nowrap"}}>{formatDateTime(item.created_at)}</span>
                           </div>
-                          {item.__kind==="nota"&&editTL?.id===item.id?(
-                            <div style={{marginTop:6}}>
-                              <textarea value={editTL.text} onChange={e=>setEditTL({...editTL,text:e.target.value})} rows={2}
-                                style={{width:"100%",padding:"8px 10px",borderRadius:9,border:`1px solid ${t.inputBorder}`,background:t.inputBg,color:t.inputText,fontFamily:"inherit",fontSize:12,resize:"vertical",boxSizing:"border-box"}}/>
-                              <div style={{display:"flex",justifyContent:"flex-end",gap:7,marginTop:6}}>
-                                <button style={actionMini()} onClick={()=>setEditTL(null)} disabled={savingEdit}>Cancelar</button>
-                                <button style={actionMini(false)} onClick={guardarEdicionTimeline} disabled={savingEdit}>Guardar</button>
-                              </div>
-                            </div>
-                          ):(
-                            item.contenido&&<div style={{fontSize:12,color:t.text,marginTop:3,lineHeight:1.5}}>{item.contenido}</div>
-                          )}
+                          {item.contenido&&<div style={{fontSize:12,color:t.text,marginTop:3,lineHeight:1.5}}>{item.contenido}</div>}
                           {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:2}}>{Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}</div>}
                           <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
                             <div style={{fontSize:11,color:t.textMuted}}>por {item.usuario_email}</div>
                             {item.__kind==="nota"&&(
                               <div style={{display:"flex",gap:6}}>
-                                <button title="Editar nota" style={actionMini()} onClick={()=>setEditTL({id:item.id,text:String(item.contenido||"")})}>✏️</button>
-                                <button title="Eliminar nota" style={actionMini(true)} onClick={()=>eliminarTimelineNota(item)}>🗑</button>
+                                <button title="Eliminar nota manual" style={actionMini(true)} onClick={()=>eliminarTimelineNota(item)} disabled={savingEdit}>🗑</button>
                               </div>
                             )}
                           </div>
@@ -1580,7 +1566,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
               <h4 style={{margin:"0 0 10px",color:t.text,fontSize:14,fontWeight:700}}>Pagos registrados</h4>
               <div style={{borderRadius:10,border:`1px solid ${t.cardBorder}`,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
                 <table style={S.table}>
-                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Recibe / Estado","Notas","Acciones"].map(h=>(
+                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Recibe / Estado","Notas",""].map(h=>(
                     <th key={h} style={{...S.td,fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
                   ))}</tr></thead>
                   <tbody>{pagosVisibles.map(i=>(
@@ -1589,23 +1575,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                       <td style={S.td}>{svcLabel(i.servicio)}</td>
                       <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
                       <td style={{...S.td,fontSize:12,color:t.textMuted}}>{receptorPago(i)}</td>
+                      <td style={S.td}>{notasPagoVisibles(i)}</td>
                       <td style={S.td}>
-                        {editPagoNota?.id===i.id?(
-                          <div style={{minWidth:220}}>
-                            <textarea value={editPagoNota.text} onChange={e=>setEditPagoNota({...editPagoNota,text:e.target.value})} rows={3}
-                              style={{width:"100%",padding:"8px 10px",borderRadius:9,border:`1px solid ${t.inputBorder}`,background:t.inputBg,color:t.inputText,fontFamily:"inherit",fontSize:12,resize:"vertical",boxSizing:"border-box"}}/>
-                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:6}}>
-                              <button style={actionMini()} onClick={()=>setEditPagoNota(null)} disabled={savingEdit}>Cancelar</button>
-                              <button style={actionMini(false)} onClick={guardarNotaPago} disabled={savingEdit}>Guardar</button>
-                            </div>
-                          </div>
-                        ):notasPagoLegibles(notaPagoRaw(i))}
-                      </td>
-                      <td style={S.td}>
-                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-                          <button title="Editar nota del pago" style={actionMini()} onClick={()=>setEditPagoNota({id:i.id,text:notaPagoRaw(i)})}>✏️</button>
-                          <button title="Eliminar nota del pago" style={actionMini(true)} onClick={()=>eliminarNotaPago(i)}>🗑</button>
-                        </div>
+                        {tieneNotaManualPago(i)&&(
+                          <button title="Eliminar nota manual del pago" style={actionMini(true)} onClick={()=>eliminarNotaPago(i)} disabled={savingEdit}>🗑</button>
+                        )}
                       </td>
                     </tr>
                   ))}</tbody>
