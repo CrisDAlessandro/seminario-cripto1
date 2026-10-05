@@ -1168,7 +1168,7 @@ function BusquedaRapida({clientes,onSelect,onClose,t}){
 
 // ─── Panel detalle cliente — historial unificado por nombre ───────────────────
 const TL_PAGE = 5;
-function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,onSincronizarDrive,t}){
+function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAbrirRenovar,onEliminar,onNotaGuardada,onEditarDeuda,onSincronizarDrive,onIngresoNotasGuardadas,t}){
   if(!cliente)return null;
   const S=makeS(t);const btn=makeBtn(t);
   const {backdropProps,modalProps}=useSafeBackdropClose(onClose);
@@ -1178,6 +1178,10 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   const [timeline,setTimeline]=useState([]);
   const [loadingTL,setLoadingTL]=useState(true);
   const [tlPage,setTlPage]=useState(1);
+  const [editTL,setEditTL]=useState(null);
+  const [editPagoNota,setEditPagoNota]=useState(null);
+  const [savingEdit,setSavingEdit]=useState(false);
+  const [ingresoNotasOverride,setIngresoNotasOverride]=useState({});
   function localMinutesBetweenDates(a,b){
     const da=a?new Date(a):null, db=b?new Date(b):null;
     if(!da||!db||Number.isNaN(da.getTime())||Number.isNaN(db.getTime()))return 999999;
@@ -1225,6 +1229,11 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
       .sort((a,b)=>(b.fecha_pago||"").localeCompare(a.fecha_pago||""))
   ,[ingresos,todosLosIds,personaKeys,mismoNombre,cliente.nombre,cliente.email]);
 
+  const pagosVisibles=useMemo(()=>pagosTotales.map(i=>(
+    Object.prototype.hasOwnProperty.call(ingresoNotasOverride,String(i.id))
+      ? {...i,notas:ingresoNotasOverride[String(i.id)]}
+      : i
+  )),[pagosTotales,ingresoNotasOverride]);
   const totalPagado=pagosTotales.reduce((a,i)=>a+safeNum(i.monto),0);
   const totalDeuda=mismoNombre.reduce((a,c)=>a+safeNum(c.deuda_restante),0);
 
@@ -1267,6 +1276,46 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
       .trim();
     return txt||"—";
   }
+  function notaPagoRaw(i){return Object.prototype.hasOwnProperty.call(ingresoNotasOverride,String(i.id))?ingresoNotasOverride[String(i.id)]:String(i.notas||"");}
+  const actionMini=(danger=false)=>({...btn(false),padding:"5px 8px",fontSize:12,lineHeight:1,background:danger?"rgba(239,68,68,.10)":t.btnLtBg,color:danger?"#ef4444":t.btnLtTx});
+  async function guardarEdicionTimeline(){
+    if(!editTL?.id)return;
+    setSavingEdit(true);
+    const contenido=String(editTL.text||"").trim();
+    const {error}=await supabase.from("notas_cliente").update({contenido}).eq("id",editTL.id);
+    setSavingEdit(false);
+    if(error){toast.error("No se pudo editar la nota");return;}
+    setTimeline(prev=>prev.map(n=>String(n.id)===String(editTL.id)?{...n,contenido}:n));
+    setEditTL(null);
+    toast.success("Nota editada");
+  }
+  async function eliminarTimelineNota(item){
+    if(!item?.id||!window.confirm("¿Eliminar esta nota del historial?"))return;
+    const {error}=await supabase.from("notas_cliente").delete().eq("id",item.id);
+    if(error){toast.error("No se pudo eliminar la nota");return;}
+    setTimeline(prev=>prev.filter(n=>String(n.id)!==String(item.id)));
+    toast.success("Nota eliminada");
+  }
+  async function guardarNotaPago(){
+    if(!editPagoNota?.id)return;
+    setSavingEdit(true);
+    const notas=String(editPagoNota.text||"").trim();
+    const {error}=await supabase.from("ingresos").update({notas}).eq("id",editPagoNota.id);
+    setSavingEdit(false);
+    if(error){toast.error("No se pudo editar la nota del pago");return;}
+    setIngresoNotasOverride(prev=>({...prev,[String(editPagoNota.id)]:notas}));
+    onIngresoNotasGuardadas?.(editPagoNota.id,notas);
+    setEditPagoNota(null);
+    toast.success("Nota del pago editada");
+  }
+  async function eliminarNotaPago(i){
+    if(!i?.id||!window.confirm("¿Eliminar la nota de este pago? El pago no se elimina, solo la nota."))return;
+    const {error}=await supabase.from("ingresos").update({notas:""}).eq("id",i.id);
+    if(error){toast.error("No se pudo eliminar la nota del pago");return;}
+    setIngresoNotasOverride(prev=>({...prev,[String(i.id)]:""}));
+    onIngresoNotasGuardadas?.(i.id,"");
+    toast.success("Nota del pago eliminada");
+  }
   const timelineCompleto=useMemo(()=>{
     const notas=(timeline||[]).map(n=>({...n,__kind:"nota"}));
     const notasTransferencia=new Set(
@@ -1274,7 +1323,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
         .filter(n=>String(n.contenido||"").toLowerCase().includes("cristian recibió transferencia"))
         .map(n=>`${n.detalle?.vendedor||""}|${n.detalle?.monto||""}`)
     );
-    const pagos=(pagosTotales||[]).flatMap(i=>{
+    const pagos=(pagosVisibles||[]).flatMap(i=>{
       const info=infoPago(i);
       const base={
         id:`pago-${i.id}`,
@@ -1336,7 +1385,7 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
       if(!dup)kept.push(x);
     });
     return kept;
-  },[timeline,pagosTotales,allClientes,mismoNombre]);
+  },[timeline,pagosVisibles,allClientes,mismoNombre]);
   const tlTotal=Math.max(1,Math.ceil(timelineCompleto.length/TL_PAGE));
   const tlRows=useMemo(()=>{const s=(tlPage-1)*TL_PAGE;return timelineCompleto.slice(s,s+TL_PAGE);},[timelineCompleto,tlPage]);
 
@@ -1352,12 +1401,12 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
   async function enviarNota(){
     if(!nuevaNota.trim())return;
     setSending(true);
-    const{error}=await supabase.from("notas_cliente").insert([{
+    const{data,error}=await supabase.from("notas_cliente").insert([{
       cliente_id:cliente.id, usuario_email:userEmail||"—",
       tipo:"nota", contenido:nuevaNota.trim(), detalle:null,
-    }]);
+    }]).select().single();
     if(!error){
-      const nuevo={id:Date.now(),created_at:new Date().toISOString(),usuario_email:userEmail||"—",tipo:"nota",contenido:nuevaNota.trim(),detalle:null};
+      const nuevo=data||{id:Date.now(),created_at:new Date().toISOString(),usuario_email:userEmail||"—",tipo:"nota",contenido:nuevaNota.trim(),detalle:null};
       setTimeline(prev=>[nuevo,...prev]);
       setTlPage(1);setNuevaNota("");
       onNotaGuardada&&onNotaGuardada();
@@ -1482,9 +1531,28 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
                             <span style={{fontSize:12,fontWeight:700,color}}>{tipoLabel(item.tipo)}</span>
                             <span style={{fontSize:11,color:t.textMuted,whiteSpace:"nowrap"}}>{formatDateTime(item.created_at)}</span>
                           </div>
-                          {item.contenido&&<div style={{fontSize:12,color:t.text,marginTop:3,lineHeight:1.5}}>{item.contenido}</div>}
+                          {item.__kind==="nota"&&editTL?.id===item.id?(
+                            <div style={{marginTop:6}}>
+                              <textarea value={editTL.text} onChange={e=>setEditTL({...editTL,text:e.target.value})} rows={2}
+                                style={{width:"100%",padding:"8px 10px",borderRadius:9,border:`1px solid ${t.inputBorder}`,background:t.inputBg,color:t.inputText,fontFamily:"inherit",fontSize:12,resize:"vertical",boxSizing:"border-box"}}/>
+                              <div style={{display:"flex",justifyContent:"flex-end",gap:7,marginTop:6}}>
+                                <button style={actionMini()} onClick={()=>setEditTL(null)} disabled={savingEdit}>Cancelar</button>
+                                <button style={actionMini(false)} onClick={guardarEdicionTimeline} disabled={savingEdit}>Guardar</button>
+                              </div>
+                            </div>
+                          ):(
+                            item.contenido&&<div style={{fontSize:12,color:t.text,marginTop:3,lineHeight:1.5}}>{item.contenido}</div>
+                          )}
                           {item.detalle&&<div style={{fontSize:11,color:t.textMuted,marginTop:2}}>{Object.entries(item.detalle).map(([k,v])=>`${k}: ${v}`).join(" · ")}</div>}
-                          <div style={{fontSize:11,color:t.textMuted,marginTop:2}}>por {item.usuario_email}</div>
+                          <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:2}}>
+                            <div style={{fontSize:11,color:t.textMuted}}>por {item.usuario_email}</div>
+                            {item.__kind==="nota"&&(
+                              <div style={{display:"flex",gap:6}}>
+                                <button title="Editar nota" style={actionMini()} onClick={()=>setEditTL({id:item.id,text:String(item.contenido||"")})}>✏️</button>
+                                <button title="Eliminar nota" style={actionMini(true)} onClick={()=>eliminarTimelineNota(item)}>🗑</button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1512,16 +1580,33 @@ function ClienteDetailModal({cliente,ingresos,allClientes,userEmail,onClose,onAb
               <h4 style={{margin:"0 0 10px",color:t.text,fontSize:14,fontWeight:700}}>Pagos registrados</h4>
               <div style={{borderRadius:10,border:`1px solid ${t.cardBorder}`,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
                 <table style={S.table}>
-                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Recibe / Estado","Notas"].map(h=>(
+                  <thead><tr style={S.thRow}>{["Fecha","Servicio","Monto","Recibe / Estado","Notas","Acciones"].map(h=>(
                     <th key={h} style={{...S.td,fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:t.textMuted}}>{h}</th>
                   ))}</tr></thead>
-                  <tbody>{pagosTotales.map(i=>(
+                  <tbody>{pagosVisibles.map(i=>(
                     <tr key={i.id}>
                       <td style={S.td}>{formatDate(i.fecha_pago)}</td>
                       <td style={S.td}>{svcLabel(i.servicio)}</td>
                       <td style={{...S.td,color:t.accent,fontWeight:700}}>{money(i.monto)}</td>
                       <td style={{...S.td,fontSize:12,color:t.textMuted}}>{receptorPago(i)}</td>
-                      <td style={S.td}>{notasPagoLegibles(i.notas)}</td>
+                      <td style={S.td}>
+                        {editPagoNota?.id===i.id?(
+                          <div style={{minWidth:220}}>
+                            <textarea value={editPagoNota.text} onChange={e=>setEditPagoNota({...editPagoNota,text:e.target.value})} rows={3}
+                              style={{width:"100%",padding:"8px 10px",borderRadius:9,border:`1px solid ${t.inputBorder}`,background:t.inputBg,color:t.inputText,fontFamily:"inherit",fontSize:12,resize:"vertical",boxSizing:"border-box"}}/>
+                            <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:6}}>
+                              <button style={actionMini()} onClick={()=>setEditPagoNota(null)} disabled={savingEdit}>Cancelar</button>
+                              <button style={actionMini(false)} onClick={guardarNotaPago} disabled={savingEdit}>Guardar</button>
+                            </div>
+                          </div>
+                        ):notasPagoLegibles(notaPagoRaw(i))}
+                      </td>
+                      <td style={S.td}>
+                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                          <button title="Editar nota del pago" style={actionMini()} onClick={()=>setEditPagoNota({id:i.id,text:notaPagoRaw(i)})}>✏️</button>
+                          <button title="Eliminar nota del pago" style={actionMini(true)} onClick={()=>eliminarNotaPago(i)}>🗑</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -5173,6 +5258,7 @@ export default function App(){
           onAbrirRenovar={c=>{setClienteDetalle(null);abrirRenovar(c);}}
           onEliminar={c=>{setClienteDetalle(null);askConfirm("Eliminar cliente",`¿Confirmas que querés eliminar a ${c.nombre}? Esta acción no se puede deshacer.`,()=>eliminarClienteConfirmado(c),{danger:true,label:"Eliminar"});}}
           onNotaGuardada={()=>toast.success("Nota guardada")}
+          onIngresoNotasGuardadas={(id,notas)=>setIngresos(prev=>prev.map(i=>String(i.id)===String(id)?{...i,notas}:i))}
           onEditarDeuda={c=>setDeudaCliente(c)}
           onSincronizarDrive={c=>sincronizarAccesoDrive("compartir",c.email,{origen:"manual_ficha",cliente_id:c.id,nombre:c.nombre,servicio:c.servicio},{showOk:true})}
           t={t}/>
