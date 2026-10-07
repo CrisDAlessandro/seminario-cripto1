@@ -2551,7 +2551,7 @@ function VivosView({t,userEmail,askConfirm}){
               <div key={r.tema} style={{padding:"12px 14px",border:`1px solid ${t.cardBorder}`,borderRadius:14,background:t.dark?"#0b111d":"#fbfcfe"}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10}}>
                   <strong style={{color:t.text}}>{r.tema}</strong>
-                  <span style={{color:t.textMuted,fontSize:12}}>{r.vivos} vivo{r.vivos!==1?"s":""} · conv. entrada {r.conversionEntrada}% · conv. charla {r.conversionCharla}%</span>
+                  <span style={{color:t.textMuted,fontSize:12}}>{r.vivos} vivo{r.vivos!==1?"s":""}</span>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:10,fontSize:12,color:t.textMuted}}>
                   <div><b style={{color:t.text}}>Entraron prom.:</b> {r.entraronAvg}{temaBar(r.entraronAvg)}</div>
