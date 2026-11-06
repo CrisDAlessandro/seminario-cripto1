@@ -4136,12 +4136,13 @@ export default function App(){
   },[pendientesTransferencia]);
   const alternarPendiente=c=>{
     const clave=clavePendiente(c);
+    // Usar SIEMPRE el estado anterior: al destildar una, las demás permanecen seleccionadas.
     setPendientesSeleccionados(prev=>prev.includes(clave)?prev.filter(k=>k!==clave):[...prev,clave]);
   };
   const alternarTodosPendientes=()=>{
-    // Si están todas tildadas, destildar todas; si no, seleccionar todas.
-    // Destildar una venta desde cualquiera de las dos vistas no afecta a las demás.
-    setPendientesSeleccionados(todasPendientesMarcadas?[]:pendientesTransferencia.map(clavePendiente));
+    const todasLasClaves=[...new Set(pendientesTransferencia.map(clavePendiente))];
+    // Si alguna no está marcada, marcar todas; si están todas, destildarlas todas.
+    setPendientesSeleccionados(prev=>todasLasClaves.every(k=>prev.includes(k))?[]:todasLasClaves);
   };
   const confirmarPendientesSeleccionadas=()=>{
     const elegidas=pendientesMarcadas.slice();
@@ -5591,7 +5592,7 @@ export default function App(){
                   </div>
                   {pendientesMarcadas.length>0&&(
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"10px 12px",marginBottom:14,borderRadius:10,background:t.dark?"#111a29":"#f8f6f3",border:`1px solid ${t.cardBorder}`}}>
-                      <span style={{fontSize:12,color:t.textMuted}}>{pendientesMarcadas.length} de {pendientesTransferencia.length} seleccionadas · USD {pendientesMarcadas.reduce((a,c)=>a+safeNum(c.monto),0).toLocaleString("es-AR")}</span>
+                      <span style={{fontSize:12,color:t.textMuted}}><strong>{pendientesMarcadas.length} de {pendientesTransferencia.length} seleccionadas</strong> · USD {pendientesMarcadas.reduce((a,c)=>a+safeNum(c.monto),0).toLocaleString("es-AR")} · Tocá una venta para destildarla</span>
                       <button type="button" style={{...btn(false,true),padding:"8px 12px",fontSize:12}} disabled={procesandoPendientesLote}
                         onClick={confirmarPendientesSeleccionadas}>{procesandoPendientesLote?"Registrando...":"Marcar seleccionadas recibidas"}</button>
                     </div>
@@ -5614,13 +5615,19 @@ export default function App(){
                               const clave=clavePendiente(c);
                               const marcada=pendientesSeleccionados.includes(clave);
                               return(
-                                <label key={clave} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,border:`1px solid ${marcada?t.accent:t.cardBorder}`,cursor:procesandoPendientesLote?"not-allowed":"pointer",background:t.dark?"#0b111d":"#fff"}}>
-                                  <input type="checkbox" checked={marcada} disabled={procesandoPendientesLote} onChange={()=>alternarPendiente(c)}
-                                    aria-label={`Seleccionar venta pendiente de ${c.nombre}, vendedor ${c.vendedor}`}
-                                    style={{width:17,height:17,accentColor:t.accent,flexShrink:0,cursor:"inherit"}}/>
+                                <div key={clave} role="group" aria-label={`Venta pendiente de ${c.nombre}`}
+                                  tabIndex={procesandoPendientesLote?-1:0}
+                                  onClick={()=>{if(!procesandoPendientesLote)alternarPendiente(c);}}
+                                  onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key===" "||e.key==="Enter")){e.preventDefault();if(!procesandoPendientesLote)alternarPendiente(c);}}}
+                                  style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:9,border:`1px solid ${marcada?t.accent:t.cardBorder}`,cursor:procesandoPendientesLote?"not-allowed":"pointer",background:marcada?(t.dark?"#142438":"#fff7e8"):(t.dark?"#0b111d":"#fff")}}>
+                                  <input type="checkbox" checked={marcada} disabled={procesandoPendientesLote}
+                                    onClick={e=>e.stopPropagation()}
+                                    onChange={()=>alternarPendiente(c)}
+                                    aria-label={`Seleccionar o desmarcar venta pendiente de ${c.nombre}, vendedor ${c.vendedor}`}
+                                    style={{width:20,height:20,accentColor:t.accent,flexShrink:0,cursor:"pointer"}}/>
                                   <span style={{color:t.text,fontSize:12,fontWeight:600,flex:1,minWidth:0}}>{c.nombre} <span style={{color:t.textMuted,fontWeight:400}}>· {svcLabel(c.servicio)} · {formatDate(c.fecha_inicio)}</span></span>
                                   <span style={{fontSize:12,color:t.accent,fontWeight:800,whiteSpace:"nowrap"}}>USD {c.monto}</span>
-                                </label>
+                                </div>
                               );
                             })}
                           </div>
@@ -6041,7 +6048,7 @@ export default function App(){
                     <button type="button" disabled={procesandoPendientesLote} style={{...btn(false),padding:"7px 12px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}}
                       onClick={alternarTodosPendientes}>{todasPendientesMarcadas?"Deseleccionar todo":"Seleccionar todo"}</button>
                     {pendientesMarcadas.length>0&&<>
-                      <span style={{fontSize:12,color:t.textMuted}}>{pendientesMarcadas.length} seleccionada{pendientesMarcadas.length!==1?"s":""} · USD {pendientesMarcadas.reduce((sum,c)=>sum+safeNum(c.monto),0).toLocaleString("es-AR")}</span>
+                      <span style={{fontSize:12,color:t.textMuted}}><strong>{pendientesMarcadas.length} de {pendientesTransferencia.length} seleccionadas</strong> · USD {pendientesMarcadas.reduce((sum,c)=>sum+safeNum(c.monto),0).toLocaleString("es-AR")} · Tocá una venta para destildarla</span>
                       <button type="button" disabled={procesandoPendientesLote} style={{...btn(false,true),padding:"7px 13px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}}
                         onClick={confirmarPendientesSeleccionadas}>
                         {procesandoPendientesLote?"Registrando...":"Marcar seleccionadas recibidas"}
@@ -6054,20 +6061,27 @@ export default function App(){
                     const clave=clavePendiente(c);
                     const marcada=pendientesSeleccionados.includes(clave);
                     return (
-                    <div key={clave} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:t.dark?"#101827":"#ffffff",border:`1px solid ${marcada?t.accent:t.cardBorder}`,borderLeft:"4px solid #c8911f",gap:10,flexWrap:"wrap"}}>
-                      <label style={{display:"flex",alignItems:"center",gap:10,cursor:procesandoPendientesLote?"not-allowed":"pointer"}}>
-                        <input type="checkbox" checked={marcada} disabled={procesandoPendientesLote} onChange={()=>alternarPendiente(c)}
-                          aria-label={`Seleccionar venta pendiente de ${c.nombre}, ${c.monto} dólares, vendedor ${c.vendedor}`}
-                          style={{width:17,height:17,accentColor:t.accent,cursor:"inherit",flexShrink:0}}/>
+                    <div key={clave} role="group" aria-label={`Venta pendiente de ${c.nombre}`}
+                      tabIndex={procesandoPendientesLote?-1:0}
+                      onClick={()=>{if(!procesandoPendientesLote)alternarPendiente(c);}}
+                      onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key===" "||e.key==="Enter")){e.preventDefault();if(!procesandoPendientesLote)alternarPendiente(c);}}}
+                      style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:marcada?(t.dark?"#142438":"#fff7e8"):(t.dark?"#101827":"#ffffff"),border:`1px solid ${marcada?t.accent:t.cardBorder}`,borderLeft:"4px solid #c8911f",gap:10,flexWrap:"wrap",cursor:procesandoPendientesLote?"not-allowed":"pointer"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <input type="checkbox" checked={marcada} disabled={procesandoPendientesLote}
+                          onClick={e=>e.stopPropagation()}
+                          onChange={()=>alternarPendiente(c)}
+                          aria-label={`Seleccionar o desmarcar venta pendiente de ${c.nombre}, ${c.monto} dólares, vendedor ${c.vendedor}`}
+                          style={{width:20,height:20,accentColor:t.accent,cursor:"pointer",flexShrink:0}}/>
                         <span>
                           <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
                           <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
                         </span>
-                      </label>
+                      </div>
                       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:700,color:"#8a5a12",padding:"3px 10px",borderRadius:999,background:"#f7f0df",border:"1px solid #e7d8b1"}}>{c.vendedor}</span>
                         <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
-                        <button disabled={procesandoPendientesLote} style={{...btn(false,true),padding:"6px 14px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya transfirió ${c.monto} USD por ${c.nombre}?`,null,{label:"Recibido ✓",showRecibeFinal:true,onConfirmFn:(recibeFinal)=>marcarTransferido(c.id,c,recibeFinal)})}>
+                        <button type="button" disabled={procesandoPendientesLote} style={{...btn(false,true),padding:"6px 14px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}}
+                          onClick={e=>{e.stopPropagation();askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya transfirió ${c.monto} USD por ${c.nombre}?`,null,{label:"Recibido ✓",showRecibeFinal:true,onConfirmFn:(recibeFinal)=>marcarTransferido(c.id,c,recibeFinal)});}}>
                           Marcar recibido
                         </button>
                       </div>
