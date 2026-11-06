@@ -1,119 +1,96 @@
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!clasesList.length&&<div style={{padding:24,textAlign:"center",color:t.textMuted}}>Sin alumnos registrados.</div>}
-              </div>
-              <Pagination page={clasPag.page} totalPages={clasPag.totalPages} setPage={clasPag.setPage} sectionRef={clasesRef} t={t}/>
-            </div>
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-            {/* Pendientes de transferencia */}
-            {pendientesTransferencia.length>0&&(
-              <div ref={pendRef} style={{...S.card,marginBottom:24,border:`1px solid ${t.cardBorder}`,background:t.cardBg}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-                  <h3 style={{margin:0,color:t.text,fontWeight:800,fontSize:17}}>
-                    Ventas pendientes de recepción
-                    <span style={{marginLeft:10,background:"#f5efdd",color:"#8a5a12",borderRadius:999,fontSize:13,fontWeight:800,padding:"3px 10px",border:"1px solid #e6d4af"}}>{pendientesTransferencia.length}</span>
-                  </h3>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <button type="button" disabled={procesandoPendientesLote} style={{...btn(false),padding:"7px 12px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}}
-                      onClick={alternarTodosPendientes}>{todasPendientesMarcadas?"Deseleccionar todo":"Seleccionar todo"}</button>
-                    {pendientesMarcadas.length>0&&<>
-                      <span style={{fontSize:12,color:t.textMuted}}>{pendientesMarcadas.length} seleccionada{pendientesMarcadas.length!==1?"s":""} · USD {pendientesMarcadas.reduce((sum,c)=>sum+safeNum(c.monto),0).toLocaleString("es-AR")}</span>
-                      <button type="button" disabled={procesandoPendientesLote} style={{...btn(false,true),padding:"7px 13px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}}
-                        onClick={()=>{
-                          const elegidas=pendientesMarcadas.slice();
-                          const claves=elegidas.map(clavePendiente);
-                          const vendedores=[...new Set(elegidas.map(c=>c.vendedor||"Sin vendedor"))].join(", ");
-                          const suma=elegidas.reduce((sum,c)=>sum+safeNum(c.monto),0);
-                          askConfirm("Recibir ventas seleccionadas",`¿Confirmás la recepción de ${elegidas.length} venta(s) por USD ${suma.toLocaleString("es-AR")}? Vendedores: ${vendedores}. Las que no están tildadas permanecerán pendientes.`,null,{label:"Marcar seleccionadas recibidas",showRecibeFinal:true,onConfirmFn:recibeFinal=>marcarPendientesSeleccionadasComoRecibidas(recibeFinal,claves)});
-                        }}>
-                        {procesandoPendientesLote?"Registrando...":"Marcar seleccionadas recibidas"}
-                      </button>
-                    </>}
-                  </div>
-                </div>
-                <div style={{display:"grid",gap:8}}>
-                  {pendientesTransferencia.map(c=>{
-                    const clave=clavePendiente(c);
-                    const marcada=pendientesSeleccionados.includes(clave);
-                    return (
-                    <div key={clave} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderRadius:12,background:t.dark?"#101827":"#ffffff",border:`1px solid ${marcada?t.accent:t.cardBorder}`,borderLeft:"4px solid #c8911f",gap:10,flexWrap:"wrap"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <input type="checkbox" checked={marcada} disabled={procesandoPendientesLote} onChange={()=>alternarPendiente(c)}
-                          aria-label={`Seleccionar venta pendiente de ${c.nombre}, ${c.monto} dólares, vendedor ${c.vendedor}`}
-                          style={{width:17,height:17,accentColor:t.accent,cursor:procesandoPendientesLote?"not-allowed":"pointer",flexShrink:0}}/>
-                        <div>
-                          <span style={{fontWeight:700,color:t.text,fontSize:14}}>{c.nombre}</span>
-                          <span style={{color:t.textMuted,fontSize:12,marginLeft:10}}>{svcLabel(c.servicio)} · {c.monto} USD</span>
-                        </div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                        <span style={{fontSize:12,fontWeight:700,color:"#8a5a12",padding:"3px 10px",borderRadius:999,background:"#f7f0df",border:"1px solid #e7d8b1"}}>{c.vendedor}</span>
-                        <span style={{fontSize:12,color:t.textMuted}}>{formatDate(c.fecha_inicio)}</span>
-                        <button disabled={procesandoPendientesLote} style={{...btn(false,true),padding:"6px 14px",fontSize:12,opacity:procesandoPendientesLote?0.5:1}} onClick={()=>askConfirm("Marcar como recibido",`¿Confirmás que ${c.vendedor} ya transfirió ${c.monto} USD por ${c.nombre}?`,null,{label:"Recibido ✓",showRecibeFinal:true,onConfirmFn:(recibeFinal)=>marcarTransferido(c.id,c,recibeFinal)})}>
-                          Marcar recibido
-                        </button>
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              </div>
-            )}
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
-            {/* Resumen mensual */}
-            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr)",gap:24}}>
-              <div style={S.card}>
-                <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Resumen mensual</h3>
-                <div className="sc-table-wrap" style={{overflowX:"auto"}}>
-                  <table style={S.table}>
-                    <thead><TableHeader cols={["Mes","Plan trader","Plan inversor","Clases","Total","Tendencia"]} t={t}/></thead>
-                    <tbody>
-                      {resumenConTrend.map(r=>(
-                        <tr key={r.key}>
-                          <td style={{...S.td,fontWeight:700}}>{monthLabel(r.key)}</td>
-                          <td style={S.td}>USD {r.mensual}</td>
-                          <td style={S.td}>USD {r.anual}</td>
-                          <td style={S.td}>USD {r.clases}</td>
-                          <td style={{...S.td,fontWeight:800,color:t.accent}}>USD {r.total}</td>
-                          <td style={S.td}>
-                            {r.trend!=null&&<span style={{fontSize:12,fontWeight:700,color:r.trend>0?"#22c55e":r.trend<0?"#ef4444":t.textMuted}}>{r.trend>0?"↑":r.trend<0?"↓":"→"} {Math.abs(r.trend)}%</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div style={S.card}>
-                <h3 style={{marginTop:0,color:t.text,fontWeight:800,fontSize:18,marginBottom:16}}>Vista rápida</h3>
-                <div style={{display:"grid",gap:16}}>
-                  {resumenConTrend.map(r=>{
-                    const pct=Math.max((r.total/maxTotal)*100,4);
-                    return(
-                      <div key={r.key}>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:14,color:t.text}}>
-                          <span style={{fontWeight:600}}>{monthLabel(r.key)}</span>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            {r.trend!=null&&<span style={{fontSize:11,fontWeight:700,color:r.trend>0?"#22c55e":r.trend<0?"#ef4444":t.textMuted}}>{r.trend>0?"↑":r.trend<0?"↓":"→"}{Math.abs(r.trend)}%</span>}
-                            <strong style={{color:t.accent}}>USD {r.total}</strong>
-                          </div>
-                        </div>
-                        <div style={{height:8,background:t.barBg,borderRadius:999,overflow:"hidden"}}>
-                          <div style={{width:`${pct}%`,height:"100%",background:t.accentGrad,borderRadius:999}}/>
-                        </div>
-                        <div style={{marginTop:5,color:t.textMuted,fontSize:12}}>Mensuales: {r.vM} · Anuales: {r.vA} · Clases: {r.vC} · Publicidad: {r.vP}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
+const LOGO_SRC = "/logo.png";
+
+// ─── Auth errors → español ────────────────────────────────────────────────────
+function traducirError(msg) {
+  if (!msg) return "Ocurrió un error inesperado";
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login")||m.includes("invalid credentials")||m.includes("wrong password")) return "Email o contraseña incorrectos";
+  if (m.includes("email not confirmed")) return "El email no fue confirmado. Revisá tu casilla";
+  if (m.includes("too many requests")||m.includes("rate limit")) return "Demasiados intentos. Esperá unos minutos";
+  if (m.includes("user not found")) return "No existe una cuenta con ese email";
+  if (m.includes("network")||m.includes("fetch")) return "Error de conexión. Verificá tu internet";
+  if (m.includes("password")) return "La contraseña no cumple los requisitos";
+  if (m.includes("email")) return "El email ingresado no es válido";
+  return msg;
 }
+
+// ─── CSS responsivo global ────────────────────────────────────────────────────
+const MOBILE_CSS = `
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:#f6f8fb;color:#101828;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}\n  body:has(.sc-dark){background:#05070b!important;}
+  button,input,select,textarea{font-family:inherit;-webkit-appearance:none;appearance:none;}
+  button{transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, opacity .16s ease, color .16s ease;}
+  button:not(:disabled):hover{transform:translateY(-1px);}
+  button:disabled{cursor:not-allowed;opacity:.55;}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;}
+  input::placeholder,textarea::placeholder{color:#98a2b3;opacity:1;}
+  input,select,textarea{transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;}
+  input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px rgba(31,78,121,.10)!important;border-color:#1f4e79!important;}
+  .sc-dark input:focus,.sc-dark select:focus,.sc-dark textarea:focus{box-shadow:0 0 0 4px rgba(212,162,58,.18)!important;border-color:#d4a23a!important;}
+  .sc-dark select{
+    color-scheme:dark!important;
+    background-color:#050a12!important;
+    color:#f8fafc!important;
+    border-color:#334155!important;
+    transition:border-color .12s ease, box-shadow .12s ease!important;
+  }
+  .sc-dark select:focus{
+    background-color:#050a12!important;
+    border-color:#d4a23a!important;
+    box-shadow:0 0 0 4px rgba(212,162,58,.18)!important;
+  }
+  .sc-dark select option,
+  .sc-dark select optgroup,
+  .sc-dark option{
+    background-color:#050a12!important;
+    color:#f8fafc!important;
+  }
+  .sc-dark select option:checked,
+  .sc-dark select option:hover,
+  .sc-dark option:checked{
+    background:#d4a23a!important;
+    background-color:#d4a23a!important;
+    color:#0b0f17!important;
+  }
+  table tbody tr{transition:background .14s ease, box-shadow .14s ease;}
+  table tbody tr:hover{background:rgba(31,78,121,.045)!important;}
+  ::selection{background:rgba(31,78,121,.18);}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:999px;border:2px solid transparent;background-clip:content-box;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(31,78,121,.52);border:2px solid transparent;background-clip:content-box;}
+
+  .sc-app-shell{background:
+    radial-gradient(circle at 14% 0%, rgba(31,78,121,.055), transparent 28%),
+    radial-gradient(circle at 86% 8%, rgba(200,145,31,.055), transparent 24%),
+    linear-gradient(180deg,#fbfcfe 0%,#f6f8fb 48%,#eef2f6 100%);}
+  .sc-dark{background:linear-gradient(180deg,#05070b 0%,#090d14 50%,#05070b 100%);}
+
+  .sc-topbar{position:relative;z-index:1;background:rgba(255,255,255,.98);border:1px solid rgba(226,232,240,.98);box-shadow:0 12px 34px rgba(16,24,40,.055);backdrop-filter:blur(10px);}
+  .sc-dark .sc-topbar{background:rgba(13,18,27,.94);border-color:#273244;box-shadow:0 18px 46px rgba(0,0,0,.40);}
+
+  .sc-card-premium{transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;}
+  .sc-card-premium:hover{box-shadow:0 16px 38px rgba(16,24,40,.085)!important;border-color:rgba(31,78,121,.22)!important;}
+  .sc-dark .sc-card-premium:hover{box-shadow:0 18px 42px rgba(0,0,0,.34)!important;border-color:rgba(214,163,55,.34)!important;}
+  .sc-soft-card{background:rgba(255,255,255,.96);border:1px solid rgba(224,229,236,.96);box-shadow:0 10px 30px rgba(16,24,40,.055);}
+  .sc-dark .sc-soft-card{background:rgba(13,18,27,.94);border-color:#273244;box-shadow:0 18px 42px rgba(0,0,0,.34);}
+  .sc-section-title{letter-spacing:-.035em;}
+  .sc-action-icon{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;}
+
+  .sc-header img{filter:drop-shadow(0 8px 16px rgba(178,124,24,.18));}
+  .sc-nav button{min-height:42px;}
+  .sc-table-wrap{border:1px solid rgba(226,232,240,.96);border-radius:18px;overflow:hidden!important;background:#fff;box-shadow:0 8px 24px rgba(16,24,40,.030);}
+  .sc-dark .sc-table-wrap{background:#111827;border-color:#263754;}
+  .sc-hist-table{border-collapse:separate!important;border-spacing:0!important;}
+  .sc-hist-table th:first-child, .sc-hist-table td:first-child{padding-left:18px!important;}
+  .sc-hist-table th:last-child, .sc-hist-table td:last-child{padding-right:18px!important;}
+  .sc-tl-item{box-shadow:0 1px 0 rgba(16,24,40,.02);}
